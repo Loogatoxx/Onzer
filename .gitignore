@@ -1,0 +1,48 @@
+# ─────────────── Node / Frontend ───────────────
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# ─────────────── Rust / Tauri ───────────────
+src-tauri/target/
+src-tauri/gen/
+**/*.rs.bk
+*.pdb
+
+# Types générés automatiquement depuis Rust (regénérés au build)
+src/lib/bindings.ts
+
+# ─────────────── Données utilisateur (JAMAIS versionnées) ───────────────
+# La bibliothèque musicale, la base SQLite et les caches restent locaux.
+/data/
+*.db
+*.db-shm
+*.db-wal
+/Library/
+/Inbox/
+/artwork-cache/
+
+# ─────────────── Secrets ───────────────
+.env
+.env.*
+!.env.example
+onzer.token
+
+# ─────────────── Éditeurs / OS ───────────────
+.DS_Store
+# Fichiers AppleDouble générés par macOS sur les volumes exFAT/FAT
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+
+# ─────────────── Logs ───────────────
+*.log
+npm-debug.log*

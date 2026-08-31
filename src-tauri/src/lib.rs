@@ -114,6 +114,44 @@ pub fn run() {
             let data_dir = paths.data_dir().to_path_buf();
             let shared_paths = Arc::new(RwLock::new(paths));
 
+            // Remise en état, **avant** de rouvrir la porte aux imports.
+            //
+            // Le dédoublonnage ne survivait pas à une réécriture de tags : des
+            // exemplaires multiples du même morceau ont pu entrer en base. La
+            // passe calcule les empreintes audio manquantes puis fusionne ce
+            // qui doit l'être. Sans elle, le nouveau filet resterait aveugle
+            // sur toute la bibliothèque historique — et le dossier de dépôt
+            // recommencerait à produire des doublons dès la seconde qui suit.
+            let ingest_ready = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            {
+                let pool = pool.clone();
+                let paths = Arc::clone(&shared_paths);
+                let ready = Arc::clone(&ingest_ready);
+
+                tauri::async_runtime::spawn(async move {
+                    // Le drapeau est levé quoi qu'il arrive : une réparation
+                    // impossible ne doit pas condamner l'import automatique.
+                    let _leve = LeveAuRetour(ready);
+
+                    let resolver = paths.read().await.clone();
+                    if !resolver.is_library_online() {
+                        return;
+                    }
+
+                    match library::repair::run(&pool, &resolver).await {
+                        Ok(rapport) if !rapport.is_empty() => tracing::info!(
+                            empreintes = rapport.hashed,
+                            fusionnes = rapport.merged,
+                            fichiers_ecartes = rapport.files_set_aside,
+                            tags_origine = rapport.originals_recovered,
+                            "bibliothèque remise en état"
+                        ),
+                        Ok(_) => tracing::debug!("bibliothèque saine, rien à réparer"),
+                        Err(error) => tracing::warn!(%error, "remise en état impossible"),
+                    }
+                });
+            }
+
             // Import automatique : dossier surveillé et API locale. Un échec
             // ici ne compromet pas le démarrage (voir `ingest::start`).
             ingest::start(
@@ -121,6 +159,7 @@ pub fn run() {
                 Arc::clone(&shared_paths),
                 &data_dir,
                 ingest::server::DEFAULT_PORT,
+                ingest_ready,
             );
 
             // Ouvrier d'analyse audio. Il travaille en fond, un morceau à la
@@ -191,6 +230,11 @@ pub fn run() {
             commands::collection::loved_tracks,
             commands::collection::track_lyrics,
             commands::collection::set_track_lyrics,
+            commands::collection::fetch_lyrics,
+            commands::collection::fetch_missing_lyrics,
+            commands::collection::lyrics_progress,
+            commands::collection::suspect_tracks,
+            commands::collection::restore_original_tags,
         ])
         .run(tauri::generate_context!())
         .expect("échec au lancement d'Onzer");
@@ -206,6 +250,18 @@ pub fn run() {
 ///
 /// Le battement de position n'est émis que lorsque quelque chose bouge : une
 /// application au repos ne doit rien coûter.
+/// Lève un drapeau à la sortie de portée, quel que soit le chemin emprunté.
+///
+/// Un `return` anticipé ou une erreur ne doit pas laisser l'import automatique
+/// fermé pour toute la session.
+struct LeveAuRetour(Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for LeveAuRetour {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
 fn spawn_playback_loop(handle: tauri::AppHandle) {
     use commands::playback::{PlaybackTick, STATE_EVENT, TICK_EVENT};
 

@@ -32,6 +32,14 @@ pub const SINGLES_DIR: &str = "Singles";
 /// indexerait des fichiers en cours de téléchargement.
 pub const INBOX_DIR: &str = "_Inbox";
 
+/// Sous-dossier du dépôt où atterrissent les fichiers déjà connus.
+///
+/// Onzer ne supprime rien de lui-même, mais laisser un doublon dans le dépôt
+/// le condamne à être réexaminé à chaque démarrage. Trente-sept fichiers déjà
+/// rangés y ont ainsi tourné en boucle. Le déplacer d'un cran suffit : le
+/// fichier reste consultable, il cesse d'être un candidat.
+pub const INBOX_DUPLICATES_DIR: &str = "_Doublons";
+
 /// Rend une chaîne utilisable comme nom de dossier ou de fichier.
 ///
 /// Retourne `None` si rien d'exploitable ne subsiste, à charge de l'appelant

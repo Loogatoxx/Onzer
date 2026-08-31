@@ -21,7 +21,7 @@ use sqlx::SqlitePool;
 use crate::core::{OnzerError, PathResolver, Result};
 use crate::db::repository::{self, NewTrack};
 use crate::library::metadata::MetadataHint;
-use crate::library::{artwork, hash, metadata, naming};
+use crate::library::{artwork, audio_hash, hash, metadata, naming};
 
 #[derive(Debug)]
 pub enum ImportOutcome {
@@ -102,7 +102,26 @@ async fn import_inner(
     hint: Option<&MetadataHint>,
 ) -> Result<ImportOutcome> {
     // ── 1. Doublon strict ───────────────────────────────────────────────
+    //
+    // Deux empreintes, dans cet ordre, parce qu'elles ne rattrapent pas la
+    // même chose :
+    //
+    // * `audio_hash` ne couvre que les octets audio. C'est la seule qui
+    //   survive à une réécriture des tags — et donc la seule capable de
+    //   reconnaître un fichier qu'Onzer a lui-même retagué après
+    //   identification. Son absence est ce qui a laissé entrer trois
+    //   exemplaires du même morceau.
+    // * `content_hash` couvre le fichier entier. Elle reste utile là où
+    //   l'audio ne peut pas être isolé — un OGG, par exemple.
     let content_hash = hash::content_hash(source)?;
+    let audio_hash = audio_hash::audio_hash(source)?;
+
+    if let Some(existing_id) = repository::find_by_audio_hash(pool, &audio_hash).await? {
+        return Ok(ImportOutcome::Duplicate {
+            existing_id,
+            reason: "même audio, tags différents",
+        });
+    }
 
     if let Some(existing_id) = repository::find_by_content_hash(pool, &content_hash).await? {
         return Ok(ImportOutcome::Duplicate {
@@ -185,6 +204,7 @@ async fn import_inner(
             relative_path: &relative_path,
             file_size,
             content_hash: &content_hash,
+            audio_hash: &audio_hash,
             file_modified_at,
             artwork_hash: artwork_hash.as_deref(),
             source: origin,

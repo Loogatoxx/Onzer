@@ -41,6 +41,13 @@ pub struct RecordingMetadata {
     pub track_no: Option<u32>,
     pub disc_no: Option<u32>,
     pub genre: Option<String>,
+    /// Durée de l'enregistrement selon MusicBrainz. Sert à corroborer.
+    pub length_ms: Option<i64>,
+    /// Nombre de parutions rattachées, compilations comprises.
+    ///
+    /// Zéro trahit souvent une fiche versée depuis un rip, sans existence
+    /// discographique — c'est un signal, pas une preuve.
+    pub release_count: usize,
 }
 
 impl RecordingMetadata {
@@ -85,7 +92,15 @@ impl MusicBrainzClient {
 /// ce qui compte d'autant plus que toute la subtilité est ici.
 fn build_metadata(recording: Recording) -> RecordingMetadata {
     let (artists, featured_artists) = split_artist_credit(&recording.artist_credit);
+    let release_count = recording.releases.len();
+
+    // `pick_release` ne rend qu'une parution *représentative* : elle vaut `None`
+    // quand le morceau n'est connu que par des compilations. Une parution reste
+    // alors nécessaire pour aller chercher la pochette — n'importe laquelle fera
+    // l'affaire, une compilation reproduit la bonne image dans la majorité des
+    // cas et il vaut mieux une pochette approximative que pas de pochette.
     let best = pick_release(&recording.releases);
+    let for_cover = best.or_else(|| pick_any_release(&recording.releases));
 
     let (track_no, disc_no) = best
         .and_then(track_position)
@@ -97,14 +112,16 @@ fn build_metadata(recording: Recording) -> RecordingMetadata {
         artists,
         featured_artists,
         album: best.map(|release| release.title.clone()),
-        release_mbid: best.map(|release| release.id.clone()),
-        release_group_mbid: best.and_then(|release| {
+        release_mbid: for_cover.map(|release| release.id.clone()),
+        release_group_mbid: for_cover.and_then(|release| {
             release.release_group.as_ref().map(|group| group.id.clone())
         }),
         year: best.and_then(release_year),
         track_no,
         disc_no,
         genre: best_genre(&recording.genres),
+        length_ms: recording.length.map(i64::from),
+        release_count,
     }
 }
 
@@ -143,11 +160,45 @@ fn split_artist_credit(credits: &[ArtistCredit]) -> (Vec<String>, Vec<String>) {
     (main, featured)
 }
 
-/// Choisit la parution la plus représentative.
+/// Choisit la parution qui peut légitimement servir d'**album**.
+///
+/// # Pourquoi les compilations sont écartées, et non simplement reléguées
+///
+/// « Macarena » de Damso paraît sur *Ipséité* en 2017. Dans MusicBrainz, cet
+/// enregistrement n'est rattaché qu'à **neuf compilations**, aucune n'étant
+/// l'album. Le classement départageait alors « à qualité égale, la plus
+/// ancienne — c'est la parution d'origine », et retenait *I migliori anni '90*,
+/// paru en **2009** : huit ans avant que le morceau existe.
+///
+/// La règle est juste entre deux albums, absurde entre deux compilations. Quand
+/// il n'y a que des compilations, il n'y a **pas d'album connu** : on ne renvoie
+/// rien, et les tags que le fichier portait déjà sont conservés. Une case vide
+/// vaut mieux qu'une fausse réponse.
 fn pick_release(releases: &[Release]) -> Option<&Release> {
     releases
         .iter()
+        .filter(|release| !is_compilation(release))
         .max_by(|a, b| release_rank(a).total_cmp(&release_rank(b)))
+}
+
+/// Parution de repli, compilations comprises. Sert uniquement à la pochette.
+fn pick_any_release(releases: &[Release]) -> Option<&Release> {
+    releases
+        .iter()
+        .max_by(|a, b| release_rank(a).total_cmp(&release_rank(b)))
+}
+
+/// Une compilation contient le morceau, mais n'est pas son album.
+fn is_compilation(release: &Release) -> bool {
+    let Some(group) = &release.release_group else {
+        return false;
+    };
+
+    group.primary_type.as_deref() == Some("Compilation")
+        || group
+            .secondary_types
+            .iter()
+            .any(|kind| kind.eq_ignore_ascii_case("compilation"))
 }
 
 /// Note une parution. Plus c'est haut, plus c'est le bon choix.
@@ -248,6 +299,9 @@ struct Recording {
     releases: Vec<Release>,
     #[serde(default)]
     genres: Vec<Genre>,
+    /// Durée en millisecondes. Absente sur les fiches incomplètes.
+    #[serde(default)]
+    length: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -558,6 +612,7 @@ mod tests {
                 album,
             ],
             genres: vec![Genre { name: "french house".into(), count: 9 }],
+            length: Some(301_000),
         };
 
         let meta = build_metadata(recording);
@@ -581,6 +636,7 @@ mod tests {
             artist_credit: vec![credit("Artiste", "")],
             releases: Vec::new(),
             genres: Vec::new(),
+            length: None,
         };
 
         let meta = build_metadata(recording);

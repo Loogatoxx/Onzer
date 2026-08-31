@@ -5,6 +5,8 @@ import { CoverTile, HeaderAction, PageHeader } from "@/components/PageHeader";
 import { Icon } from "@/components/Icon";
 import { DiscoverBar } from "@/features/discover/DiscoverBar";
 import { IdentifyPanel } from "@/features/identify/IdentifyPanel";
+import { SuspectPanel } from "@/features/identify/SuspectPanel";
+import { LyricsBar } from "@/features/lyrics/LyricsBar";
 import { Artwork } from "@/features/library/Artwork";
 import { TrackTable } from "@/features/library/TrackTable";
 import { Sidebar, type Route } from "@/features/nav/Sidebar";
@@ -414,6 +416,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               generated={generated}
               importing={importing}
               onPlayAll={(shuffle) => void playAll(shuffle)}
+              onReload={bump}
               onGenerated={showGenerated}
               onError={setError}
               onRenamePlaylist={(id, name) => {
@@ -500,6 +503,8 @@ interface PageProps {
   generated: GeneratedPlaylist | null;
   importing: boolean;
   onPlayAll: (shuffle: boolean) => void;
+  /** Recharge la liste affichée après une correction de tags. */
+  onReload: () => void;
   onGenerated: (playlist: GeneratedPlaylist) => void;
   onError: (message: string) => void;
   onRenamePlaylist: (id: number, name: string) => void;
@@ -653,8 +658,10 @@ function Page(props: PageProps) {
           onError={props.onError}
         />
 
-        <div className="mt-3">
+        <div className="mt-3 space-y-2">
           <IdentifyPanel />
+          <SuspectPanel onRestored={props.onReload} />
+          <LyricsBar />
         </div>
 
         <p className="mt-3 truncate font-mono text-[11px] text-ink-faint">

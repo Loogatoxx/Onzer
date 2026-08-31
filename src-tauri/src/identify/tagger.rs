@@ -46,6 +46,19 @@ const ALBUM_COVER_MAX_SIZE: u32 = 1_500;
 
 const ALBUM_COVER_QUALITY: u8 = 90;
 
+/// Pourquoi cette identification a été retenue.
+///
+/// Regroupé plutôt que passé en deux paramètres de plus : la signature d'`apply`
+/// en compte déjà six, et deux scalaires anonymes de plus se seraient invités
+/// dans tous les appels sans rien dire de leur rôle.
+#[derive(Debug, Clone, Copy)]
+pub struct IdentificationTrace<'a> {
+    /// Confiance de l'empreinte acoustique, entre 0 et 1.
+    pub score: f64,
+    /// Ce qui a emporté la décision, en clair.
+    pub note: &'a str,
+}
+
 #[derive(Debug)]
 pub struct AppliedIdentification {
     pub relative_path: String,
@@ -62,6 +75,7 @@ pub async fn apply(
     current_relative_path: &str,
     identified: &RecordingMetadata,
     cover: Option<&[u8]>,
+    trace: &IdentificationTrace<'_>,
 ) -> Result<AppliedIdentification> {
     let current_path = paths.resolve(current_relative_path)?;
 
@@ -135,6 +149,8 @@ pub async fn apply(
         file_size,
         artwork_hash.as_deref(),
         Some(&identified.recording_mbid),
+        Some(trace.score),
+        Some(trace.note),
     )
     .await?;
 
@@ -382,6 +398,8 @@ mod tests {
             track_no: Some(3),
             disc_no: Some(1),
             genre: Some("french house".into()),
+            length_ms: Some(301_000),
+            release_count: 2,
         }
     }
 

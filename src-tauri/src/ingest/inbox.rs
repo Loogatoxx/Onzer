@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::library::importer;
-use crate::library::naming::INBOX_DIR;
+use crate::library::naming::{INBOX_DIR, INBOX_DUPLICATES_DIR};
 
 /// Intervalle entre deux inspections du dossier.
 pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -135,6 +135,49 @@ pub fn list_candidates(inbox: &Path) -> Vec<(PathBuf, u64)> {
             Some((path, size))
         })
         .collect()
+}
+
+/// Écarte un fichier déjà connu, dans `_Inbox/_Doublons/`.
+///
+/// Déplacer plutôt que supprimer : l'utilisateur retrouve ses fichiers et
+/// décide lui-même de leur sort. Mais les sortir du dépôt est indispensable —
+/// un doublon qui y reste est réexaminé à chaque démarrage, indéfiniment.
+///
+/// En cas de collision de nom, un suffixe numérique est ajouté : deux
+/// téléchargements homonymes de deux morceaux différents ne doivent pas
+/// s'écraser l'un l'autre dans le dossier où on les met de côté.
+pub fn set_aside(file: &Path) -> std::io::Result<PathBuf> {
+    let Some(parent) = file.parent() else {
+        return Err(std::io::Error::other("fichier sans dossier parent"));
+    };
+
+    let aside = parent.join(INBOX_DUPLICATES_DIR);
+    std::fs::create_dir_all(&aside)?;
+
+    let name = file.file_name().unwrap_or_default();
+    let mut destination = aside.join(name);
+
+    if destination.exists() {
+        let stem = file
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let extension = file
+            .extension()
+            .map(|ext| format!(".{}", ext.to_string_lossy()))
+            .unwrap_or_default();
+
+        for index in 2..1000 {
+            let candidate = aside.join(format!("{stem} ({index}){extension}"));
+            if !candidate.exists() {
+                destination = candidate;
+                break;
+            }
+        }
+    }
+
+    std::fs::rename(file, &destination)?;
+    Ok(destination)
 }
 
 /// Chemin du dossier surveillé pour une racine de bibliothèque donnée.

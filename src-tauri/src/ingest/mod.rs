@@ -16,6 +16,7 @@ pub mod inbox;
 pub mod server;
 pub mod token;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use sqlx::SqlitePool;
@@ -29,11 +30,17 @@ use crate::library::importer::{self, FileHandling, ImportOutcome};
 /// Ne retourne jamais d'erreur fatale : si le port est occupé, l'application
 /// continue de fonctionner avec le seul dossier surveillé. L'import automatique
 /// est un confort, pas une condition de démarrage.
+///
+/// `ready` passe à vrai quand la remise en état de la bibliothèque est
+/// terminée. Le dossier de dépôt reste fermé jusque-là : importer avant que les
+/// empreintes audio soient calculées reviendrait à dédoublonner à l'aveugle —
+/// exactement ce qui a produit les doublons qu'on répare.
 pub fn start(
     pool: SqlitePool,
     paths: Arc<RwLock<PathResolver>>,
     data_dir: &std::path::Path,
     port: u16,
+    ready: Arc<AtomicBool>,
 ) {
     let token = match token::load_or_create(data_dir) {
         Ok(token) => token,
@@ -43,7 +50,7 @@ pub fn start(
         }
     };
 
-    spawn_inbox_loop(pool.clone(), Arc::clone(&paths));
+    spawn_inbox_loop(pool.clone(), Arc::clone(&paths), ready);
 
     let state = Arc::new(server::IngestState { pool, paths, token });
     tauri::async_runtime::spawn(async move {
@@ -54,13 +61,23 @@ pub fn start(
 }
 
 /// Boucle de surveillance du dossier de dépôt.
-fn spawn_inbox_loop(pool: SqlitePool, paths: Arc<RwLock<PathResolver>>) {
+fn spawn_inbox_loop(
+    pool: SqlitePool,
+    paths: Arc<RwLock<PathResolver>>,
+    ready: Arc<AtomicBool>,
+) {
     tauri::async_runtime::spawn(async move {
         let mut tracker = inbox::StabilityTracker::default();
         let mut interval = tokio::time::interval(inbox::POLL_INTERVAL);
 
         loop {
             interval.tick().await;
+
+            // Tant que la remise en état n'a pas calculé les empreintes audio,
+            // le dédoublonnage ne verrait rien venir.
+            if !ready.load(Ordering::Acquire) {
+                continue;
+            }
 
             let resolver = paths.read().await.clone();
 
@@ -100,9 +117,22 @@ async fn import_from_inbox(pool: &SqlitePool, paths: &PathResolver, file: &std::
             tracing::info!(fichier = %name, destination = %relative_path, "import automatique");
         }
         Ok(ImportOutcome::Duplicate { reason, .. }) => {
-            // Le fichier reste dans le dépôt : à l'utilisateur de décider s'il
-            // veut le supprimer. Onzer ne détruit jamais rien de lui-même.
-            tracing::info!(fichier = %name, reason, "doublon laissé dans le dépôt");
+            // Onzer ne détruit rien, mais laisser le fichier sur place le
+            // condamne à être réexaminé à chaque démarrage — et c'est
+            // exactement ce qui se produisait : trente-sept fichiers déjà
+            // rangés tournaient en boucle dans le dépôt.
+            match inbox::set_aside(file) {
+                Ok(destination) => tracing::info!(
+                    fichier = %name,
+                    reason,
+                    destination = %destination.display(),
+                    "doublon écarté du dépôt"
+                ),
+                Err(error) => tracing::warn!(
+                    fichier = %name, reason, %error,
+                    "doublon laissé dans le dépôt, faute de pouvoir le déplacer"
+                ),
+            }
         }
         Err(error) => {
             tracing::warn!(fichier = %name, %error, "import automatique échoué");

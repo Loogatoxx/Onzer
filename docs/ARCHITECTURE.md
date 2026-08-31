@@ -608,6 +608,100 @@ aller-retour IPC **quatre fois par seconde** pour six lignes de code.
 
 ---
 
+## ADR-020 — L'empreinte de dédoublonnage ne couvre que l'audio
+
+**Contexte.** `content_hash` couvre le fichier entier. Or Onzer réécrit les tags après
+identification acoustique : **le fichier change d'octets sans changer de musique**.
+
+**Le défaut, observé en production.** L'empreinte stockée cessait de correspondre au fichier
+d'origine. Un second exemplaire du même téléchargement n'était donc plus reconnu — et le
+dédoublonnage par tags ne rattrapait pas la chute, puisque la ligne en base portait déjà les
+tags corrigés (« Stromae ») quand l'entrant portait encore les siens (« Damso »). **Les deux
+filets se trouaient en même temps.** Trois exemplaires du même morceau sont entrés en base,
+et 37 fichiers déjà rangés tournaient en boucle dans le dossier de dépôt, réexaminés à
+chaque démarrage.
+
+**Décision.** `audio_hash` ne couvre que les octets audio : en-tête ID3v2 sauté, queues
+ID3v1 et APEv2 retirées, blocs de métadonnées FLAC parcourus, atome `mdat` pour MP4, bloc
+`data` pour WAV. Retaguer déplace les bornes, jamais le contenu entre elles. Le format OGG
+retombe sur le fichier entier — repli documenté, non silencieux.
+
+**Conséquences.**
+
+- Un doublon détecté dans le dépôt est **déplacé** dans `_Inbox/_Doublons` plutôt que laissé
+  sur place : Onzer ne détruit rien, mais un fichier qui reste candidat est réexaminé
+  indéfiniment.
+- `library::repair` rattrape les empreintes manquantes au démarrage et fusionne ce qui doit
+  l'être. L'import automatique **attend** que cette passe soit terminée : dédoublonner avant
+  que les empreintes existent reviendrait à travailler à l'aveugle.
+- Un doublon déjà écouté est marqué supprimé, jamais détruit : `play_events` le référence en
+  `ON DELETE RESTRICT`, et perdre un historique pour faire le ménage serait pire que le mal.
+
+---
+
+## ADR-021 — Une empreinte acoustique est une présomption, pas une preuve
+
+**Contexte.** Onzer acceptait toute correspondance dépassant son seuil de confiance, sans
+jamais la confronter aux tags que le fichier portait déjà.
+
+**Les deux défauts, tous deux observés sur la bibliothèque réelle.**
+
+1. Un morceau de Damso s'est retrouvé étiqueté « carmen (Clip Officiel) » de Stromae. La
+   fiche MusicBrainz retenue portait littéralement ce nom et **n'avait aucune parution** :
+   une fiche versée depuis un rip YouTube. Le fichier a été retagué, déplacé dans
+   `Stromae/`, et ses tags d'origine perdus.
+2. « Macarena » de Damso paraît sur *Ipséité* en 2017, mais son enregistrement MusicBrainz
+   n'est rattaché qu'à **neuf compilations**. Le classement départageait « à qualité égale,
+   la plus ancienne — c'est la parution d'origine » et retenait *I migliori anni '90*, paru
+   en **2009** : huit ans avant que le morceau existe. La règle est juste entre deux albums,
+   absurde entre deux compilations.
+
+**Décisions.**
+
+| Garde-fou | Règle |
+|---|---|
+| Durée | Écart de plus de 7 s avec l'enregistrement → refus. Seul critère purement objectif |
+| Tags du fichier | Une contradiction franche exige une confiance ≥ 0,90 pour passer outre |
+| Fiche sans parution | Combinée à une contradiction → refus. C'est le profil du rip versé à la va-vite |
+| Compilations | Quand toutes les parutions en sont, il n'y a **pas d'album connu** : on ne renvoie rien et les tags du fichier sont conservés |
+
+Une case vide vaut mieux qu'une fausse réponse. Un refus est consigné avec sa raison
+(`identification_state = 'rejected'`), et non réessayé : l'empreinte est déterministe.
+
+**Réversibilité.** Les colonnes `original_title` / `original_artist` / `original_album` sont
+renseignées à l'import et **jamais réécrites**. Sans cette mémoire, une identification
+erronée est irréversible. Pour la bibliothèque déjà abîmée, `repair` retrouve ces tags dans
+les exemplaires écartés du dépôt — qu'Onzer n'a jamais retagués. Les copies de bibliothèque,
+elles, ne savent que répéter ce qu'Onzer a écrit : elles sont traitées en premier et
+n'ont pas le dernier mot.
+
+**L'arbitrage revient à l'utilisateur.** Une identification qui contredit les tags a le plus
+souvent raison — c'est sa raison d'être. Onzer montre les deux versions côte à côte et
+laisse choisir.
+
+---
+
+## ADR-022 — Le réseau enrichit, il ne conditionne jamais
+
+**Contexte.** Un relevé des 192 fichiers de la bibliothèque de test n'a trouvé **aucune**
+frame `USLT` ni `SYLT` : pas un seul ne portait de paroles. Les afficher supposait d'aller
+les chercher.
+
+**Décision.** LRCLIB — sans clé d'API, sans compte, avec des paroles synchronisées au format
+LRC. Ce qui part se limite à l'artiste, au titre, à l'album et à la durée.
+
+**La frontière.** Onzer reste un lecteur hors ligne. Aucun appel n'est déclenché sans un
+geste explicite de l'utilisateur : un bouton dans le panneau de lecture, un autre pour la
+bibliothèque entière. Sans réseau, la musique s'écoute exactement pareil.
+
+**Les paroles vivent dans le fichier.** Écrites dans le tag, pas seulement en base : une fois
+trouvées, elles ne dépendent plus du réseau et suivent le morceau ailleurs. La lecture
+retombe d'ailleurs sur le fichier quand la base est muette — la colonne `lyrics` n'ayant été
+ajoutée qu'après coup, s'en tenir à elle revenait à répondre « pas de paroles » pour toute
+une bibliothèque.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

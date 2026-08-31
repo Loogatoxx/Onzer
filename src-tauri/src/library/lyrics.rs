@@ -18,7 +18,15 @@
 //! [02:10.00][02:40.00]Refrain   ← deux passages, même texte
 //! ```
 
+use std::path::Path;
+
+use lofty::config::WriteOptions;
+use lofty::file::TaggedFileExt;
+use lofty::prelude::{ItemKey, TagExt};
+use lofty::tag::Tag;
 use serde::Serialize;
+
+use crate::core::{OnzerError, Result};
 
 /// Une ligne horodatée.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -172,6 +180,70 @@ fn is_metadata_tag(line: &str) -> bool {
     inside
         .split_once(':')
         .is_some_and(|(key, _)| !key.is_empty() && key.chars().all(|c| c.is_ascii_alphabetic()))
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Le fichier fait foi
+// ════════════════════════════════════════════════════════════════════════════
+//
+// La base ne sert que de cache. Les paroles vivent dans le fichier : elles
+// suivent le morceau si l'utilisateur l'ouvre ailleurs, et survivent à une
+// réinstallation d'Onzer.
+//
+// Ce n'est pas de la théorie. La bibliothèque de test — 192 fichiers — n'en
+// contenait **aucune** : la colonne `lyrics` n'existait pas encore à leur
+// import, et rien n'allait plus jamais relire les fichiers. Lire à la demande
+// supprime cette classe entière de problème.
+
+/// Lit les paroles directement dans le fichier.
+///
+/// `None` quand le fichier n'en porte pas — ce qui est le cas le plus fréquent.
+pub fn read_from_file(path: &Path) -> Result<Option<String>> {
+    let tagged = lofty::read_from_path(path)
+        .map_err(|error| OnzerError::Invalid(format!("lecture des tags : {error}")))?;
+
+    let found = tagged
+        .primary_tag()
+        .or_else(|| tagged.first_tag())
+        .and_then(|tag| tag.get_string(&ItemKey::Lyrics))
+        .map(str::to_string)
+        .filter(|text| !text.trim().is_empty());
+
+    Ok(found)
+}
+
+/// Écrit les paroles dans le fichier, sans toucher au reste des tags.
+///
+/// À la différence de `identify::tagger::write_tags`, qui reconstruit un bloc
+/// neuf, on modifie ici le tag existant : l'utilisateur qui colle des paroles
+/// ne demande pas qu'on révise son artiste et son album au passage.
+pub fn write_to_file(path: &Path, text: &str) -> Result<()> {
+    let mut tagged = lofty::read_from_path(path)
+        .map_err(|error| OnzerError::Invalid(format!("lecture des tags : {error}")))?;
+
+    let kind = tagged.primary_tag_type();
+    if tagged.primary_tag_mut().is_none() {
+        // Un fichier sans aucun tag : on lui en crée un du type naturel à son
+        // format, plutôt que d'échouer.
+        tagged.insert_tag(Tag::new(kind));
+    }
+
+    let Some(tag) = tagged.primary_tag_mut() else {
+        return Err(OnzerError::Invalid(
+            "impossible de créer un bloc de tags".to_string(),
+        ));
+    };
+
+    if text.trim().is_empty() {
+        tag.remove_key(&ItemKey::Lyrics);
+    } else {
+        tag.insert_text(ItemKey::Lyrics, text.to_string());
+    }
+
+    tag.save_to_path(path, WriteOptions::default())
+        .map_err(|error| OnzerError::Invalid(format!("écriture des paroles : {error}")))?;
+
+    Ok(())
 }
 
 #[cfg(test)]

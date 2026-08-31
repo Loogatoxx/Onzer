@@ -25,6 +25,8 @@ pub struct NewTrack<'a> {
     pub relative_path: &'a str,
     pub file_size: i64,
     pub content_hash: &'a str,
+    /// Empreinte des octets audio seuls. Survit à une réécriture des tags.
+    pub audio_hash: &'a str,
     pub file_modified_at: Option<i64>,
     /// Empreinte de la vignette de pochette, si une a pu être extraite.
     pub artwork_hash: Option<&'a str>,
@@ -42,6 +44,22 @@ pub async fn find_by_content_hash(pool: &SqlitePool, hash: &str) -> Result<Optio
         .bind(hash)
         .fetch_optional(pool)
         .await?;
+
+    Ok(id)
+}
+
+/// Le même **audio** est-il déjà connu, quels que soient ses tags ?
+///
+/// Premier filet du dédoublonnage, et le seul qui résiste à une réécriture des
+/// tags : c'est précisément ce qui manquait quand trois exemplaires du même
+/// fichier ont fini par entrer en base.
+pub async fn find_by_audio_hash(pool: &SqlitePool, hash: &str) -> Result<Option<i64>> {
+    let id = sqlx::query_scalar(
+        "SELECT id FROM tracks WHERE audio_hash = ? AND deleted_at IS NULL LIMIT 1",
+    )
+    .bind(hash)
+    .fetch_optional(pool)
+    .await?;
 
     Ok(id)
 }
@@ -147,10 +165,11 @@ pub async fn insert_track(pool: &SqlitePool, new: NewTrack<'_>) -> Result<i64> {
     let track_id: i64 = sqlx::query_scalar(
         "INSERT INTO tracks (
             title, normalized_title, album_id, track_no, disc_no, year, duration_ms,
-            relative_path, file_size, content_hash, file_modified_at,
+            relative_path, file_size, content_hash, audio_hash, file_modified_at,
             format, bitrate, sample_rate, channels,
-            added_at, last_seen_at, source, lyrics
-         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            added_at, last_seen_at, source, lyrics,
+            original_title, original_artist, original_album
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          RETURNING id",
     )
     .bind(&metadata.title)
@@ -163,6 +182,7 @@ pub async fn insert_track(pool: &SqlitePool, new: NewTrack<'_>) -> Result<i64> {
     .bind(new.relative_path)
     .bind(new.file_size)
     .bind(new.content_hash)
+    .bind(new.audio_hash)
     .bind(new.file_modified_at)
     .bind(&metadata.format)
     .bind(metadata.bitrate)
@@ -172,6 +192,11 @@ pub async fn insert_track(pool: &SqlitePool, new: NewTrack<'_>) -> Result<i64> {
     .bind(now)
     .bind(new.source)
     .bind(metadata.lyrics.as_deref())
+    // Ce que le fichier annonçait avant toute réécriture : sans cette mémoire,
+    // une identification erronée serait irréversible.
+    .bind(&metadata.title)
+    .bind(metadata.filing_artist())
+    .bind(metadata.album.as_deref())
     .fetch_one(&mut *tx)
     .await?;
 
@@ -358,6 +383,10 @@ pub async fn update_track_identity(
     file_size: i64,
     artwork_hash: Option<&str>,
     recording_mbid: Option<&str>,
+    // `score` : confiance de l'empreinte acoustique, entre 0 et 1.
+    // `note`  : ce qui a emporté la décision, en clair, affiché à l'utilisateur.
+    score: Option<f64>,
+    note: Option<&str>,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     let now = now_ms();
@@ -381,6 +410,7 @@ pub async fn update_track_identity(
              title = ?, normalized_title = ?, album_id = ?, track_no = ?, disc_no = ?,
              year = ?, relative_path = ?, content_hash = ?, file_size = ?,
              recording_mbid = ?, identification_state = 'done', identified_at = ?,
+             identification_score = ?, identification_note = ?,
              lyrics = COALESCE(?, lyrics), analysis_error = NULL
          WHERE id = ?",
     )
@@ -395,6 +425,8 @@ pub async fn update_track_identity(
     .bind(file_size)
     .bind(recording_mbid)
     .bind(now)
+    .bind(score)
+    .bind(note)
     .bind(metadata.lyrics.as_deref())
     .bind(track_id)
     .execute(&mut *tx)
@@ -469,6 +501,96 @@ pub async fn mark_identification(pool: &SqlitePool, track_id: i64, state: &str) 
         .execute(pool)
         .await?;
 
+    Ok(())
+}
+
+/// Consigne le refus d'une correspondance, avec sa raison.
+///
+/// L'état `rejected` se distingue de `not_found` : le morceau **a** une
+/// correspondance dans les bases publiques, mais elle ne résiste pas à la
+/// confrontation avec les tags du fichier. Réessayer n'y changerait rien —
+/// l'empreinte est déterministe. La raison est conservée pour être montrée :
+/// « pourquoi ce morceau n'a-t-il pas été identifié ? » mérite une réponse.
+pub async fn mark_identification_rejected(
+    pool: &SqlitePool,
+    track_id: i64,
+    note: &str,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE tracks SET identification_state = 'rejected', identified_at = ?,
+                           identification_note = ?
+          WHERE id = ?",
+    )
+    .bind(now_ms())
+    .bind(note)
+    .bind(track_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Rétablit l'identité d'origine d'un morceau.
+///
+/// L'état passe à `rejected` et non à `pending` : sans cela l'ouvrier
+/// reprendrait le morceau au tour suivant et réappliquerait exactement la
+/// correspondance que l'utilisateur vient de refuser.
+pub async fn restore_identity(
+    pool: &SqlitePool,
+    track_id: i64,
+    title: &str,
+    artist: Option<&str>,
+    album: Option<&str>,
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let now = now_ms();
+
+    let artist_id = match artist.filter(|name| !name.trim().is_empty()) {
+        Some(name) => Some(upsert_artist(&mut tx, name, now).await?),
+        None => None,
+    };
+
+    let album_id = match album.filter(|name| !name.trim().is_empty()) {
+        Some(name) => Some(upsert_album(&mut tx, name, artist_id, None, None, now).await?),
+        None => None,
+    };
+
+    sqlx::query(
+        "UPDATE tracks SET title = ?, normalized_title = ?, album_id = ?,
+                           identification_state = 'rejected',
+                           identification_note = 'tags d''origine rétablis à la main',
+                           recording_mbid = NULL
+          WHERE id = ?",
+    )
+    .bind(title)
+    .bind(normalize_key(title))
+    .bind(album_id)
+    .bind(track_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM track_artists WHERE track_id = ?")
+        .bind(track_id)
+        .execute(&mut *tx)
+        .await?;
+
+    if let Some(artist_id) = artist_id {
+        link_artist(&mut tx, track_id, artist_id, "main", 0).await?;
+    }
+
+    // L'index de recherche doit suivre, sans quoi le morceau resterait
+    // trouvable sous le nom qu'on vient d'effacer.
+    sqlx::query(
+        "UPDATE tracks_fts SET title = ?, artists = ?, album = ? WHERE track_id = ?",
+    )
+    .bind(title)
+    .bind(artist.unwrap_or(""))
+    .bind(album.unwrap_or(""))
+    .bind(track_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 

@@ -357,6 +357,59 @@ fn leading_track_number(text: &str) -> Option<(u32, &str)> {
     Some((number, rest))
 }
 
+/// Réécrit l'identité d'un fichier : titre, artiste, album.
+///
+/// Modifie le bloc de tags existant plutôt que d'en reconstruire un neuf — à la
+/// différence de `identify::tagger::write_tags`. Rétablir un titre ne doit pas
+/// emporter la pochette, les paroles ou le numéro de piste au passage.
+pub fn rewrite_identity(
+    path: &Path,
+    title: &str,
+    artist: Option<&str>,
+    album: Option<&str>,
+) -> Result<()> {
+    use lofty::config::WriteOptions;
+    use lofty::prelude::TagExt;
+    use lofty::tag::Tag;
+
+    let mut tagged = lofty::read_from_path(path)
+        .map_err(|error| OnzerError::Invalid(format!("lecture des tags : {error}")))?;
+
+    let kind = tagged.primary_tag_type();
+    if tagged.primary_tag_mut().is_none() {
+        tagged.insert_tag(Tag::new(kind));
+    }
+
+    let Some(tag) = tagged.primary_tag_mut() else {
+        return Err(OnzerError::Invalid(
+            "impossible de créer un bloc de tags".to_string(),
+        ));
+    };
+
+    tag.set_title(title.to_string());
+
+    match artist {
+        Some(name) => {
+            tag.set_artist(name.to_string());
+            tag.insert_text(ItemKey::AlbumArtist, name.to_string());
+        }
+        None => {
+            tag.remove_artist();
+            tag.remove_key(&ItemKey::AlbumArtist);
+        }
+    }
+
+    match album {
+        Some(name) => tag.set_album(name.to_string()),
+        None => tag.remove_album(),
+    }
+
+    tag.save_to_path(path, WriteOptions::default())
+        .map_err(|error| OnzerError::Invalid(format!("écriture des tags : {error}")))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

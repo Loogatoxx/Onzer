@@ -5,11 +5,13 @@
 //! connexion à la base, et retourne des résultats (ADR-002).
 
 pub mod artwork;
+pub mod audio_hash;
 pub mod hash;
 pub mod importer;
 pub mod lyrics;
 pub mod metadata;
 pub mod naming;
+pub mod repair;
 pub mod scanner;
 
 pub use importer::{FileHandling, ImportOutcome};

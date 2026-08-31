@@ -29,6 +29,7 @@ use super::coverart::CoverArtClient;
 use super::fingerprint;
 use super::musicbrainz::MusicBrainzClient;
 use super::tagger;
+use super::verdict;
 
 /// Clé de réglage où l'utilisateur dépose sa clé AcoustID.
 pub const API_KEY_SETTING: &str = "acoustid_api_key";
@@ -310,6 +311,44 @@ async fn identify_one(
         }
     };
 
+    // ── Corroboration ───────────────────────────────────────────────────
+    //
+    // L'empreinte a désigné une fiche ; reste à savoir si cette fiche décrit
+    // bien CE fichier. C'est l'étape qui manquait quand un morceau de Damso
+    // s'est retrouvé étiqueté « carmen (Clip Officiel) » de Stromae.
+    let evidence = match file_evidence(pool, track_id).await {
+        Ok(evidence) => evidence,
+        Err(error) => {
+            tracing::warn!(track_id, %error, "tags d'origine illisibles");
+            verdict::FileEvidence::default()
+        }
+    };
+
+    let candidate = verdict::CandidateEvidence {
+        title: metadata.title.clone(),
+        artist: metadata.filing_artist().map(str::to_string),
+        length_ms: metadata.length_ms,
+        release_count: metadata.release_count,
+        score: identification.score,
+    };
+
+    let decision = verdict::assess(&evidence, &candidate);
+
+    if !decision.is_accepted() {
+        // Refus définitif, et non « à réessayer » : la même empreinte donnera
+        // la même réponse demain. Le morceau garde ses tags, et la raison du
+        // refus est conservée pour être affichée.
+        tracing::info!(
+            track_id,
+            propose = %metadata.title,
+            raison = decision.note(),
+            "identification refusée"
+        );
+        clear_error(pool).await;
+        let _ = repository::mark_identification_rejected(pool, track_id, decision.note()).await;
+        return Attempt::Settled;
+    }
+
     // ── Pochette ────────────────────────────────────────────────────────
     // Facultative : son absence ne remet pas en cause l'identification.
     let cover = match cover_art {
@@ -331,6 +370,10 @@ async fn identify_one(
         relative_path,
         &metadata,
         cover.as_deref(),
+        &tagger::IdentificationTrace {
+            score: identification.score,
+            note: decision.note(),
+        },
     )
     .await
     {
@@ -353,6 +396,40 @@ async fn identify_one(
     }
 
     Attempt::Settled
+}
+
+/// Ce que le fichier annonçait avant toute réécriture.
+///
+/// Les colonnes `original_*` sont renseignées à l'import et **jamais touchées
+/// ensuite** : c'est la seule mémoire de ce qu'était le morceau. Sur une
+/// bibliothèque importée avant leur existence, elles sont vides, et l'on se
+/// rabat sur les valeurs courantes — qui n'ont pas encore été réécrites
+/// puisque l'identification est en cours.
+async fn file_evidence(pool: &SqlitePool, track_id: i64) -> Result<verdict::FileEvidence> {
+    let row: Option<(Option<String>, Option<String>, String, i64)> = sqlx::query_as(
+        "SELECT t.original_title,
+                COALESCE(t.original_artist,
+                         (SELECT a.name FROM track_artists ta
+                            JOIN artists a ON a.id = ta.artist_id
+                           WHERE ta.track_id = t.id AND ta.role = 'main'
+                           ORDER BY ta.position LIMIT 1)),
+                t.title,
+                t.duration_ms
+           FROM tracks t WHERE t.id = ?",
+    )
+    .bind(track_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some((original_title, artist, current_title, duration_ms)) = row else {
+        return Ok(verdict::FileEvidence::default());
+    };
+
+    Ok(verdict::FileEvidence {
+        title: original_title.or(Some(current_title)),
+        artist,
+        duration_ms,
+    })
 }
 
 /// Remet toute la bibliothèque en file d'identification.

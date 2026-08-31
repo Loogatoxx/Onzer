@@ -180,6 +180,7 @@ function LyricsPane({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
 
   const container = useRef<HTMLDivElement>(null);
   const activeLine = useRef<HTMLParagraphElement>(null);
@@ -189,6 +190,7 @@ function LyricsPane({
     setEditing(false);
     setDraft("");
     setError(null);
+    setSearching(false);
 
     let active = true;
     void ipc
@@ -219,6 +221,30 @@ function LyricsPane({
       setEditing(false);
     } catch (cause) {
       setError(String(cause));
+    }
+  }
+
+  /**
+   * Va chercher les paroles sur LRCLIB.
+   *
+   * Sur clic explicite : Onzer est un lecteur hors ligne, et rien ne part sur
+   * le réseau sans que l'utilisateur l'ait demandé.
+   */
+  async function search() {
+    setSearching(true);
+    setError(null);
+
+    try {
+      const found = await ipc.fetchLyrics(trackId);
+      if (found.synced.length === 0 && found.plain.length === 0) {
+        setError("Aucune parole trouvée pour ce morceau.");
+      } else {
+        setLyrics(found);
+      }
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setSearching(false);
     }
   }
 
@@ -267,14 +293,36 @@ function LyricsPane({
   if (lyrics.synced.length === 0 && lyrics.plain.length === 0) {
     return (
       <div className="py-10 text-center">
-        <p className="text-sm text-ink-muted">Pas de paroles pour ce morceau.</p>
+        <p className="text-sm text-ink-muted">
+          Ce fichier ne contient pas de paroles.
+        </p>
+
+        <button
+          type="button"
+          disabled={searching}
+          onClick={() => void search()}
+          className="mt-4 inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-base transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          <span className={searching ? "animate-spin" : ""}>
+            <Icon name={searching ? "repeat" : "search"} size={15} />
+          </span>
+          {searching ? "Recherche…" : "Chercher en ligne"}
+        </button>
+
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="mt-4 rounded-full bg-elevated px-4 py-2 text-[13px] font-semibold text-ink transition-colors hover:bg-raised"
+          className="mt-2 block w-full text-[13px] text-ink-faint transition-colors hover:text-ink"
         >
-          Ajouter des paroles
+          Les coller à la main
         </button>
+
+        {error !== null && <p className="mt-4 text-xs text-warn">{error}</p>}
+
+        <p className="mt-6 text-[11px] leading-relaxed text-ink-faint">
+          La recherche envoie l'artiste, le titre et la durée à LRCLIB. Rien
+          d'autre ne quitte ta machine, et rien n'est envoyé sans ce clic.
+        </p>
       </div>
     );
   }

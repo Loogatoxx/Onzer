@@ -44,6 +44,25 @@ export interface TrackSummary {
   addedAt: number;
 }
 
+/** Miroir de `commands::collection::LyricsProgress`. */
+export interface LyricsProgress {
+  withLyrics: number;
+  total: number;
+  /** Vrai tant qu'une récupération en lot tourne. */
+  running: boolean;
+}
+
+/** Miroir de `commands::collection::SuspectTrack`. */
+export interface SuspectTrack {
+  id: number;
+  /** Ce qu'Onzer a écrit après identification. */
+  title: string;
+  artist: string | null;
+  /** Ce que le fichier annonçait avant. */
+  originalTitle: string;
+  originalArtist: string | null;
+}
+
 /** Miroir de `db::playlists::PlaylistSummary`. */
 export interface PlaylistSummary {
   id: number;
@@ -410,6 +429,28 @@ export const ipc = {
     invoke<Lyrics>("track_lyrics", { trackId }),
   setTrackLyrics: (trackId: number, raw: string): Promise<Lyrics> =>
     invoke<Lyrics>("set_track_lyrics", { trackId, raw }),
+
+  /**
+   * Cherche les paroles sur LRCLIB.
+   *
+   * Sur action explicite uniquement : Onzer reste un lecteur hors ligne, et
+   * rien ne part sur le réseau sans que l'utilisateur l'ait demandé.
+   */
+  fetchLyrics: (trackId: number): Promise<Lyrics> =>
+    invoke<Lyrics>("fetch_lyrics", { trackId }),
+
+  /** Lance la récupération en lot. Retourne le nombre de morceaux à traiter. */
+  fetchMissingLyrics: (): Promise<number> => invoke<number>("fetch_missing_lyrics"),
+
+  lyricsProgress: (): Promise<LyricsProgress> =>
+    invoke<LyricsProgress>("lyrics_progress"),
+
+  /** Morceaux dont l'identification contredit les tags d'origine du fichier. */
+  suspectTracks: (): Promise<SuspectTrack[]> =>
+    invoke<SuspectTrack[]>("suspect_tracks"),
+
+  restoreOriginalTags: (trackId: number): Promise<void> =>
+    invoke<void>("restore_original_tags", { trackId }),
 };
 
 /** Millisecondes → « 1 240 » minutes, sans décimale. */

@@ -174,6 +174,19 @@ est déjà monté, macOS montera celui-ci sur `/Volumes/Lexar 1`.
 - ✅ Le SSD ne contient que de l'audio standard : il reste lisible par n'importe quel autre
   lecteur, sans verrouillage propriétaire.
 
+**Conséquence découverte à la compilation — les fichiers AppleDouble.**
+macOS matérialise les attributs étendus dans des fichiers frères `._<nom>` sur les
+systèmes de fichiers non natifs. Le dépôt lui-même vivant sur ce volume exFAT, deux
+outils s'y sont cassé les dents :
+
+| Outil | Symptôme | Parade |
+|---|---|---|
+| Build script de `tauri` | Parcourt les `.toml` de `target/` et panique sur `._default.toml`, qui n'est pas de l'UTF-8 | `.cargo/config.toml` déplace `target/` vers `~/Library/Caches/onzer/` — corrige le bug **et** accélère les compilations |
+| `sqlx::migrate!` | Sélectionne les fichiers par extension `.sql` : ramasserait `._0001_initial.sql` comme une migration | `build.rs` purge les `._*` de `migrations/` avant l'expansion de la macro |
+
+Ces deux parades sont la raison pour laquelle `.gitignore` exclut `._*` et pour laquelle
+`build.rs` contient du code qui, hors de ce contexte, paraîtrait injustifié.
+
 **Règles induites sur le schéma de base :**
 1. Aucun chemin absolu stocké. La racine de bibliothèque vit dans les réglages ; chaque
    morceau ne stocke qu'un **chemin relatif**.
@@ -210,9 +223,50 @@ destructive du point de vue de l'utilisateur. Chaque déplacement est donc journ
 
 ---
 
+## ADR-008 — Journal d'écoute immuable, agrégats dérivés
+
+**Contexte.** La recommandation et les statistiques se nourrissent des mêmes données.
+Le réflexe habituel — incrémenter un compteur `play_count` sur chaque morceau — écrase
+l'information au fil de l'eau : la question « qu'est-ce que j'écoutais le mardi soir en
+novembre ? » devient définitivement sans réponse, et changer la formule de scoring de la
+recommandation obligerait à repartir de zéro.
+
+**Décision.** `play_events` est un **journal append-only**, protégé par un trigger.
+Tous les compteurs, scores d'affinité et profils de contexte en sont **dérivés** et
+donc entièrement recalculables.
+
+Détail complet et justification de chaque colonne : [`DB_SCHEMA.md`](DB_SCHEMA.md).
+Le SQL commenté fait foi dans `src-tauri/migrations/`.
+
+**Conséquences.**
+- ✅ Toute évolution d'algorithme est rejouable sur l'historique complet.
+- ✅ Six signaux comportementaux capturés dès la v1 — dont `skip_at_ms` (position exacte
+  du skip) et `source` (origine de l'écoute), sans lesquels la qualité du moteur serait
+  invérifiable.
+- ⚠️ Coût : environ 10 Mo par an pour 5 000 morceaux. Négligeable, donc **aucune purge
+  n'est prévue** : l'historique est conservé à vie.
+- ⚠️ Règle à tenir : un morceau n'est **jamais** supprimé physiquement. `is_available = 0`
+  signale une absence temporaire (SSD débranché), `deleted_at` un retrait volontaire.
+  Dans les deux cas, l'historique survit.
+
+**Vérification.** Quatre garde-fous sont couverts par des tests dans
+`src-tauri/src/db/mod.rs` : trigger append-only, clés étrangères actives, disponibilité
+de FTS5 et insensibilité aux accents.
+
+---
+
+## Dette technique assumée
+
+| Sujet | État | Raison |
+|---|---|---|
+| Génération des types TS depuis Rust (`specta`) | Reportée | La surface IPC se limite à une commande. `specta` n'existe qu'en version *release candidate* ; l'introduire maintenant apporterait de l'instabilité pour un bénéfice nul. Les types de `src/lib/ipc.ts` sont écrits à la main **et commentés comme tels**. À rebrancher dès que les commandes se multiplient. |
+| Icône de l'application | Provisoire | Générée par `tools/icon/generate-icon.mjs` (dégradé violet → cyan des jetons de design, sans aucune dépendance). Reproductible et fonctionnelle, mais à remplacer si une identité visuelle définitive est arrêtée. |
+
+---
+
 ## Journal des décisions à venir
 
-- [ ] ADR-008 — Schéma de base de données et stratégie de migrations
 - [ ] ADR-009 — Architecture du moteur audio (gapless, crossfade, ReplayGain)
-- [ ] ADR-010 — Moteur de recommandation : signaux, scoring, exploration
-- [ ] ADR-011 — Contrat d'import externe (dossier surveillé + API locale)
+- [ ] ADR-010 — Scanner de bibliothèque et lecture des métadonnées
+- [ ] ADR-011 — Moteur de recommandation : signaux, scoring, exploration
+- [ ] ADR-012 — Contrat d'import externe (dossier surveillé + API locale)

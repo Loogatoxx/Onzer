@@ -39,12 +39,8 @@ Cible actuelle : **macOS**. L'architecture est volontairement *Android-ready* �
 | Outil | Version | Statut |
 |---|---|---|
 | Node.js | ≥ 20 | ✅ |
+| Rust | ≥ 1.77 | ✅ |
 | Xcode Command Line Tools | — | ✅ |
-| Rust | ≥ 1.77 | ⚠️ à installer |
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
 
 ---
 
@@ -52,8 +48,26 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ```bash
 npm install
-npm run tauri dev
+npm run app
 ```
+
+| Commande | Effet |
+|---|---|
+| `npm run app` | Lance l'application en développement (front + backend Rust) |
+| `npm run app:build` | Produit un `.app` et un `.dmg` |
+| `npm run build` | Vérifie les types TypeScript et compile le frontend seul |
+| `cargo test` *(dans `src-tauri/`)* | Exécute les tests du cœur métier |
+
+### ⚠️ Le dossier de compilation vit hors du projet
+
+Le dépôt est hébergé sur un volume **exFAT**, sur lequel macOS crée des fichiers
+AppleDouble `._*`. Le build script de Tauri parcourt les fichiers `.toml` de
+`target/` et **plante** en tombant sur l'un d'eux.
+
+[`.cargo/config.toml`](.cargo/config.toml) redirige donc les artefacts vers
+`~/Library/Caches/onzer/target`. Cela corrige le bug et accélère nettement les
+compilations. Le chemin y est absolu — Cargo n'interprète pas `~` — donc
+**une seule ligne est à adapter sur une autre machine**.
 
 ---
 

@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Jetons de design d'Onzer.
+
+   Ces variables sont la SEULE source de vérité pour les couleurs. Aucun
+   composant ne doit écrire une valeur hexadécimale en dur : c'est ce qui
+   permettra de faire évoluer l'identité visuelle sans repasser sur 40 fichiers.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@theme {
+  /* Fonds, du plus profond au plus élevé */
+  --color-base: #0a0a0c;
+  --color-surface: #131317;
+  --color-elevated: #1b1b21;
+  --color-line: #26262e;
+
+  /* Texte */
+  --color-ink: #f2f2f5;
+  --color-ink-muted: #8b8b96;
+  --color-ink-faint: #5a5a64;
+
+  /* Accents — identité violet → cyan */
+  --color-accent: #8b5cf6;
+  --color-accent-soft: #a78bfa;
+  --color-accent-alt: #22d3ee;
+
+  /* États */
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-danger: #f87171;
+
+  /* Courbes d'animation : une seule pour toute l'application, c'est ce qui
+     donne l'impression que tout bouge « du même geste ». */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-base);
+    color: var(--color-ink);
+    font-family:
+      ui-sans-serif, -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    /* Une application native ne se sélectionne pas au glissé de souris. */
+    user-select: none;
+    cursor: default;
+    overflow: hidden;
+  }
+
+  /* Respecte le réglage d'accessibilité du système. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Zone de glissement de la fenêtre (barre de titre masquée). */
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+}

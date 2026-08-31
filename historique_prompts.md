@@ -113,3 +113,77 @@ amovible — un problème qui, non traité, aurait provoqué des pertes de réf�
 et des corruptions de base.
 
 ---
+
+## Entrée 004 — Schéma de base de données et socle technique
+
+**📅 Date :** 2026-08-31
+
+**💬 Prompt**
+Réponses aux deux questions posées : dédoublonnage à l'import par **hash de fichier + tags**,
+et pour la suite, consigne de faire « ce qui est recommandé pour mon cas ».
+
+**🤖 Réponse (résumé)**
+Conception du schéma autour d'un principe unique : `play_events` est un **journal
+append-only**, et tous les compteurs et scores en sont dérivés, donc recalculables.
+Ce choix garantit qu'une future évolution de la formule de recommandation pourra être
+rejouée sur l'historique complet au lieu de repartir de zéro.
+Six signaux comportementaux capturés dès la v1, dont `skip_at_ms` (position exacte du skip,
+qui distingue un rejet d'un simple changement d'humeur) et `source` (origine de l'écoute,
+seule façon de mesurer si le moteur est bon).
+Le SQL a été validé par exécution réelle avant toute écriture de code Rust : FTS5 confirmé
+disponible, recherche insensible aux accents vérifiée (`beyonce` → `Beyoncé`), et les quatre
+garde-fous testés un à un.
+Scaffolding complet du projet dans la foulée, avec la couche d'accès Rust et un écran de
+diagnostic validant la chaîne React → IPC → Rust → SQLite de bout en bout.
+
+**🔧 Modifications**
+- ➕ `src-tauri/migrations/0001_initial.sql` — 17 tables réparties en 5 groupes
+  (référentiel, journal, dérivés, playlists, système), index partiels, contraintes `CHECK`,
+  table virtuelle FTS5 et trigger anti-suppression du journal
+- ➕ `src-tauri/src/core/` — `error.rs` (erreur unique sérialisable pour l'IPC) et
+  `paths.rs` (`PathResolver` : chemins relatifs, refus des remontées `..`, détection du
+  SSD débranché) avec 7 tests
+- ➕ `src-tauri/src/db/` — pool SQLite réglé (WAL, clés étrangères, cache 32 Mo),
+  migrations embarquées dans le binaire, réglages persistants, 7 tests d'intégration
+- ➕ `src-tauri/src/commands/system.rs` — commande `app_status`, sans logique métier (ADR-004)
+- ➕ `src-tauri/src/lib.rs` + `main.rs` — démarrage, migrations bloquantes, restauration
+  de la racine de bibliothèque, journalisation `tracing`
+- ➕ Scaffolding frontend — Vite 7, React 19, TypeScript en mode strict maximal,
+  Tailwind v4 avec jetons de design centralisés, client IPC typé, écran de diagnostic
+- ➕ `docs/DB_SCHEMA.md` — justification de chaque décision structurante du schéma
+- ✏️ `docs/ARCHITECTURE.md` — **ADR-008** (journal immuable) et section
+  « Dette technique assumée » documentant le report de `specta` et l'absence d'icônes
+- 🔧 Correction `tsconfig.node.json` — un projet référencé doit émettre (TS6306/TS6310)
+- ➕ `.cargo/config.toml` — déplace les artefacts de compilation hors du volume exFAT
+- ✏️ `src-tauri/build.rs` — purge les fichiers AppleDouble de `migrations/` avant
+  l'expansion de `sqlx::migrate!`
+- ➕ `tools/icon/generate-icon.mjs` — générateur d'icône sans dépendance (encodeur PNG
+  écrit à la main), reprenant les jetons de design de l'application
+- 🔧 Ajout de la feature `macros` à sqlx, sans laquelle `sqlx::migrate!` n'existe pas
+
+**✅ Vérifications effectuées**
+- 14 tests Rust au vert (résolution de chemins, migrations, FTS5, garde-fous du journal)
+- Frontend compilé, TypeScript en mode strict sans erreur
+- Application lancée réellement : base créée dans
+  `~/Library/Application Support/com.loogatoxx.onzer/`, 24 tables, mode WAL confirmé,
+  migration v1 appliquée, aucune erreur au démarrage
+
+**🐞 Incident rencontré et résolu — les fichiers AppleDouble**
+La première compilation a échoué : le build script de Tauri panique en lisant
+`._default.toml` dans `target/`, un fichier binaire créé par macOS sur les volumes exFAT.
+L'inspection a révélé un second piège, plus grave car silencieux : un
+`._0001_initial.sql` présent dans `migrations/`, que `sqlx::migrate!` aurait sélectionné
+comme une vraie migration puisqu'il filtre par extension `.sql`.
+Deux parades posées : les artefacts de compilation sortent du volume exFAT (ce qui
+accélère aussi nettement les builds), et `build.rs` nettoie `migrations/` à chaque
+compilation. Les deux sont documentées dans l'ADR-006, faute de quoi ce code paraîtrait
+arbitraire à la relecture.
+
+**🎯 Objectif**
+Rendre la base de données réellement opérationnelle et vérifiée, plutôt que validée sur le
+papier. Chaque garde-fou a été testé en conditions réelles avant d'être documenté, et le
+schéma capture dès maintenant les signaux comportementaux fins que le moteur de
+recommandation exigera plus tard — ces données étant, par nature, impossibles à
+reconstituer après coup.
+
+---

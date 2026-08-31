@@ -1,0 +1,17 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Les artefacts de compilation sortent du volume exFAT. Deux raisons :
+#
+#  1. CORRECTION D'UN BUG RÉEL. macOS écrit des fichiers AppleDouble « ._* »
+#     sur les systèmes de fichiers non natifs. Le build script de Tauri parcourt
+#     les fichiers .toml de `target/` et plante sur « ._default.toml », qui est
+#     un binaire et non de l'UTF-8.
+#
+#  2. VITESSE. Une compilation Rust génère des dizaines de milliers de petits
+#     fichiers. Le NVMe interne va bien plus vite qu'un SSD USB en exFAT.
+#
+#  ⚠️ Chemin absolu et donc spécifique à cette machine : Cargo n'interprète ni
+#     « ~ » ni les variables d'environnement dans ce fichier. Sur une autre
+#     machine, adapter cette unique ligne.
+# ═══════════════════════════════════════════════════════════════════════════
+[build]
+target-dir = "/Users/carlos/Library/Caches/onzer/target"

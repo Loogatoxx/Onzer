@@ -1,0 +1,55 @@
+[package]
+name = "onzer"
+version = "0.1.0"
+description = "Lecteur musical 100% local et hors-ligne"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+# `onzer_lib` contient toute la logique. Le binaire `main.rs` ne fait que
+# l'appeler : c'est ce qui rend le cœur testable sans lancer l'application.
+name = "onzer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+# Sérialisation — frontière IPC et champs JSON en base
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Base de données. `migrate` embarque les fichiers SQL dans le binaire :
+# aucun fichier externe à déployer.
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+    "migrate",
+    # `macros` fournit `sqlx::migrate!`, qui embarque les fichiers SQL dans le
+    # binaire à la compilation. Sans elle, la macro n'existe pas.
+    "macros",
+] }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs"] }
+
+# Gestion d'erreurs
+thiserror = "2"
+
+# Journalisation structurée
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Hash de contenu des fichiers audio (dédoublonnage et ré-identification)
+blake3 = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

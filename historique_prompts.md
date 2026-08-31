@@ -72,3 +72,44 @@ Poser le socle documentaire et le versioning avant tout code, et transformer l'i
 seul moyen de rendre ce portage possible sans réécriture.
 
 ---
+
+## Entrée 003 — Stratégie plateforme et stockage sur SSD externe
+
+**📅 Date :** 2026-08-31
+
+**💬 Prompt**
+Précisions sur la bibliothèque : entre 500 et 5 000 morceaux, à stocker sur le SSD Lexar,
+triés par auteur puis éventuellement par année ou par album. Rust confirmé comme installé.
+Remise en question de la stratégie multi-plateforme : plutôt que du cross-platform,
+faire une application macOS seule, puis une application Android distincte réutilisant les
+mêmes concepts, et éventuellement Windows et iOS ensuite. Demande explicite de transparence
+sur cette approche.
+
+**🤖 Réponse (résumé)**
+Approche validée, avec une auto-correction assumée : l'ADR-002 avait été présenté comme
+« Android-ready » alors qu'aucune de ses cinq règles ne constituait un compromis pour Android.
+Chacune a été rejustifiée par son seul bénéfice sur macOS — notamment `symphonia`, qui est
+le seul moyen d'obtenir un gapless et un crossfade corrects. Distinction posée : ce qui casse
+en cross-platform est le **partage de l'UI**, pas le partage du cœur métier.
+Inspection de l'environnement : Rust 1.98 opérationnel, SSD Lexar de 954 Go **en exFAT**.
+Quatre défauts d'exFAT documentés (pas de journalisation, insensibilité à la casse,
+caractères interdits, verrous POSIX peu fiables) plus l'instabilité du point de montage,
+menant à la décision de séparer l'audio (SSD) des données applicatives (disque interne).
+
+**🔧 Modifications**
+- ✏️ `docs/ARCHITECTURE.md` — ADR-002 **réécrit** : « Cœur métier isolé de l'UI » au lieu de
+  « portable Android » ; chaque règle rejustifiée sur macOS ; droit explicite donné à la
+  couche UI d'utiliser les API macOS (Now Playing, touches média)
+- ➕ `docs/ARCHITECTURE.md` — **ADR-006** : audio sur le SSD, base SQLite et caches sur le
+  disque interne ; règles induites (chemins relatifs, hash de contenu, `is_available`)
+- ➕ `docs/ARCHITECTURE.md` — **ADR-007** : convention de rangement
+  `Artiste/Année - Album/NN - Titre`, cas particuliers (singles, featurings, année inconnue,
+  non identifiés), assainissement exFAT et journalisation des déplacements pour réversibilité
+
+**🎯 Objectif**
+Aligner l'architecture sur une cible macOS assumée sans sacrifier la réutilisabilité du cœur,
+et neutraliser en amont les risques propres à une bibliothèque hébergée sur un volume exFAT
+amovible — un problème qui, non traité, aurait provoqué des pertes de références de fichiers
+et des corruptions de base.
+
+---

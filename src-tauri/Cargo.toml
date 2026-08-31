@@ -3,7 +3,7 @@ name = "onzer"
 version = "0.1.0"
 description = "Lecteur musical 100% local et hors-ligne"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.82"
 
 [lib]
 # `onzer_lib` contient toute la logique. Le binaire `main.rs` ne fait que
@@ -67,6 +67,9 @@ image = { version = "0.25.6", default-features = false, features = [
 # Sélecteur de dossier natif macOS, pour choisir la racine de bibliothèque.
 # La version doit rester alignée sur @tauri-apps/plugin-dialog côté npm.
 tauri-plugin-dialog = "2.7"
+rodio = { version = "0.22", default-features = false, features = ["playback", "symphonia-all"] }
+uuid = { version = "1.20.0", features = ["v4"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 
 [dev-dependencies]
 tempfile = "3"

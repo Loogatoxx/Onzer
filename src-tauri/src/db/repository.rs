@@ -381,6 +381,43 @@ pub async fn list_tracks(pool: &SqlitePool, limit: i64, offset: i64) -> Result<V
     Ok(tracks)
 }
 
+/// Charge des morceaux par identifiant, **en préservant l'ordre demandé**.
+///
+/// L'ordre compte : c'est celui de la file de lecture. `IN (…)` ne le garantit
+/// pas, le tri est donc refait côté Rust.
+pub async fn tracks_by_ids(pool: &SqlitePool, ids: &[i64]) -> Result<Vec<TrackSummary>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = std::iter::repeat_n("?", ids.len()).collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT
+             t.id, t.title,
+             (SELECT a.name FROM track_artists ta
+                JOIN artists a ON a.id = ta.artist_id
+               WHERE ta.track_id = t.id AND ta.role = 'main'
+               ORDER BY ta.position LIMIT 1)          AS artist,
+             al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
+             t.relative_path, t.is_available, al.artwork_hash
+         FROM tracks t
+         LEFT JOIN albums al ON al.id = t.album_id
+         WHERE t.id IN ({placeholders}) AND t.deleted_at IS NULL"
+    );
+
+    let mut query = sqlx::query_as::<_, TrackSummary>(&sql);
+    for id in ids {
+        query = query.bind(id);
+    }
+
+    let found = query.fetch_all(pool).await?;
+
+    let mut by_id: std::collections::HashMap<i64, TrackSummary> =
+        found.into_iter().map(|track| (track.id, track)).collect();
+
+    Ok(ids.iter().filter_map(|id| by_id.remove(id)).collect())
+}
+
 /// Recherche plein texte. Le terme est protégé pour que la ponctuation saisie
 /// par l'utilisateur ne soit pas interprétée comme de la syntaxe FTS5.
 pub async fn search_tracks(pool: &SqlitePool, query: &str, limit: i64) -> Result<Vec<TrackSummary>> {

@@ -249,3 +249,62 @@ aurait progressivement saturé le disque interne. La contrainte « le volumineux
 SSD » est désormais inscrite en ADR plutôt que tenue de mémoire.
 
 ---
+
+---
+
+## Entrée 006 — Moteur audio et journal d'écoute
+
+**📅 Date :** 2026-08-31
+
+**💬 Prompt**
+Consigne de continuer avec l'étape recommandée, en respectant la structure, et d'ordonner
+les fonctionnalités comme le ferait un vrai chef de projet — les deux features (moteur audio
+et import automatique) devant de toute façon exister à terme.
+
+**🤖 Réponse (résumé)**
+Justification de l'ordre avant d'écrire la moindre ligne : le moteur audio est sur le
+**chemin critique** de la recommandation et des statistiques, puisque `play_events` reste
+vide sans lecture ; il porte le **risque technique le plus élevé**, qu'un chef de projet
+attaque tôt ; et surtout, sa valeur **capitalise dans le temps** — chaque semaine sans
+lecteur est une semaine de données d'écoute définitivement perdues pour l'IA. L'import
+automatique, lui, aura la même valeur dans trois semaines qu'aujourd'hui.
+
+Trois pièces distinctes, dont deux testables sans carte son :
+le thread audio (qui possède le flux `cpal`, non `Send` sur macOS), la file de lecture, et
+le journal d'écoute conçu comme une machine à états à **temps injecté**.
+
+**🔧 Modifications**
+- ➕ `src-tauri/src/audio/tracking.rs` — machine à états du journal d'écoute, 17 tests.
+  Distingue temps écoulé, temps écouté et position ; capture la position exacte des sauts
+- ➕ `src-tauri/src/audio/device.rs` — thread audio dédié, piloté par messages, état publié
+  par entiers atomiques
+- ➕ `src-tauri/src/audio/queue.rs` — file, répétition, aléatoire par Fisher-Yates, 18 tests
+- ➕ `src-tauri/src/audio/mod.rs` — `PlayerService`, chef d'orchestre
+- ➕ `src-tauri/src/audio/tests_playback.rs` — 5 tests de bout en bout ouvrant réellement le
+  périphérique audio et décodant de vrais fichiers
+- ➕ `src-tauri/src/db/events.rs` — persistance transactionnelle du journal, des compteurs,
+  de la matrice de transitions et des totaux de session, 11 tests
+- ➕ `src-tauri/src/commands/playback.rs` — 11 commandes IPC, deux canaux d'événements
+- ➕ `src/features/player/` — barre de lecture complète et hook de synchronisation
+- ✏️ `src/features/library/TrackList.tsx` — lignes cliquables, indicateur de lecture animé
+- ✏️ `docs/ARCHITECTURE.md` — **ADR-011** (choix de rodio et sa porte de sortie) et
+  **ADR-012** (journal d'écoute à temps injecté)
+
+**🐞 Défaut trouvé par un test**
+La position de lecture dérivait de quelques millisecondes **pendant les pauses** : `rodio`
+rapporte l'écoulement du tampon de sortie, pas l'intention de l'utilisateur. L'horloge de
+l'interface aurait tressauté à l'arrêt. La position est désormais figée explicitement en
+pause, et republiée uniquement après une commande qui la déplace.
+
+**✅ Vérifications effectuées**
+- **132 tests au vert**, dont 5 qui ouvrent le vrai périphérique audio, décodent un fichier,
+  attendent la fin du morceau et vérifient que l'écoute a été journalisée avec la bonne
+  raison de fin
+- Clippy sans aucun avertissement
+- Application lancée : « moteur audio prêt » au démarrage
+
+**🎯 Objectif**
+Ouvrir la boucle de collecte de données le plus tôt possible. Le moteur de recommandation
+n'existe pas encore, mais chaque écoute enregistrée à partir de maintenant l'alimentera —
+et ces données sont, par nature, impossibles à reconstituer rétroactivement.
+

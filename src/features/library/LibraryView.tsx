@@ -8,6 +8,8 @@ import {
   type ScanSummary,
   type TrackSummary,
 } from "@/lib/ipc";
+import { PlayerBar } from "@/features/player/PlayerBar";
+import { usePlayback } from "@/features/player/usePlayback";
 import { TrackList } from "./TrackList";
 
 /** Délai avant de lancer une recherche, pour ne pas requêter à chaque frappe. */
@@ -21,7 +23,21 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
   const [summary, setSummary] = useState<ScanSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const playback = usePlayback();
   const importing = progress !== null;
+
+  /**
+   * Lance la lecture à partir d'un morceau de la liste affichée.
+   *
+   * Toute la liste devient la file : lancer un titre depuis une recherche doit
+   * enchaîner sur les autres résultats, pas s'arrêter net.
+   */
+  function playFrom(index: number) {
+    void playback.play(
+      tracks.map((track) => track.id),
+      index,
+    );
+  }
 
   const reload = useCallback(async () => {
     const [loadedTracks, loadedCounts] = await Promise.all([
@@ -124,9 +140,33 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
         </p>
       )}
 
-      <div className="flex-1 overflow-y-auto">
-        <TrackList tracks={tracks} />
+      {playback.error !== null && (
+        <p className="border-b border-danger/25 bg-danger/5 px-5 py-2.5 text-xs text-danger">
+          {playback.error}
+        </p>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <TrackList
+          tracks={tracks}
+          currentTrackId={playback.state?.current?.trackId ?? null}
+          isPlaying={playback.state?.isPlaying ?? false}
+          onPlay={playFrom}
+        />
       </div>
+
+      {playback.state !== null && (
+        <PlayerBar
+          state={playback.state}
+          onToggle={() => void playback.toggle()}
+          onNext={() => void playback.next()}
+          onPrevious={() => void playback.previous()}
+          onSeek={(position) => void playback.seek(position)}
+          onVolume={(volume) => void playback.setVolume(volume)}
+          onShuffle={(shuffle) => void playback.toggleShuffle(shuffle)}
+          onRepeat={() => void playback.cycleRepeat(playback.state?.repeat ?? "off")}
+        />
+      )}
     </div>
   );
 }

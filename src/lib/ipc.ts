@@ -68,8 +68,55 @@ export interface ScanSummary {
   errors: string[];
 }
 
+/** Miroir de `audio::queue::QueueItem`. */
+export interface QueueItem {
+  trackId: number;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  durationMs: number;
+  relativePath: string;
+  artworkHash: string | null;
+}
+
+/** Miroir de `audio::queue::RepeatMode`. */
+export type RepeatMode = "off" | "all" | "one";
+
+/** Miroir de `audio::tracking::PlaySource`. */
+export type PlaySource =
+  | "library"
+  | "playlist"
+  | "radio"
+  | "reco"
+  | "search"
+  | "queue"
+  | "shuffle";
+
+/** Miroir de `audio::PlaybackSnapshot`. */
+export interface PlaybackSnapshot {
+  current: QueueItem | null;
+  queue: QueueItem[];
+  queueIndex: number | null;
+  isPlaying: boolean;
+  positionMs: number;
+  durationMs: number;
+  volume: number;
+  repeat: RepeatMode;
+  shuffle: boolean;
+}
+
+/** Miroir de `commands::playback::PlaybackTick`. */
+export interface PlaybackTick {
+  positionMs: number;
+  isPlaying: boolean;
+}
+
 /** Doit correspondre à `commands::library::SCAN_PROGRESS_EVENT`. */
 const SCAN_PROGRESS_EVENT = "library://scan-progress";
+/** Doit correspondre à `commands::playback::STATE_EVENT`. */
+const PLAYBACK_STATE_EVENT = "playback://state";
+/** Doit correspondre à `commands::playback::TICK_EVENT`. */
+const PLAYBACK_TICK_EVENT = "playback://tick";
 
 export const ipc = {
   appStatus: (): Promise<AppStatus> => invoke<AppStatus>("app_status"),
@@ -97,6 +144,42 @@ export const ipc = {
   /** S'abonne à la progression d'un import. Retourne la fonction de désabonnement. */
   onScanProgress: (handler: (progress: ScanProgress) => void): Promise<UnlistenFn> =>
     listen<ScanProgress>(SCAN_PROGRESS_EVENT, (event) => handler(event.payload)),
+
+  // ── Lecture ───────────────────────────────────────────────────────────
+  // Toutes ces commandes retournent l'instantané mis à jour : l'interface
+  // réagit sans attendre le prochain battement du backend.
+
+  playTracks: (
+    trackIds: number[],
+    startAt = 0,
+    source: PlaySource = "library",
+  ): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("play_tracks", { trackIds, startAt, source }),
+
+  togglePlayback: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("toggle_playback"),
+  nextTrack: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("next_track"),
+  previousTrack: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("previous_track"),
+  stopPlayback: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("stop_playback"),
+  playbackState: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("playback_state"),
+
+  jumpInQueue: (index: number): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("jump_in_queue", { index }),
+  seekTo: (positionMs: number): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("seek_to", { positionMs }),
+  setVolume: (volume: number): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("set_volume", { volume }),
+  setRepeat: (mode: RepeatMode): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("set_repeat", { mode }),
+  setShuffle: (shuffle: boolean): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("set_shuffle", { shuffle }),
+
+  /** Changement de morceau ou de file. Peu fréquent, charge complète. */
+  onPlaybackState: (handler: (state: PlaybackSnapshot) => void): Promise<UnlistenFn> =>
+    listen<PlaybackSnapshot>(PLAYBACK_STATE_EVENT, (event) => handler(event.payload)),
+
+  /** Battement de position, quatre fois par seconde. Charge minimale. */
+  onPlaybackTick: (handler: (tick: PlaybackTick) => void): Promise<UnlistenFn> =>
+    listen<PlaybackTick>(PLAYBACK_TICK_EVENT, (event) => handler(event.payload)),
 };
 
 /** Millisecondes → « 3:42 ». */

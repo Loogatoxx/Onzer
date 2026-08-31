@@ -224,7 +224,6 @@ async fn range_sous_lartiste_de_lalbum_et_non_sous_le_featuring() {
             album_artist: Some("Daft Punk"),
             year: Some(2013),
             track: Some(8),
-            ..Default::default()
         },
     );
 

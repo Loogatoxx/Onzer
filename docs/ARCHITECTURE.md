@@ -342,6 +342,64 @@ artiste composé qu'un faux découpage.
 
 ---
 
+## ADR-011 — Moteur audio : `rodio` d'abord, pipeline maison si nécessaire
+
+**Contexte.** L'ADR-002 imposait `symphonia` pour le décodage et `cpal` pour la sortie.
+Deux façons de les assembler :
+
+| Approche | Coût | Bénéfice |
+|---|---|---|
+| Pipeline maison `cpal` + `symphonia` | ~800 lignes de code temps réel : tampon circulaire, rééchantillonnage, thread sans allocation | Contrôle total : gapless à l'échantillon près, crossfade |
+| `rodio` (qui encapsule exactement `symphonia` + `cpal`) | Une dépendance | Décodage, rééchantillonnage, volume et déplacement déjà résolus et éprouvés |
+
+**Décision.** `rodio` pour la version 1. Ce n'est pas un renoncement à l'ADR-002 : `rodio`
+**est** `symphonia` + `cpal`, avec la plomberie déjà faite. Écrire un pipeline temps réel
+maison dès la première version reviendrait à prendre le risque le plus élevé du projet
+avant même de savoir si l'application sert.
+
+**Conséquences.**
+- ✅ Lecture fonctionnelle et testée de bout en bout dès maintenant.
+- ✅ Rééchantillonnage et gestion du volume gratuits.
+- ⚠️ **Le gapless strict et le crossfade ne sont pas là.** L'enchaînement passe par la boucle
+  de surveillance, ce qui laisse un intervalle de l'ordre de 250 ms entre deux morceaux.
+  Acceptable sur des albums ordinaires, audible sur un album à enchaînements continus.
+- ⚠️ La position rapportée par `rodio` suit l'écoulement du tampon de sortie et non
+  l'intention de l'utilisateur : elle est donc **figée explicitement pendant les pauses**,
+  faute de quoi l'horloge de l'interface tressaute. *Défaut trouvé par un test.*
+
+**Porte de sortie.** Le reste du moteur ne connaît `rodio` que par `audio/device.rs`.
+Remplacer cette seule couche par un pipeline `cpal` + `symphonia` maison ne toucherait ni la
+file, ni le journal d'écoute, ni les commandes.
+
+---
+
+## ADR-012 — Le journal d'écoute est une machine à états à temps injecté
+
+**Contexte.** Chaque écoute doit produire une ligne de `play_events` fidèle, y compris dans
+les cas tordus : pause d'une heure, retour en arrière pour réécouter un passage, saut à trois
+secondes, changement de morceau en cours de route.
+
+**Décision.** `audio/tracking.rs` est une machine à états **sans aucune dépendance audio**,
+à qui le temps est toujours **injecté** plutôt que lu depuis l'horloge.
+
+**Conséquences.**
+- ✅ Une écoute de trois minutes se teste en une microseconde, et des scénarios impossibles
+  à reproduire à la main deviennent triviaux.
+- ✅ Trois durées sont distinguées là où la plupart des lecteurs n'en gardent qu'une :
+
+  | Durée | Définition | Ce qu'elle mesure |
+  |---|---|---|
+  | Temps écoulé | `fin − début` | Rien : inclurait une pause de trois heures |
+  | **Temps écouté** | Somme des périodes de lecture réelle | L'intérêt porté au morceau |
+  | **Position** | Où l'on se trouve dans le morceau | Le point de rejet, en cas de saut |
+
+  Réécouter un passage rend le *temps écouté* supérieur à la *position finale* — un signal
+  d'appréciation fort, que seule cette distinction permet de capter.
+- ✅ Passer au suivant dans les deux dernières secondes est requalifié en écoute complète :
+  compter cela comme un rejet fausserait durablement le score du morceau.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

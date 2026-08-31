@@ -6,4 +6,5 @@
 //! l'application.
 
 pub mod library;
+pub mod playback;
 pub mod system;

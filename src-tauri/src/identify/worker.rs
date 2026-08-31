@@ -33,6 +33,26 @@ use super::tagger;
 /// Clé de réglage où l'utilisateur dépose sa clé AcoustID.
 pub const API_KEY_SETTING: &str = "acoustid_api_key";
 
+/// Dernière erreur de service rencontrée.
+///
+/// # Pourquoi la conserver
+///
+/// Une jauge figée à 0/43 sans la moindre explication est le pire des
+/// affichages : l'utilisateur ne peut ni comprendre ni agir. Conserver la
+/// dernière erreur permet de lui dire « AcoustID a répondu 401 » plutôt que de
+/// le laisser deviner.
+pub const LAST_ERROR_SETTING: &str = "identification_last_error";
+
+/// Note la dernière erreur, pour l'afficher dans l'interface.
+async fn record_error(pool: &SqlitePool, message: String) {
+    let _ = settings::set(pool, LAST_ERROR_SETTING, &message).await;
+}
+
+/// Efface l'erreur : le service répond de nouveau.
+async fn clear_error(pool: &SqlitePool) {
+    let _ = settings::set(pool, LAST_ERROR_SETTING, &Option::<String>::None).await;
+}
+
 /// Repos entre deux identifications.
 ///
 /// Les limiteurs de chaque service imposent déjà leur cadence ; cette pause
@@ -260,7 +280,9 @@ async fn identify_one(
         Ok(None) => {
             // Réponse définitive : le morceau n'est pas dans l'index. Réessayer
             // demain ne changerait rien et gaspillerait du quota.
+            // Le service a répondu : ce n'est pas une panne.
             tracing::debug!(track_id, "inconnu des bases publiques");
+            clear_error(pool).await;
             let _ = repository::mark_identification(pool, track_id, "not_found").await;
             return Attempt::Settled;
         }
@@ -269,6 +291,7 @@ async fn identify_one(
             // **reste en file**. L'ouvrier se met en sommeil plutôt que
             // d'enchaîner sur la même erreur.
             tracing::warn!(track_id, %error, "AcoustID indisponible, morceau conservé en file");
+            record_error(pool, format!("AcoustID — {error}")).await;
             return Attempt::ServiceUnavailable;
         }
     };
@@ -282,6 +305,7 @@ async fn identify_one(
         }
         Err(error) => {
             tracing::warn!(track_id, %error, "MusicBrainz indisponible, morceau conservé en file");
+            record_error(pool, format!("MusicBrainz — {error}")).await;
             return Attempt::ServiceUnavailable;
         }
     };
@@ -310,15 +334,18 @@ async fn identify_one(
     )
     .await
     {
-        Ok(applied) => tracing::info!(
+        Ok(applied) => {
+            clear_error(pool).await;
+            tracing::info!(
             track_id,
             titre = %metadata.title,
             artiste = metadata.filing_artist().unwrap_or("?"),
             score = identification.score,
             deplace = applied.moved,
-            destination = %applied.relative_path,
-            "morceau identifié"
-        ),
+                destination = %applied.relative_path,
+                "morceau identifié"
+            );
+        }
         Err(error) => {
             tracing::warn!(track_id, %error, "identification non appliquée");
             let _ = repository::mark_identification(pool, track_id, "failed").await;

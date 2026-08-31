@@ -87,7 +87,7 @@ impl Service {
             attempt += 1;
             self.limiter.acquire().await;
 
-            let (outcome, retry_after, body) = match self.client.get(url).send().await {
+            let (outcome, retry_after, detail) = match self.client.get(url).send().await {
                 Ok(response) => {
                     let status = response.status();
 
@@ -120,7 +120,25 @@ impl Service {
                             Err(_) => (Outcome::NetworkFailure, None, None),
                         }
                     } else {
-                        (Outcome::Status(status.as_u16()), retry_after, Some(status))
+                        // Le corps d'une réponse d'erreur porte l'explication du
+                        // service. Le jeter reviendrait à s'aveugler soi-même :
+                        // « 400 Bad Request » ne dit rien, « invalid fingerprint »
+                        // dit tout.
+                        let detail = response
+                            .text()
+                            .await
+                            .ok()
+                            .map(|body| summarize(&body))
+                            .filter(|body| !body.is_empty());
+
+                        (
+                            Outcome::Status(status.as_u16()),
+                            retry_after,
+                            Some(match detail {
+                                Some(explanation) => format!("{status} — {explanation}"),
+                                None => status.to_string(),
+                            }),
+                        )
                     }
                 }
                 Err(_) => (Outcome::NetworkFailure, None, None),
@@ -137,14 +155,34 @@ impl Service {
                     tokio::time::sleep(delay).await;
                 }
                 Decision::GiveUp => {
-                    return Err(OnzerError::Invalid(match body {
-                        Some(status) => format!("{} a répondu {status}", self.name),
+                    return Err(OnzerError::Invalid(match detail {
+                        Some(explanation) => format!("{} a répondu {explanation}", self.name),
                         None => format!("{} injoignable", self.name),
                     }));
                 }
             }
         }
     }
+}
+
+/// Résume un corps de réponse pour l'afficher sans le déverser en entier.
+///
+/// Extrait le message d'une réponse d'erreur JSON quand il y en a un, et
+/// tronque dans tous les cas : une page HTML d'erreur de plusieurs kilooctets
+/// n'a pas sa place dans un message d'interface.
+fn summarize(body: &str) -> String {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
+        if let Some(message) = value
+            .get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(serde_json::Value::as_str)
+        {
+            return message.to_string();
+        }
+    }
+
+    let condensed: String = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    condensed.chars().take(160).collect()
 }
 
 /// Graine de gigue tirée de l'horloge.
@@ -183,6 +221,29 @@ mod tests {
 
         assert!(pochette_4000px_jpeg < MAX_DOWNLOAD_BYTES);
         assert!(reponse_aberrante > MAX_DOWNLOAD_BYTES);
+    }
+
+    #[test]
+    fn extrait_le_message_dune_erreur_json() {
+        // C'est ainsi qu'AcoustID explique un refus. Sans cette extraction, on
+        // n'afficherait qu'un « 400 Bad Request » muet.
+        let body = r#"{"status":"error","error":{"message":"invalid fingerprint","code":5}}"#;
+
+        assert_eq!(summarize(body), "invalid fingerprint");
+    }
+
+    #[test]
+    fn condense_une_reponse_non_json() {
+        let resume = summarize("<html>\n  <body>Bad Request</body>\n</html>");
+
+        assert!(!resume.contains('\n'));
+        assert!(resume.contains("Bad Request"));
+    }
+
+    #[test]
+    fn tronque_une_reponse_interminable() {
+        let resume = summarize(&"x".repeat(10_000));
+        assert!(resume.chars().count() <= 160);
     }
 
     #[test]

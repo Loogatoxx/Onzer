@@ -19,6 +19,17 @@ import { fileURLToPath } from "node:url";
 const SIZE = 1024;
 const SAMPLES = 3; // suréchantillonnage par axe → 9 échantillons par pixel
 
+// ── Gabarit d'icône macOS ───────────────────────────────────────────────────
+//
+// macOS n'affiche PAS une icône bord à bord : Apple impose une zone de sécurité
+// transparente autour du motif. Sur une toile de 1024 px, le corps de l'icône
+// mesure 824 px, centré, soit 100 px de marge de chaque côté.
+//
+// Sans cette marge, l'icône paraît nettement plus grosse que ses voisines dans
+// le Dock et vient mordre sur l'indicateur d'application ouverte.
+const BODY_SIZE = 824;
+const BODY_OFFSET = (SIZE - BODY_SIZE) / 2;
+
 // Jetons repris de globals.css, pour que l'icône et l'interface parlent la
 // même langue visuelle.
 const ACCENT = [0x8b, 0x5c, 0xf6]; // --color-accent
@@ -27,11 +38,12 @@ const BASE = [0x0a, 0x0a, 0x0c]; // --color-base
 
 // ── Géométrie ───────────────────────────────────────────────────────────────
 
-const CORNER_RADIUS = SIZE * 0.225; // proportion « squircle » d'iOS/macOS
+// Rayon d'arrondi du gabarit Apple, proportionnel au corps et non à la toile.
+const CORNER_RADIUS = BODY_SIZE * 0.225;
 
 /** Le glyphe est décrit dans un repère 24×24, puis mis à l'échelle. */
 const GLYPH_BOX = 24;
-const GLYPH_SCALE = (SIZE * 0.52) / GLYPH_BOX;
+const GLYPH_SCALE = (BODY_SIZE * 0.52) / GLYPH_BOX;
 
 /** Distance signée à un rectangle aux angles arrondis. Négative à l'intérieur. */
 function distanceToRoundedRect(x, y, width, height, radius) {
@@ -49,9 +61,11 @@ function isInsideGlyph(gx, gy) {
   return head || stem || flag;
 }
 
-/** Dégradé diagonal entre les deux accents. */
+/** Dégradé diagonal entre les deux accents, calé sur le corps de l'icône. */
 function gradientAt(x, y) {
-  const t = Math.min(1, Math.max(0, (x / SIZE) * 0.5 + (y / SIZE) * 0.5));
+  const u = (x - BODY_OFFSET) / BODY_SIZE;
+  const v = (y - BODY_OFFSET) / BODY_SIZE;
+  const t = Math.min(1, Math.max(0, u * 0.5 + v * 0.5));
   return [
     Math.round(ACCENT[0] + (ACCENT_ALT[0] - ACCENT[0]) * t),
     Math.round(ACCENT[1] + (ACCENT_ALT[1] - ACCENT[1]) * t),
@@ -73,8 +87,19 @@ function renderPixel(px, py) {
       const x = px + (sx + 0.5) / SAMPLES;
       const y = py + (sy + 0.5) / SAMPLES;
 
-      // Hors du carré arrondi : entièrement transparent.
-      if (distanceToRoundedRect(x, y, SIZE, SIZE, CORNER_RADIUS) > 0) continue;
+      // Hors du corps de l'icône : entièrement transparent. C'est cette zone
+      // qui donne à l'icône sa taille apparente correcte dans le Dock.
+      const bodyX = x - BODY_OFFSET;
+      const bodyY = y - BODY_OFFSET;
+      if (
+        bodyX < 0 ||
+        bodyY < 0 ||
+        bodyX > BODY_SIZE ||
+        bodyY > BODY_SIZE ||
+        distanceToRoundedRect(bodyX, bodyY, BODY_SIZE, BODY_SIZE, CORNER_RADIUS) > 0
+      ) {
+        continue;
+      }
 
       const gx = (x - SIZE / 2) / GLYPH_SCALE + GLYPH_BOX / 2;
       const gy = (y - SIZE / 2) / GLYPH_SCALE + GLYPH_BOX / 2;

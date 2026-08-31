@@ -11,6 +11,13 @@ rust-version = "1.82"
 name = "onzer_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Le nom du binaire est celui qu'affiche le Dock de macOS **en développement**,
+# où aucun paquet .app n'existe encore. Sans cette section, il vaudrait « onzer »
+# — le nom du paquet Cargo, en minuscules.
+[[bin]]
+name = "Onzer"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

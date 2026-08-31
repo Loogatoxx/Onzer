@@ -163,6 +163,10 @@ export interface IdentificationProgress {
 export interface IdentificationStatus {
   /** La clé AcoustID est-elle renseignée ? La clé elle-même ne revient jamais. */
   configured: boolean;
+  /** Aperçu masqué, du genre `dp7d••••••` : de quoi repérer un collage tronqué. */
+  keyHint: string | null;
+  /** Dernière erreur de service — ce qui explique une jauge figée. */
+  lastError: string | null;
   progress: IdentificationProgress;
 }
 

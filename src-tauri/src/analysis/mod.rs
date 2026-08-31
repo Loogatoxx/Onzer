@@ -29,6 +29,7 @@ pub mod decode;
 pub mod key;
 pub mod spectral;
 pub mod tempo;
+pub mod worker;
 
 use std::path::Path;
 

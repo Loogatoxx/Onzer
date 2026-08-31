@@ -260,6 +260,12 @@ impl PlayerService {
         Ok(false)
     }
 
+    /// Périphérique de sortie courant. Élément du contexte d'écoute :
+    /// un casque et des enceintes traduisent deux intentions différentes.
+    pub fn output_device(&self) -> Option<&str> {
+        self.output_device.as_deref()
+    }
+
     /// Position de lecture, lue sans verrou. Appelée quatre fois par seconde
     /// par la boucle de surveillance : elle ne doit jamais attendre.
     pub fn position_ms(&self) -> i64 {

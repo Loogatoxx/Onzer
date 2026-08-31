@@ -135,7 +135,37 @@ pub async fn record(pool: &SqlitePool, session_id: &str, event: &PlayEventRecord
     .await?;
 
     tx.commit().await?;
+
+    // ── 5. Retour au moteur de recommandation ───────────────────────────
+    // C'est l'unique boucle d'apprentissage du bandit : sans elle, ses bras
+    // resteraient éternellement à leur valeur initiale.
+    if event.source == crate::audio::tracking::PlaySource::Reco {
+        if let Some(session_id) = event.source_id {
+            if let Some(success) = verdict(event) {
+                if let Err(error) =
+                    crate::reco::engine::record_outcome(pool, session_id, event.track_id, success)
+                        .await
+                {
+                    tracing::warn!(%error, "retour au moteur non enregistré");
+                }
+            }
+        }
+    }
+
     Ok(())
+}
+
+/// Une écoute juge-t-elle la recommandation ?
+///
+/// Seules les fins nettes comptent. Fermer l'application au bout de dix
+/// secondes n'est pas un avis sur le morceau proposé, et l'attribuer à la
+/// stratégie fausserait son apprentissage.
+fn verdict(event: &PlayEventRecord) -> Option<bool> {
+    match event.end_reason {
+        EndReason::Completed => Some(true),
+        EndReason::Skipped => Some(event.completion >= 0.5),
+        _ => None,
+    }
 }
 
 /// Reprend la dernière session si elle est encore « chaude », sinon en ouvre

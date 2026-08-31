@@ -5,9 +5,11 @@ import {
   ipc,
   type LibraryCounts,
   type ScanProgress,
+  type GeneratedPlaylist,
   type ScanSummary,
   type TrackSummary,
 } from "@/lib/ipc";
+import { DiscoverBar } from "@/features/discover/DiscoverBar";
 import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
 import { TrackList } from "./TrackList";
@@ -23,8 +25,42 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
   const [summary, setSummary] = useState<ScanSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [playlist, setPlaylist] = useState<GeneratedPlaylist | null>(null);
+
   const playback = usePlayback();
   const importing = progress !== null;
+
+  /**
+   * Raison de présence de chaque morceau de la playlist générée.
+   *
+   * Reconstruite à chaque changement plutôt que stockée : la playlist est déjà
+   * la source de vérité, la dupliquer inviterait la désynchronisation.
+   */
+  const reasons =
+    playlist === null
+      ? undefined
+      : new Map(playlist.tracks.map((track) => [track.trackId, track.reason]));
+
+  /** Une playlist générée remplace l'affichage de la bibliothèque. */
+  async function showGenerated(generated: GeneratedPlaylist) {
+    setError(null);
+    setQuery("");
+    setPlaylist(generated);
+
+    try {
+      const ids = generated.tracks.map((track) => track.trackId);
+      const loaded = await ipc.listTracks(1000);
+      // On réordonne selon la playlist : `listTracks` renvoie l'ordre de la
+      // bibliothèque, qui n'a rien à voir avec celui du moteur.
+      const parId = new Map(loaded.map((track) => [track.id, track]));
+      setTracks(ids.flatMap((id) => {
+        const found = parId.get(id);
+        return found === undefined ? [] : [found];
+      }));
+    } catch (cause) {
+      setError(String(cause));
+    }
+  }
 
   /**
    * Lance la lecture à partir d'un morceau de la liste affichée.
@@ -37,6 +73,14 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
       tracks.map((track) => track.id),
       index,
     );
+  }
+
+  function startRadio(trackId: number) {
+    setError(null);
+    void ipc
+      .startRadio(trackId)
+      .then(showGenerated)
+      .catch((cause: unknown) => setError(String(cause)));
   }
 
   const reload = useCallback(async () => {
@@ -69,9 +113,18 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
   // Recherche différée. Une requête vide réaffiche la bibliothèque complète.
   useEffect(() => {
     const trimmed = query.trim();
+    if (trimmed === "") {
+      // Une recherche vide ne doit pas balayer la playlist qu'on vient de
+      // générer : on ne recharge la bibliothèque que si rien n'est affiché.
+      return;
+    }
+
     const timer = setTimeout(() => {
-      const request = trimmed === "" ? ipc.listTracks() : ipc.searchTracks(trimmed);
-      void request.then(setTracks).catch((cause: unknown) => setError(String(cause)));
+      setPlaylist(null);
+      void ipc
+        .searchTracks(trimmed)
+        .then(setTracks)
+        .catch((cause: unknown) => setError(String(cause)));
     }, SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
@@ -130,7 +183,23 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
         </div>
 
         <Counters counts={counts} libraryRoot={libraryRoot} />
+
+        <DiscoverBar
+          disabled={importing || (counts?.tracks ?? 0) === 0}
+          onGenerated={(generated) => void showGenerated(generated)}
+          onError={setError}
+        />
       </header>
+
+      {playlist !== null && (
+        <PlaylistBanner
+          playlist={playlist}
+          onDismiss={() => {
+            setPlaylist(null);
+            void reload();
+          }}
+        />
+      )}
 
       {progress !== null && <ProgressBar progress={progress} />}
       {summary !== null && <SummaryBanner summary={summary} onDismiss={() => setSummary(null)} />}
@@ -152,6 +221,8 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
           currentTrackId={playback.state?.current?.trackId ?? null}
           isPlaying={playback.state?.isPlaying ?? false}
           onPlay={playFrom}
+          onRadio={startRadio}
+          {...(reasons === undefined ? {} : { reasons })}
         />
       </div>
 
@@ -167,6 +238,36 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
           onRepeat={() => void playback.cycleRepeat(playback.state?.repeat ?? "off")}
         />
       )}
+    </div>
+  );
+}
+
+/** Bandeau d'une playlist générée : ce que le moteur a produit, et pourquoi. */
+function PlaylistBanner({
+  playlist,
+  onDismiss,
+}: {
+  playlist: GeneratedPlaylist;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-4 border-b border-line bg-gradient-to-r from-accent/10 to-transparent px-5 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-ink">{playlist.title}</p>
+        <p className="truncate text-xs text-ink-muted">
+          {playlist.subtitle}
+          <span className="mx-1.5 text-ink-faint">·</span>
+          {playlist.tracks.length} morceaux
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="shrink-0 text-xs text-ink-faint transition-colors hover:text-ink"
+      >
+        Revenir à la bibliothèque
+      </button>
     </div>
   );
 }

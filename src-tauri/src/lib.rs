@@ -121,6 +121,16 @@ pub fn run() {
                 ingest::server::DEFAULT_PORT,
             );
 
+            // Ouvrier d'analyse audio. Il travaille en fond, un morceau à la
+            // fois, sur un fil bloquant dédié : l'interface et la lecture ne
+            // doivent jamais le sentir.
+            tauri::async_runtime::block_on(async {
+                if let Err(error) = analysis::worker::requeue_outdated(&pool).await {
+                    tracing::warn!(%error, "détection des analyses périmées impossible");
+                }
+            });
+            analysis::worker::spawn(pool.clone(), Arc::clone(&shared_paths));
+
             app.manage(AppState {
                 pool,
                 paths: shared_paths,
@@ -151,6 +161,12 @@ pub fn run() {
             commands::playback::set_shuffle,
             commands::playback::stop_playback,
             commands::playback::playback_state,
+            commands::reco::start_radio,
+            commands::reco::start_for_now,
+            commands::reco::start_forgotten,
+            commands::reco::analysis_progress,
+            commands::reco::reanalyze_library,
+            commands::reco::reco_diagnostics,
         ])
         .run(tauri::generate_context!())
         .expect("échec au lancement d'Onzer");

@@ -8,6 +8,13 @@ interface TrackListProps {
   isPlaying: boolean;
   /** Lance la lecture à partir de cette position de la liste. */
   onPlay: (index: number) => void;
+  /** Lance une radio construite autour de ce morceau. */
+  onRadio: (trackId: number) => void;
+  /**
+   * Raison de présence, quand la liste vient du moteur de recommandation.
+   * Une recommandation inexplicable inspire la méfiance.
+   */
+  reasons?: Map<number, string>;
 }
 
 /**
@@ -17,7 +24,14 @@ interface TrackListProps {
  * Un morceau indisponible (SSD débranché, fichier déplacé à la main) est
  * grisé et non cliquable, mais **jamais masqué** — il n'a pas disparu (ADR-006).
  */
-export function TrackList({ tracks, currentTrackId, isPlaying, onPlay }: TrackListProps) {
+export function TrackList({
+  tracks,
+  currentTrackId,
+  isPlaying,
+  onPlay,
+  onRadio,
+  reasons,
+}: TrackListProps) {
   if (tracks.length === 0) {
     return (
       <p className="py-16 text-center text-sm text-ink-muted">
@@ -30,17 +44,20 @@ export function TrackList({ tracks, currentTrackId, isPlaying, onPlay }: TrackLi
     <ul className="divide-y divide-line">
       {tracks.map((track, index) => {
         const isCurrent = track.id === currentTrackId;
+        const reason = reasons?.get(track.id);
 
         return (
-          <li key={track.id}>
+          <li
+            key={track.id}
+            className={`group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface ${
+              track.isAvailable ? "" : "opacity-40"
+            } ${isCurrent ? "bg-surface" : ""}`}
+          >
             <button
               type="button"
               disabled={!track.isAvailable}
-              onDoubleClick={() => onPlay(index)}
               onClick={() => onPlay(index)}
-              className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface disabled:cursor-not-allowed ${
-                track.isAvailable ? "" : "opacity-40"
-              } ${isCurrent ? "bg-surface" : ""}`}
+              className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-not-allowed"
             >
               <div className="relative shrink-0">
                 <Artwork hash={track.artworkHash} />
@@ -65,19 +82,47 @@ export function TrackList({ tracks, currentTrackId, isPlaying, onPlay }: TrackLi
                     </>
                   )}
                 </p>
+                {reason !== undefined && (
+                  <p className="mt-0.5 truncate text-[11px] text-accent/70">{reason}</p>
+                )}
               </div>
-
-              {!track.isAvailable && (
-                <span className="shrink-0 rounded border border-warn/30 px-1.5 py-0.5 text-[10px] text-warn">
-                  hors ligne
-                </span>
-              )}
-
-              <span className="shrink-0 text-xs uppercase text-ink-faint">{track.format}</span>
-              <span className="w-12 shrink-0 text-right text-xs tabular-nums text-ink-muted">
-                {formatDuration(track.durationMs)}
-              </span>
             </button>
+
+            {!track.isAvailable && (
+              <span className="shrink-0 rounded border border-warn/30 px-1.5 py-0.5 text-[10px] text-warn">
+                hors ligne
+              </span>
+            )}
+
+            {/* Le bouton radio n'apparaît qu'au survol : présent quand on le
+                cherche, invisible le reste du temps. */}
+            <button
+              type="button"
+              title={`Radio à partir de « ${track.title} »`}
+              aria-label={`Radio à partir de ${track.title}`}
+              disabled={!track.isAvailable}
+              onClick={() => onRadio(track.id)}
+              className="shrink-0 rounded-lg p-1.5 text-ink-faint opacity-0 transition-all hover:bg-elevated hover:text-accent focus:opacity-100 group-hover:opacity-100"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.8}
+                strokeLinecap="round"
+                aria-hidden
+              >
+                <circle cx="12" cy="12" r="2.5" />
+                <path d="M8.5 15.5a5 5 0 0 1 0-7M15.5 8.5a5 5 0 0 1 0 7" />
+                <path d="M5.5 18.5a9 9 0 0 1 0-13M18.5 5.5a9 9 0 0 1 0 13" />
+              </svg>
+            </button>
+
+            <span className="shrink-0 text-xs uppercase text-ink-faint">{track.format}</span>
+            <span className="w-12 shrink-0 text-right text-xs tabular-nums text-ink-muted">
+              {formatDuration(track.durationMs)}
+            </span>
           </li>
         );
       })}

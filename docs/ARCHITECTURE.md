@@ -473,6 +473,59 @@ Le mode `IndexInPlace` reste disponible pour une future commande de rescan expli
 
 ---
 
+## ADR-015 — Un seul morceau analysé à la fois
+
+**Contexte.** L'analyse d'un morceau exécute environ 3 800 transformées de Fourier et
+sature un cœur pendant toute sa durée. Sur cinq mille morceaux, une exécution naïve fige
+l'interface et fait hoqueter la lecture.
+
+**Décision.** L'ouvrier traite **un seul morceau à la fois**, sur un fil bloquant dédié,
+avec 250 ms de repos entre deux.
+
+Paralléliser sur quatre cœurs diviserait le temps total par quatre, mais rendrait
+l'application désagréable pendant toute la durée du traitement. *Une analyse invisible qui
+prend une heure vaut mieux qu'une analyse rapide qui rend l'application inutilisable.*
+
+**Mesures réelles** (Apple Silicon, MP3 de 8 Mo) :
+
+| | Avant correction des profils | Après |
+|---|---|---|
+| Par morceau | 6 591 ms | **267 ms** |
+| 5 000 morceaux | ~9 heures | **~45 minutes** |
+
+Le facteur 24,7 vient de deux lignes de `Cargo.toml` : les dépendances DSP étaient
+compilées **sans optimisation en développement**, et le profil de publication visait la
+taille du binaire (`opt-level = "s"`) plutôt que la vitesse. *Défaut trouvé en mesurant,
+pas en relisant.*
+
+**Conséquences.**
+- ✅ Duty cycle d'environ 50 % d'un seul cœur : imperceptible sur une machine multicœur.
+- ✅ Reprise après redémarrage : un morceau resté « running » est remis en file.
+- ✅ Les morceaux récemment ajoutés passent en premier — ce sont ceux qu'on veut écouter.
+- ⚠️ La durée d'analyse est journalisée en permanence, pour détecter toute régression.
+
+---
+
+## ADR-016 — Le quota d'artistes s'adapte à la bibliothèque
+
+**Contexte.** Les règles de diversité plafonnaient à trois morceaux par artiste et par
+playlist.
+
+**Le défaut.** Ce plafond rend une playlist de vingt titres **mathématiquement impossible**
+dans une bibliothèque de six artistes : 6 × 3 = 18. Le moteur produisait alors des
+playlists mystérieusement courtes, sans que rien ne l'explique. *Défaut trouvé par un test
+d'assemblage, invisible sur les modules pris isolément.*
+
+**Décision.** Le quota est calculé pour que la longueur demandée reste atteignable, avec
+trois emplacements de marge — la sélection étant gloutonne, elle a besoin de jeu. Le délai
+de carence subit la même contrainte : avec deux artistes, exiger deux morceaux d'écart est
+irréalisable.
+
+**Conséquence.** Sur une grande bibliothèque, le quota reste à trois : la règle ne se
+relâche que là où elle serait contradictoire.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

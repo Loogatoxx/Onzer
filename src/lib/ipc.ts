@@ -111,6 +111,44 @@ export interface PlaybackTick {
   isPlaying: boolean;
 }
 
+/** Miroir de `reco::bandit::Strategy`. */
+export type RecoStrategy =
+  | "similarity"
+  | "affinity"
+  | "context"
+  | "transition"
+  | "discovery"
+  | "forgotten";
+
+/** Miroir de `reco::engine::GeneratedTrack`. */
+export interface GeneratedTrack {
+  trackId: number;
+  strategy: RecoStrategy;
+  /** Phrase affichable : pourquoi ce morceau est là. */
+  reason: string;
+  score: number;
+}
+
+/** Miroir de `reco::engine::GeneratedPlaylist`. */
+export interface GeneratedPlaylist {
+  sessionId: number;
+  kind: string;
+  title: string;
+  subtitle: string;
+  tracks: GeneratedTrack[];
+  poolSize: number;
+  /** Part de la bibliothèque déjà analysée, entre 0 et 1. */
+  analyzedRatio: number;
+}
+
+/** Miroir de `analysis::worker::AnalysisProgress`. */
+export interface AnalysisProgress {
+  analyzed: number;
+  pending: number;
+  failed: number;
+  total: number;
+}
+
 /** Doit correspondre à `commands::library::SCAN_PROGRESS_EVENT`. */
 const SCAN_PROGRESS_EVENT = "library://scan-progress";
 /** Doit correspondre à `commands::playback::STATE_EVENT`. */
@@ -180,6 +218,24 @@ export const ipc = {
   /** Battement de position, quatre fois par seconde. Charge minimale. */
   onPlaybackTick: (handler: (tick: PlaybackTick) => void): Promise<UnlistenFn> =>
     listen<PlaybackTick>(PLAYBACK_TICK_EVENT, (event) => handler(event.payload)),
+
+  // ── Moteur de recommandation ─────────────────────────────────────────
+  // Chaque génération lance la lecture immédiatement : demander une radio
+  // puis devoir cliquer sur « lecture » serait une étape de trop.
+
+  startRadio: (seedTrackId: number, length?: number): Promise<GeneratedPlaylist> =>
+    invoke<GeneratedPlaylist>("start_radio", { seedTrackId, length }),
+
+  startForNow: (length?: number): Promise<GeneratedPlaylist> =>
+    invoke<GeneratedPlaylist>("start_for_now", { length }),
+
+  startForgotten: (length?: number): Promise<GeneratedPlaylist> =>
+    invoke<GeneratedPlaylist>("start_forgotten", { length }),
+
+  analysisProgress: (): Promise<AnalysisProgress> =>
+    invoke<AnalysisProgress>("analysis_progress"),
+
+  reanalyzeLibrary: (): Promise<number> => invoke<number>("reanalyze_library"),
 };
 
 /** Millisecondes → « 3:42 ». */

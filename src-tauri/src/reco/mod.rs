@@ -45,7 +45,15 @@
 
 pub mod affinity;
 pub mod bandit;
+pub mod context;
+pub mod diversity;
+pub mod engine;
 pub mod similarity;
 
 pub use bandit::{Arm, Rng, Strategy};
+pub use context::{ListeningContext, TimePeriod};
+pub use engine::{GeneratedPlaylist, GeneratedTrack, PlaylistKind};
 pub use similarity::FeatureSpace;
+
+#[cfg(test)]
+mod tests_engine;

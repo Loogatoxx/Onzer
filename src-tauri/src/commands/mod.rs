@@ -7,4 +7,5 @@
 
 pub mod library;
 pub mod playback;
+pub mod reco;
 pub mod system;

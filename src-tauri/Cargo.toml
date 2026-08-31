@@ -80,6 +80,23 @@ tempfile = "3"
 [profile.release]
 codegen-units = 1
 lto = true
-opt-level = "s"
+# Vitesse et non taille. L'application passe l'essentiel de son temps de calcul
+# dans l'analyse audio ; optimiser pour la taille y coûtait un facteur 10, pour
+# économiser quelques mégaoctets de binaire sans intérêt.
+opt-level = 3
 panic = "abort"
 strip = true
+
+# Les dépendances sont optimisées **même en développement**.
+#
+# L'analyse audio passe l'essentiel de son temps dans `rustfft` et `symphonia`.
+# Compilées sans optimisation, elles rendaient l'ouvrier dix fois plus lent,
+# pour un gain de temps de compilation nul — ces crates ne changent jamais.
+[profile.dev.package."*"]
+opt-level = 3
+
+# Notre propre code DSP mérite aussi un minimum d'optimisation en
+# développement : le niveau 1 suffit à rendre l'analyse utilisable sans
+# rallonger sensiblement les compilations.
+[profile.dev]
+opt-level = 1

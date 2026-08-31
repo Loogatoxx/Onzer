@@ -376,3 +376,68 @@ Fermer la boucle d'alimentation de la bibliothèque : un script externe peut dé
 interroger Onzer avant de télécharger, puis lui remettre le fichier, sans jamais avoir à
 connaître son fonctionnement interne.
 
+---
+
+## Entrée 008 — Assemblage complet du moteur de recommandation
+
+**📅 Date :** 2026-08-31
+
+**💬 Prompt**
+Validation de l'approche et feu vert en puissance maximale pour l'assemblage complet :
+ouvrier d'analyse invisible pour l'utilisateur, générateur de playlists avec règles
+strictes de diversité, et boutons « Radio » et « Pour toi maintenant » intégrés
+naturellement au thème sombre. La maison doit être entièrement bâtie avant d'ajouter de la
+musique à la main.
+
+**🤖 Réponse (résumé)**
+Assemblage des quatre fondations en un moteur fonctionnel : ouvrier d'analyse en tâche de
+fond, score contextuel à lissage hiérarchique, règles de diversité dures et souples,
+générateur pilotant six stratégies par échantillonnage de Thompson, et interface.
+Trois défauts de conception trouvés en cours de route, dont deux qui n'étaient visibles
+qu'à l'assemblage ou à la mesure.
+
+**🔧 Modifications**
+- ➕ `src-tauri/src/analysis/worker.rs` — ouvrier en tâche de fond, un morceau à la fois
+  sur un fil bloquant, reprise après arrêt brutal, durée journalisée
+- ➕ `src-tauri/src/reco/context.rs` — cinq périodes de la journée, lissage hiérarchique
+  vers l'affinité globale, 17 tests
+- ➕ `src-tauri/src/reco/diversity.rs` — règles dures et souples, 16 tests
+- ➕ `src-tauri/src/reco/engine.rs` — chargement, notation par stratégie, assemblage,
+  traçabilité et boucle d'apprentissage
+- ➕ `src-tauri/src/reco/tests_engine.rs` — 13 tests d'assemblage sur bibliothèque synthétique
+- ➕ `src-tauri/src/commands/reco.rs` — 6 commandes, génération suivie d'une lecture immédiate
+- ➕ `src/features/discover/DiscoverBar.tsx` — pastilles « Pour toi maintenant » et
+  « Tu les avais oubliés », jauge d'analyse qui disparaît une fois le travail fini
+- ✏️ `src/features/library/` — bouton radio au survol de chaque ligne, bandeau de playlist,
+  raison de présence affichée sous chaque morceau
+- ✏️ `src-tauri/Cargo.toml` — profils de compilation corrigés
+- ✏️ `docs/ARCHITECTURE.md` — **ADR-015** (ouvrier d'analyse) et **ADR-016** (quota adaptatif)
+
+**🐞 Trois défauts trouvés en assemblant et en mesurant**
+1. **Analyse 24,7 fois trop lente.** Mesurée à 6 591 ms par morceau, soit 9 heures pour
+   5 000 titres. Cause : les dépendances DSP compilées sans optimisation en développement,
+   et un profil de publication visant la taille du binaire plutôt que la vitesse. Après
+   correction : **267 ms**, soit ~45 minutes pour 5 000 morceaux, résultat identique au bit
+   près.
+2. **Playlists mystérieusement courtes.** Un quota fixe de trois morceaux par artiste rend
+   une playlist de vingt titres impossible dans une bibliothèque de six artistes. Le quota
+   est désormais calculé pour rester réalisable. Invisible sur les modules isolés, trouvé
+   par le test d'assemblage.
+3. **Stratégies sans données gaspillant des emplacements.** Le bandit pouvait tirer
+   « oubliés » ou « enchaînements » alors qu'ils n'avaient rien à proposer, amputant la
+   playlist d'autant. Elles sont désormais écartées avant le tirage.
+
+**✅ Vérifications effectuées**
+- **300 tests au vert**, clippy sans avertissement
+- Analyse validée sur le vrai fichier de la bibliothèque : **129,2 BPM** pour
+  « Θ. Macarena » de Damso — valeur correcte — tonalité Ré majeur, vecteur de 54 dimensions
+- Résultat identique après changement de profil de compilation : l'optimisation n'altère
+  pas les valeurs produites
+- Application lancée sans erreur : base, moteur audio, API d'import et ouvrier d'analyse
+  tous opérationnels
+
+**🎯 Objectif**
+Rendre le moteur réellement utilisable, et surtout **mesurable** : chaque proposition est
+tracée avec sa stratégie, chaque écoute renvoie un verdict, et les vues de qualité
+permettront de vérifier que le moteur fait mieux que le hasard plutôt que de l'espérer.
+\n

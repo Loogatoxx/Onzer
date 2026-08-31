@@ -5,6 +5,7 @@
 //! réunies pour corrompre une base SQLite.
 
 pub mod events;
+pub mod playlists;
 pub mod repository;
 pub mod settings;
 

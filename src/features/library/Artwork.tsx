@@ -23,7 +23,17 @@ function load(hash: string): Promise<string | null> {
   return pending;
 }
 
-export function Artwork({ hash }: { hash: string | null }) {
+interface ArtworkProps {
+  hash: string | null;
+  /**
+   * Dimensions et arrondi. Portés par l'appelant plutôt que fixés ici : la même
+   * pochette sert de vignette de 40 px dans une liste et d'affiche de 300 px
+   * dans le panneau de lecture.
+   */
+  className?: string;
+}
+
+export function Artwork({ hash, className = "h-10 w-10 rounded" }: ArtworkProps) {
   const [source, setSource] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,19 +54,10 @@ export function Artwork({ hash }: { hash: string | null }) {
   }, [hash]);
 
   if (source === null) {
-    return (
-      <div
-        aria-hidden
-        className="h-10 w-10 shrink-0 rounded bg-elevated"
-      />
-    );
+    // Le creux garde exactement la place de l'image : sans lui, la mise en page
+    // sauterait au moment où la pochette arrive.
+    return <div aria-hidden className={`shrink-0 bg-elevated ${className}`} />;
   }
 
-  return (
-    <img
-      src={source}
-      alt=""
-      className="h-10 w-10 shrink-0 rounded object-cover"
-    />
-  );
+  return <img src={source} alt="" className={`shrink-0 object-cover ${className}`} />;
 }

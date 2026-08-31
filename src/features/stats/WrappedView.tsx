@@ -24,12 +24,15 @@ import { useReveal } from "./useReveal";
  * | **Une idée par écran** | On fait défiler pour découvrir, pas pour consulter |
  * | **Typographie énorme** (jusqu'à 12 rem) | Le chiffre EST l'illustration — il n'y a rien d'autre à regarder |
  * | **Crénage très serré** | Sans lui, un texte agrandi paraît lâche ; avec lui, il devient un objet graphique |
- * | **Une couleur par section** | Donne un rythme au défilement sans transformer la page en arc-en-ciel |
+ * | **Un seul accent, rare** | Le violet ne souligne que le chiffre pivot de chaque section |
  * | **Beaucoup de vide** | C'est le vide qui rend le plein spectaculaire |
  *
- * Les néons ne servent **jamais** de fond : uniquement des chiffres, des
- * dégradés de texte et des halos. Un aplat fluo sur toute une section fatiguerait
- * l'œil au bout de deux sections.
+ * # Les fonds
+ *
+ * Les halos de couleur ont disparu au profit de **dégradés radiaux**. Un cercle
+ * flouté par `blur` garde toujours un bord : le flou étale le contour sans le
+ * supprimer, et sur un fond aussi sombre l'œil finit par voir le disque. Un
+ * dégradé radial, lui, atteint réellement zéro — il n'y a plus rien à voir.
  */
 const PERIODS: { label: string; value: StatsPeriod }[] = [
   { label: "30 jours", value: { days: 30 } },
@@ -89,20 +92,18 @@ function Hero({ data }: { data: Wrapped }) {
   const minutes = toMinutes(data.totals.listenedMs);
 
   return (
-    <Section ref={reveal.ref} className={reveal.className}>
-      <Glow className="-top-32 left-1/4 bg-accent/20" />
-
+    <Section ref={reveal.ref} className={reveal.className} wash="top">
       <Eyebrow>Ton écoute · {data.periodLabel}</Eyebrow>
 
-      <p className="display-tight numerals mt-6 bg-gradient-to-br from-accent via-accent-soft to-accent-alt text-gradient text-[clamp(4.5rem,17vw,12rem)]">
+      <p className="display-xl numerals mt-6 text-[clamp(4.5rem,17vw,12rem)] text-ink">
         {minutes.toLocaleString("fr-FR")}
       </p>
 
-      <p className="display mt-2 text-[clamp(1.5rem,4vw,2.75rem)] text-ink">
+      <p className="display mt-3 text-[clamp(1.5rem,4vw,2.75rem)] text-ink-muted">
         minutes de musique
       </p>
 
-      <p className="mt-8 max-w-xl text-base leading-relaxed text-ink-muted">
+      <p className="mt-8 max-w-xl text-[15px] leading-relaxed text-ink-muted">
         Soit {formatDurationLong(data.totals.listenedMs)} passées avec{" "}
         <Highlight>{data.totals.distinctArtists}</Highlight> artistes et{" "}
         <Highlight>{data.totals.distinctTracks}</Highlight> morceaux différents.
@@ -120,11 +121,9 @@ function TopArtists({ data }: { data: Wrapped }) {
 
   return (
     <Section ref={reveal.ref} className={reveal.className}>
-      <Glow className="top-10 right-0 bg-neon-lime/12" />
+      <Eyebrow>Ton artiste n°1</Eyebrow>
 
-      <Eyebrow accent="text-neon-lime">Ton artiste n°1</Eyebrow>
-
-      <p className="display-tight mt-5 text-[clamp(2.75rem,10vw,7rem)] text-ink">
+      <p className="display-xl mt-5 text-[clamp(2.75rem,10vw,7rem)] text-ink">
         {first.name}
       </p>
 
@@ -133,13 +132,13 @@ function TopArtists({ data }: { data: Wrapped }) {
       </p>
 
       {rest.length > 0 && (
-        <ol className="mt-14 space-y-1">
+        <ol className="mt-14">
           {rest.slice(0, 4).map((artist, index) => (
             <li
               key={artist.id}
               className="group flex items-baseline gap-5 border-t border-line py-4"
             >
-              <span className="numerals display w-10 shrink-0 text-2xl text-ink-faint transition-colors group-hover:text-neon-lime">
+              <span className="numerals display w-10 shrink-0 text-2xl text-ink-faint transition-colors group-hover:text-ink">
                 {index + 2}
               </span>
               <span className="display min-w-0 flex-1 truncate text-[clamp(1.25rem,3vw,2rem)] text-ink">
@@ -162,25 +161,21 @@ function TopTracks({ data }: { data: Wrapped }) {
 
   return (
     <Section ref={reveal.ref} className={reveal.className}>
-      <Glow className="top-0 left-0 bg-neon-pink/12" />
+      <Eyebrow>Tes morceaux</Eyebrow>
 
-      <Eyebrow accent="text-neon-pink">Tes morceaux</Eyebrow>
-
-      <ol className="mt-8 space-y-1">
+      <ol className="mt-8">
         {data.topTracks.slice(0, 5).map((track, index) => (
           <li
             key={track.id}
             className="group flex items-center gap-5 border-t border-line py-4"
           >
-            <span className="numerals display w-10 shrink-0 text-[clamp(1.75rem,4vw,2.5rem)] text-ink-faint transition-colors group-hover:text-neon-pink">
+            <span className="numerals display w-10 shrink-0 text-[clamp(1.75rem,4vw,2.5rem)] text-ink-faint transition-colors group-hover:text-ink">
               {index + 1}
             </span>
 
-            <div className="shrink-0 scale-125">
-              <Artwork hash={track.artworkHash} />
-            </div>
+            <Artwork hash={track.artworkHash} className="h-14 w-14 rounded-md" />
 
-            <div className="min-w-0 flex-1 pl-2">
+            <div className="min-w-0 flex-1 pl-1">
               <p className="display truncate text-[clamp(1.15rem,2.6vw,1.75rem)] text-ink">
                 {track.title}
               </p>
@@ -212,15 +207,13 @@ function Clock({ data }: { data: Wrapped }) {
   const peakHour = data.behaviour.peakHour;
 
   return (
-    <Section ref={reveal.ref} className={reveal.className}>
-      <Glow className="top-16 right-1/4 bg-accent-alt/15" />
-
-      <Eyebrow accent="text-accent-alt">Ton heure de pointe</Eyebrow>
+    <Section ref={reveal.ref} className={reveal.className} wash="center">
+      <Eyebrow>Ton heure de pointe</Eyebrow>
 
       {peakHour !== null && (
-        <p className="display-tight numerals mt-5 text-[clamp(3.5rem,13vw,9rem)] text-ink">
+        <p className="display-xl numerals mt-5 text-[clamp(3.5rem,13vw,9rem)] text-ink">
           {peakHour.toString().padStart(2, "0")}
-          <span className="text-accent-alt">h</span>
+          <span className="text-accent">h</span>
         </p>
       )}
 
@@ -233,14 +226,11 @@ function Clock({ data }: { data: Wrapped }) {
             <div
               key={slice.hour}
               title={`${slice.hour}h — ${formatDurationLong(slice.listenedMs)}`}
-              className="group relative flex-1"
-              style={{ height: "100%" }}
+              className="group relative h-full flex-1"
             >
               <div
                 className={`absolute bottom-0 w-full rounded-t-sm transition-all duration-700 ${
-                  isPeak
-                    ? "bg-gradient-to-t from-accent to-accent-alt"
-                    : "bg-elevated group-hover:bg-ink-faint"
+                  isPeak ? "bg-accent" : "bg-elevated group-hover:bg-ink-faint"
                 }`}
                 // 2 % de hauteur minimale : une heure sans écoute reste
                 // visible en creux, ce qui donne sa forme à l'horloge.
@@ -257,7 +247,7 @@ function Clock({ data }: { data: Wrapped }) {
         ))}
       </div>
 
-      <p className="mt-8 max-w-xl text-base leading-relaxed text-ink-muted">
+      <p className="mt-8 max-w-xl text-[15px] leading-relaxed text-ink-muted">
         <Highlight>{Math.round(data.behaviour.weekendShare * 100)} %</Highlight> de
         tes écoutes tombent le week-end.
       </p>
@@ -270,12 +260,10 @@ function PersonaSection({ data }: { data: Wrapped }) {
   const reveal = useReveal<HTMLElement>();
 
   return (
-    <Section ref={reveal.ref} className={reveal.className}>
-      <Glow className="-top-20 left-1/3 bg-neon-amber/12" />
+    <Section ref={reveal.ref} className={reveal.className} wash="left">
+      <Eyebrow>Ton portrait d'auditeur</Eyebrow>
 
-      <Eyebrow accent="text-neon-amber">Ton portrait d'auditeur</Eyebrow>
-
-      <p className="display-tight mt-5 bg-gradient-to-br from-neon-amber to-neon-pink text-gradient text-[clamp(3rem,11vw,8rem)]">
+      <p className="display-xl mt-5 text-[clamp(3rem,11vw,8rem)] text-ink">
         {data.persona.title}
       </p>
 
@@ -303,16 +291,24 @@ function TopAlbums({ data }: { data: Wrapped }) {
 
   return (
     <Section ref={reveal.ref} className={reveal.className}>
-      <Glow className="top-0 right-10 bg-accent/15" />
-
       <Eyebrow>Tes albums</Eyebrow>
 
       <div className="mt-8 grid grid-cols-2 gap-6 sm:grid-cols-3">
         {data.topAlbums.slice(0, 6).map((album, index) => (
           <div key={album.id} className="group">
-            <div className="relative aspect-square overflow-hidden rounded-xl bg-elevated">
-              <CoverFill hash={album.artworkHash} />
-              <span className="numerals display absolute bottom-2 left-3 text-4xl text-ink/90 mix-blend-difference">
+            <div className="relative overflow-hidden rounded-xl">
+              <Artwork hash={album.artworkHash} className="aspect-square w-full" />
+              {/* Le voile part du bas et meurt au tiers : sans lui, un chiffre
+                  clair posé sur une pochette claire deviendrait illisible. */}
+              <div
+                aria-hidden
+                className="absolute inset-x-0 bottom-0 h-1/3"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(to top, rgba(8,8,10,0.75), transparent)",
+                }}
+              />
+              <span className="numerals display absolute bottom-2 left-3 text-4xl text-ink">
                 {index + 1}
               </span>
             </div>
@@ -332,7 +328,7 @@ function KeyFigures({ data }: { data: Wrapped }) {
 
   return (
     <Section ref={reveal.ref} className={reveal.className}>
-      <Eyebrow accent="text-neon-lime">En chiffres</Eyebrow>
+      <Eyebrow>En chiffres</Eyebrow>
 
       <div className="mt-10 grid gap-x-12 gap-y-12 sm:grid-cols-2">
         <Metric
@@ -360,7 +356,7 @@ function Outro() {
   const reveal = useReveal<HTMLElement>();
 
   return (
-    <Section ref={reveal.ref} className={`${reveal.className} pb-40`}>
+    <Section ref={reveal.ref} className={`${reveal.className} pb-32`}>
       <p className="display max-w-2xl text-[clamp(1.5rem,4vw,2.5rem)] leading-tight text-ink-faint">
         Tout ceci a été calculé sur ta machine.
         <br />
@@ -375,21 +371,19 @@ function NotEnoughYet({ data }: { data: Wrapped }) {
   const played = data.behaviour.totalPlays;
 
   return (
-    <Section>
-      <Glow className="-top-24 left-1/4 bg-accent/15" />
-
+    <Section wash="top">
       <Eyebrow>Presque</Eyebrow>
 
-      <p className="display-tight numerals mt-5 text-[clamp(3.5rem,12vw,8rem)] text-ink">
+      <p className="display-xl numerals mt-5 text-[clamp(3.5rem,12vw,8rem)] text-ink">
         {played}
         <span className="text-ink-faint">/20</span>
       </p>
 
-      <p className="display mt-3 text-[clamp(1.25rem,3vw,2rem)] text-ink">
+      <p className="display mt-3 text-[clamp(1.25rem,3vw,2rem)] text-ink-muted">
         écoutes enregistrées
       </p>
 
-      <p className="mt-8 max-w-xl text-base leading-relaxed text-ink-muted">
+      <p className="mt-8 max-w-xl text-[15px] leading-relaxed text-ink-muted">
         Tes statistiques s'écrivent à mesure que tu écoutes. Encore{" "}
         <Highlight>{Math.max(20 - played, 0)}</Highlight> morceaux et cette page
         aura enfin quelque chose à raconter.
@@ -402,6 +396,13 @@ function NotEnoughYet({ data }: { data: Wrapped }) {
 //  Éléments partagés
 // ════════════════════════════════════════════════════════════════════════════
 
+/** Positions possibles du dégradé de fond d'une section. */
+const WASHES = {
+  top: "radial-gradient(48rem 26rem at 30% -6rem, rgba(139,92,246,0.09), transparent 70%)",
+  center: "radial-gradient(44rem 24rem at 72% 20%, rgba(245,245,246,0.05), transparent 70%)",
+  left: "radial-gradient(44rem 24rem at 12% 30%, rgba(139,92,246,0.07), transparent 70%)",
+} as const;
+
 /**
  * Une section occupe presque tout l'écran.
  *
@@ -411,41 +412,30 @@ function NotEnoughYet({ data }: { data: Wrapped }) {
 function Section({
   children,
   className = "",
+  wash,
   ref,
 }: {
   children: React.ReactNode;
   className?: string;
+  wash?: keyof typeof WASHES;
   ref?: React.Ref<HTMLElement>;
 }) {
   return (
     <section
       ref={ref}
-      className={`relative overflow-hidden px-8 py-24 sm:px-14 sm:py-28 ${className}`}
+      className={`relative px-8 py-24 sm:px-14 sm:py-28 ${className}`}
+      {...(wash === undefined
+        ? {}
+        : { style: { backgroundImage: WASHES[wash] } })}
     >
       <div className="relative mx-auto max-w-3xl">{children}</div>
     </section>
   );
 }
 
-/** Halo de couleur, très diffus : la couleur sans l'aplat. */
-function Glow({ className }: { className: string }) {
+function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      aria-hidden
-      className={`pointer-events-none absolute h-[26rem] w-[26rem] rounded-full blur-[140px] ${className}`}
-    />
-  );
-}
-
-function Eyebrow({
-  children,
-  accent = "text-accent",
-}: {
-  children: React.ReactNode;
-  accent?: string;
-}) {
-  return (
-    <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${accent}`}>
+    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-ink-faint">
       {children}
     </p>
   );
@@ -466,15 +456,6 @@ function Metric({ value, label }: { value: string; label: string }) {
   );
 }
 
-/** Pochette en pleine largeur de sa carte. */
-function CoverFill({ hash }: { hash: string | null }) {
-  return (
-    <div className="absolute inset-0 [&_img]:h-full [&_img]:w-full [&_img]:rounded-none [&>div]:h-full [&>div]:w-full [&>div]:rounded-none">
-      <Artwork hash={hash} />
-    </div>
-  );
-}
-
 function PeriodPicker({
   period,
   onChange,
@@ -486,14 +467,15 @@ function PeriodPicker({
     JSON.stringify(a) === JSON.stringify(b);
 
   return (
-    <div className="sticky top-0 z-10 flex justify-center border-b border-line bg-base/80 px-6 py-3 backdrop-blur">
-      <div className="flex gap-1 rounded-full border border-line bg-surface p-1">
+    // Sous la barre du haut, qui est elle-même collante : d'où le décalage.
+    <div className="sticky top-16 z-10 flex justify-center px-6 py-3">
+      <div className="flex gap-1 rounded-full bg-elevated/90 p-1 backdrop-blur">
         {PERIODS.map((option) => (
           <button
             key={option.label}
             type="button"
             onClick={() => onChange(option.value)}
-            className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
+            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
               same(option.value, period)
                 ? "bg-ink text-base"
                 : "text-ink-muted hover:text-ink"
@@ -509,7 +491,7 @@ function PeriodPicker({
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center p-10 text-center text-sm text-ink-muted">
+    <div className="flex h-96 items-center justify-center p-10 text-center text-sm text-ink-muted">
       {children}
     </div>
   );

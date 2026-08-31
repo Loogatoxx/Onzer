@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { Icon } from "@/components/Icon";
 import { ipc, type IdentificationStatus } from "@/lib/ipc";
 
 /**
@@ -57,7 +58,7 @@ export function IdentifyPanel() {
   const running = status.configured && progress.pending > 0;
 
   return (
-    <div className="rounded-xl border border-line bg-surface/60 px-3 py-2">
+    <div className="rounded-xl bg-elevated px-3 py-2">
       {/* Ligne toujours présente : l'accès à la clé ne disparaît jamais. */}
       <div className="flex items-center gap-2.5">
         <Wand active={running} />
@@ -90,7 +91,7 @@ export function IdentifyPanel() {
             setKey("");
             setEditing((open) => !open);
           }}
-          className="shrink-0 rounded-lg border border-line px-2.5 py-1 text-[11px] text-ink-muted transition-colors hover:border-accent/50 hover:text-ink"
+          className="shrink-0 rounded-full bg-raised px-3 py-1 text-[11px] font-semibold text-ink-muted transition-colors hover:text-ink"
         >
           {editing ? "Fermer" : status.configured ? "Modifier la clé" : "Configurer"}
         </button>
@@ -98,9 +99,9 @@ export function IdentifyPanel() {
 
       {/* Barre de progression, tant qu'il reste du travail. */}
       {running && (
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-elevated">
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-raised">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-accent to-accent-alt transition-[width] duration-500"
+            className="h-full rounded-full bg-accent transition-[width] duration-500"
             style={{ width: `${ratio * 100}%` }}
           />
         </div>
@@ -142,13 +143,13 @@ export function IdentifyPanel() {
                 if (event.key === "Escape") setEditing(false);
               }}
               placeholder={status.configured ? "nouvelle clé" : "clé AcoustID"}
-              className="flex-1 rounded-lg border border-line bg-base px-3 py-1.5 font-mono text-xs text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
+              className="flex-1 rounded-lg bg-base px-3 py-1.5 font-mono text-xs text-ink placeholder:text-ink-faint focus:outline focus:outline-1 focus:outline-accent"
             />
             <button
               type="button"
               disabled={key.length === 0}
               onClick={() => void save()}
-              className="rounded-lg bg-gradient-to-br from-accent to-accent-alt px-3 py-1.5 text-xs font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="rounded-full bg-ink px-4 py-1.5 text-xs font-semibold text-base transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               Enregistrer
             </button>
@@ -217,22 +218,14 @@ function Remedy({ error, onFix }: { error: string; onFix: () => void }) {
   return null;
 }
 
-/** Baguette : le geste « magique » de l'identification. */
+/** L'étincelle bat tant que l'ouvrier travaille : un travail invisible doit
+ *  quand même se voir quelque part. */
 function Wand({ active }: { active: boolean }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className={`h-4 w-4 shrink-0 ${active ? "animate-pulse text-accent" : "text-ink-faint"}`}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
+    <span
+      className={`shrink-0 ${active ? "animate-pulse text-accent" : "text-ink-faint"}`}
     >
-      <path d="m15 4 5 5L9 20H4v-5z" />
-      <path d="M14 5 19 10" />
-      <path d="M5 3v4M3 5h4" />
-    </svg>
+      <Icon name="sparkle" size={16} />
+    </span>
   );
 }

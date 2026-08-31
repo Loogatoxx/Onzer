@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { LibraryView } from "@/features/library/LibraryView";
+import { AppShell } from "@/app/AppShell";
 import { SetupView } from "@/features/library/SetupView";
 import { ipc, type AppStatus } from "@/lib/ipc";
 
@@ -58,7 +58,7 @@ export function App() {
     <div className="flex h-full flex-col bg-base">
       {!status.libraryOnline && <OfflineBanner root={status.libraryRoot} />}
       <div className="min-h-0 flex-1">
-        <LibraryView libraryRoot={status.libraryRoot} />
+        <AppShell libraryRoot={status.libraryRoot} />
       </div>
     </div>
   );
@@ -76,13 +76,23 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Halo d'ambiance : donne de la profondeur au fond, sans image. */
+/**
+ * Halo d'ambiance de l'écran d'accueil.
+ *
+ * Un dégradé radial, et non un cercle flouté : un disque en `blur` garde un
+ * bord — très doux, mais présent — que l'œil finit toujours par repérer sur un
+ * fond aussi sombre. Le dégradé, lui, s'éteint mathématiquement à zéro.
+ */
 function AmbientGlow() {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="absolute -top-40 left-1/2 h-[32rem] w-[32rem] -translate-x-1/2 rounded-full bg-accent/12 blur-[120px]" />
-      <div className="absolute -bottom-52 -right-24 h-[26rem] w-[26rem] rounded-full bg-accent-alt/8 blur-[120px]" />
-    </div>
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0"
+      style={{
+        backgroundImage:
+          "radial-gradient(60rem 32rem at 50% -12rem, rgba(139,92,246,0.10), transparent 70%)",
+      }}
+    />
   );
 }
 

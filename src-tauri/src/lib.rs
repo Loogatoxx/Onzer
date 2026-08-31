@@ -180,6 +180,17 @@ pub fn run() {
             commands::identify::retry_identifications,
             commands::identify::reidentify_library,
             commands::stats::wrapped,
+            commands::collection::create_playlist,
+            commands::collection::list_playlists,
+            commands::collection::rename_playlist,
+            commands::collection::delete_playlist,
+            commands::collection::add_to_playlist,
+            commands::collection::remove_from_playlist,
+            commands::collection::playlist_tracks,
+            commands::collection::toggle_loved,
+            commands::collection::loved_tracks,
+            commands::collection::track_lyrics,
+            commands::collection::set_track_lyrics,
         ])
         .run(tauri::generate_context!())
         .expect("échec au lancement d'Onzer");

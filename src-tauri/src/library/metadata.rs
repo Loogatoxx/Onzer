@@ -53,6 +53,11 @@ pub struct TrackMetadata {
     pub format: String,
 
     pub artwork: Option<Artwork>,
+    /// Paroles brutes telles que le fichier les contient.
+    ///
+    /// Conservées non analysées : le même champ porte indifféremment du texte
+    /// simple ou du LRC horodaté, et c'est à l'affichage de trancher.
+    pub lyrics: Option<String>,
     /// Vrai si les tags étaient absents ou vides et que le nom de fichier a
     /// servi de source. Permet de signaler ces morceaux dans l'interface.
     pub from_filename: bool,
@@ -183,6 +188,7 @@ pub fn read(path: &Path) -> Result<TrackMetadata> {
         channels: properties.channels(),
         format,
         artwork: None,
+        lyrics: None,
         from_filename: false,
     };
 
@@ -209,6 +215,11 @@ pub fn read(path: &Path) -> Result<TrackMetadata> {
         }
 
         metadata.artwork = extract_artwork(tag.pictures());
+
+        metadata.lyrics = tag
+            .get_string(&ItemKey::Lyrics)
+            .map(clean)
+            .filter(|value| !value.is_empty());
     }
 
     // Repli sur le nom de fichier si les tags n'ont rien donné d'utile.
@@ -368,6 +379,7 @@ mod tests {
             channels: None,
             format: "mp3".to_string(),
             artwork: None,
+            lyrics: None,
             from_filename: false,
         }
     }

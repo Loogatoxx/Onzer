@@ -526,6 +526,88 @@ relâche que là où elle serait contradictoire.
 
 ---
 
+## ADR-017 — Charte visuelle : monochrome, Avenir Next, icônes dessinées à la main
+
+**Contexte.** L'interface avait été montée « au plus simple » en attendant le travail
+graphique. Elle accumulait des dégradés violet → cyan sur de grandes surfaces, quatre
+couleurs néon dans les statistiques, et des icônes redessinées à chaque usage avec des
+épaisseurs de trait différentes.
+
+**Décision — la couleur.** Toute la charpente est en niveaux de gris. **Les seules couleurs
+de l'écran viennent des pochettes.** Une interface musicale qui apporte ses propres couleurs
+entre en concurrence avec les albums qu'elle affiche. L'accent violet ne subsiste qu'à
+quatre endroits : le morceau en cours, un favori, le chiffre pivot d'une section de
+statistiques, la barre de progression au survol.
+
+**Décision — la typographie.** `Avenir Next`, livrée avec macOS. Circular, la fonte de
+Spotify, est une linéale géométrique ; Avenir (Frutiger, 1988) est l'ancêtre direct de
+cette famille. Elle monte jusqu'au poids Heavy, ce qui donne de vrais titres d'affichage,
+et ne transite par aucun réseau. Le choix exclut délibérément les fontes « par défaut » des
+interfaces générées (Inter en tête), reconnaissables au premier coup d'œil.
+
+**Décision — les icônes.** Un fichier unique, `src/components/Icon.tsx`, plutôt qu'une
+bibliothèque. Une bibliothèque apporte deux mille symboles pour en utiliser trente et impose
+son style ; surtout, elle ne garantit pas ce qui fait qu'un jeu d'icônes paraît
+professionnel : **un trait rigoureusement identique partout**. Grille de 24, trait de 1,75,
+extrémités arrondies. Seules trois formes sont pleines — lecture, pause, cœur — parce qu'un
+symbole d'action doit peser plus lourd qu'un symbole de navigation.
+
+**Décision — les fonds dégradés.** Aucun disque flouté (`blur`). Le flou étale un contour
+sans le supprimer : sur un fond très sombre, l'œil finit toujours par voir le bord du
+disque — c'est précisément ce qui se voyait sur la page de statistiques. Les fonds sont
+désormais des **dégradés radiaux**, qui atteignent réellement la transparence.
+
+**Conséquence.** Les jetons néon (`neon-lime`, `neon-pink`, `neon-amber`) ont disparu des
+jetons de design, et avec eux la tentation de les réutiliser.
+
+---
+
+## ADR-018 — Une coquille unique plutôt que des pages
+
+**Contexte.** La bibliothèque et les statistiques cohabitaient dans une même vue via une
+bascule. L'arrivée des playlists, des favoris, des paroles et de la file d'attente rendait
+ce montage intenable.
+
+**Décision.** `AppShell` compose quatre zones permanentes — barre latérale, zone principale
+défilante, panneau « en cours de lecture », barre de lecture — et n'en démonte aucune lors
+d'une navigation.
+
+**Pourquoi c'est structurant.** Changer de page ne doit jamais donner l'impression d'avoir
+coupé la musique. C'est aussi la seule disposition dans laquelle les paroles peuvent
+continuer à défiler pendant qu'on fouille sa bibliothèque : en faire une page plein écran
+obligerait à quitter ce qu'on regardait pour lire une ligne.
+
+**Navigation.** Une pile avec curseur, et non un état courant unique : les flèches
+précédent/suivant n'ont de sens que s'il existe un historique. La recherche, elle, n'entre
+pas dans la pile — c'est une surimpression que l'on quitte en vidant le champ, pas une
+destination.
+
+**Commandes de lecture centrées.** Elles étaient à gauche. Au centre, elles libèrent toute
+la largeur pour la barre de progression : sur un morceau de quatre minutes, c'est la
+différence entre viser une seconde et en viser dix.
+
+---
+
+## ADR-019 — Les paroles vivent dans le fichier
+
+**Contexte.** Chaque morceau importé peut porter des paroles dans ses tags, parfois
+synchronisées au format LRC.
+
+**Décision.** Les paroles sont lues depuis le tag `Lyrics`, analysées par
+`library::lyrics`, et **réécrites dans le fichier** lorsque l'utilisateur les modifie. La
+base ne sert que de cache de lecture.
+
+**Le défaut que cette décision a révélé.** `identify::tagger::write_tags` reconstruit un
+bloc de tags neuf avant de l'écrire. Omettre le champ `Lyrics` aurait **effacé les paroles
+synchronisées que l'utilisateur possédait** au moment de la ré-identification acoustique —
+une perte silencieuse et irréversible.
+
+**Suivi de la lecture.** `Lyrics::line_at` fait une recherche dichotomique ; la même
+logique est dupliquée côté TypeScript. Duplication assumée : l'alternative serait un
+aller-retour IPC **quatre fois par seconde** pour six lignes de code.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

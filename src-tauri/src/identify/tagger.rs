@@ -225,6 +225,15 @@ fn write_tags(
         tag.set_genre(genre.clone());
     }
 
+    // Les paroles sont réécrites telles quelles.
+    //
+    // Ce n'est pas un détail : on remplace ici le bloc de tags par un neuf.
+    // Omettre ce champ effacerait des paroles synchronisées que l'utilisateur
+    // possédait, et rien ne permettrait de les retrouver.
+    if let Some(lyrics) = &metadata.lyrics {
+        tag.insert_text(ItemKey::Lyrics, lyrics.clone());
+    }
+
     if let Some(bytes) = cover {
         // Embarquée en plus du fichier `cover.jpg` : un lecteur mobile qui ne
         // lit que le fichier audio trouvera quand même la pochette.
@@ -393,6 +402,7 @@ mod tests {
             channels: Some(2),
             format: "mp3".into(),
             artwork: None,
+            lyrics: None,
             from_filename: true,
         }
     }
@@ -421,6 +431,17 @@ mod tests {
         assert_eq!(local.duration_ms, 301_000);
         assert_eq!(local.bitrate, Some(320));
         assert_eq!(local.format, "mp3");
+    }
+
+    #[test]
+    fn lidentification_ne_touche_pas_aux_paroles() {
+        // MusicBrainz n'en fournit pas : celles du fichier doivent survivre.
+        let mut local = locale();
+        local.lyrics = Some("[00:10.00]Une ligne".to_string());
+
+        merge(&mut local, &identifie());
+
+        assert_eq!(local.lyrics.as_deref(), Some("[00:10.00]Une ligne"));
     }
 
     #[test]

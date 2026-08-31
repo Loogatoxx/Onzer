@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { Icon, type IconName } from "@/components/Icon";
 import { ipc, type AnalysisProgress, type GeneratedPlaylist } from "@/lib/ipc";
 
 /**
@@ -45,28 +46,25 @@ export function DiscoverBar({ disabled, onGenerated, onError }: DiscoverBarProps
   }
 
   return (
-    <div className="no-drag mt-3 flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Pill
+        icon="sparkle"
         label="Pour toi maintenant"
         hint="Ce que tu écoutes habituellement à cette heure-ci"
         primary
         loading={busy === "now"}
         disabled={disabled}
         onClick={() => void launch("now", () => ipc.startForNow())}
-      >
-        <path d="m12 3 2.2 5.6L20 10l-4.4 3.3L16.8 19 12 15.9 7.2 19l1.2-5.7L4 10l5.8-1.4Z" />
-      </Pill>
+      />
 
       <Pill
+        icon="clock"
         label="Tu les avais oubliés"
         hint="Aimés autrefois, plus écoutés depuis longtemps"
         loading={busy === "forgotten"}
         disabled={disabled}
         onClick={() => void launch("forgotten", () => ipc.startForgotten())}
-      >
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 2" />
-      </Pill>
+      />
 
       {progress !== null && <AnalysisGauge progress={progress} />}
     </div>
@@ -93,33 +91,39 @@ function AnalysisGauge({ progress }: { progress: AnalysisProgress }) {
     >
       <div className="h-1 w-24 overflow-hidden rounded-full bg-elevated">
         <div
-          className="h-full rounded-full bg-accent transition-[width] duration-500"
+          className="h-full rounded-full bg-ink-faint transition-[width] duration-500"
           style={{ width: `${ratio * 100}%` }}
         />
       </div>
-      <span className="text-[11px] tabular-nums text-ink-faint">
+      <span className="numerals text-[11px] text-ink-faint">
         analyse {progress.analyzed}/{progress.total}
       </span>
     </div>
   );
 }
 
+/**
+ * Pastille d'action.
+ *
+ * Une seule est pleine — celle qu'on veut voir cliquée. Deux boutons de même
+ * poids ne guident plus vers rien.
+ */
 function Pill({
+  icon,
   label,
   hint,
   primary = false,
   loading = false,
   disabled = false,
   onClick,
-  children,
 }: {
+  icon: IconName;
   label: string;
   hint: string;
   primary?: boolean;
   loading?: boolean;
   disabled?: boolean;
   onClick: () => void;
-  children: React.ReactNode;
 }) {
   return (
     <button
@@ -127,24 +131,15 @@ function Pill({
       title={hint}
       disabled={disabled || loading}
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-40 ${
+      className={`flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-semibold transition-all disabled:opacity-40 ${
         primary
-          ? "bg-gradient-to-br from-accent to-accent-alt text-base hover:opacity-90"
-          : "border border-line bg-surface text-ink-muted hover:border-accent/40 hover:text-ink"
+          ? "bg-ink text-base hover:opacity-90"
+          : "bg-elevated text-ink-muted hover:text-ink"
       }`}
     >
-      <svg
-        viewBox="0 0 24 24"
-        className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        {loading ? <path d="M21 12a9 9 0 1 1-6.2-8.6" /> : children}
-      </svg>
+      <span className={loading ? "animate-spin" : ""}>
+        <Icon name={loading ? "repeat" : icon} size={15} />
+      </span>
       {label}
     </button>
   );

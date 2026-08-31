@@ -7,6 +7,7 @@
 pub mod artwork;
 pub mod hash;
 pub mod importer;
+pub mod lyrics;
 pub mod metadata;
 pub mod naming;
 pub mod scanner;

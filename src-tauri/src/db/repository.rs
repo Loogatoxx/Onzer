@@ -149,8 +149,8 @@ pub async fn insert_track(pool: &SqlitePool, new: NewTrack<'_>) -> Result<i64> {
             title, normalized_title, album_id, track_no, disc_no, year, duration_ms,
             relative_path, file_size, content_hash, file_modified_at,
             format, bitrate, sample_rate, channels,
-            added_at, last_seen_at, source
-         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            added_at, last_seen_at, source, lyrics
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          RETURNING id",
     )
     .bind(&metadata.title)
@@ -171,6 +171,7 @@ pub async fn insert_track(pool: &SqlitePool, new: NewTrack<'_>) -> Result<i64> {
     .bind(now)
     .bind(now)
     .bind(new.source)
+    .bind(metadata.lyrics.as_deref())
     .fetch_one(&mut *tx)
     .await?;
 
@@ -380,7 +381,7 @@ pub async fn update_track_identity(
              title = ?, normalized_title = ?, album_id = ?, track_no = ?, disc_no = ?,
              year = ?, relative_path = ?, content_hash = ?, file_size = ?,
              recording_mbid = ?, identification_state = 'done', identified_at = ?,
-             analysis_error = NULL
+             lyrics = COALESCE(?, lyrics), analysis_error = NULL
          WHERE id = ?",
     )
     .bind(&metadata.title)
@@ -394,6 +395,7 @@ pub async fn update_track_identity(
     .bind(file_size)
     .bind(recording_mbid)
     .bind(now)
+    .bind(metadata.lyrics.as_deref())
     .bind(track_id)
     .execute(&mut *tx)
     .await?;
@@ -489,6 +491,9 @@ pub struct TrackSummary {
     pub relative_path: String,
     pub is_available: bool,
     pub artwork_hash: Option<String>,
+    pub is_loved: bool,
+    /// Date d'ajout à la bibliothèque, en secondes Unix. Affichée en colonne.
+    pub added_at: i64,
 }
 
 /// Liste les morceaux, du plus récemment ajouté au plus ancien.
@@ -509,7 +514,9 @@ pub async fn list_tracks(pool: &SqlitePool, limit: i64, offset: i64) -> Result<V
              t.format,
              t.relative_path,
              t.is_available,
-             al.artwork_hash
+             al.artwork_hash,
+             t.is_loved,
+             t.added_at
          FROM tracks t
          LEFT JOIN albums al ON al.id = t.album_id
          WHERE t.deleted_at IS NULL
@@ -542,7 +549,7 @@ pub async fn tracks_by_ids(pool: &SqlitePool, ids: &[i64]) -> Result<Vec<TrackSu
                WHERE ta.track_id = t.id AND ta.role = 'main'
                ORDER BY ta.position LIMIT 1)          AS artist,
              al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-             t.relative_path, t.is_available, al.artwork_hash
+             t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at
          FROM tracks t
          LEFT JOIN albums al ON al.id = t.album_id
          WHERE t.id IN ({placeholders}) AND t.deleted_at IS NULL"
@@ -583,7 +590,7 @@ pub async fn search_tracks(pool: &SqlitePool, query: &str, limit: i64) -> Result
                WHERE ta.track_id = t.id AND ta.role = 'main'
                ORDER BY ta.position LIMIT 1)          AS artist,
              al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-             t.relative_path, t.is_available, al.artwork_hash
+             t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at
          FROM tracks_fts f
          JOIN tracks t ON t.id = f.track_id
          LEFT JOIN albums al ON al.id = t.album_id

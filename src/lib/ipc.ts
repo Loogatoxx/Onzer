@@ -39,6 +39,32 @@ export interface TrackSummary {
   relativePath: string;
   isAvailable: boolean;
   artworkHash: string | null;
+  isLoved: boolean;
+  /** Date d'ajout à la bibliothèque, en millisecondes Unix. */
+  addedAt: number;
+}
+
+/** Miroir de `db::playlists::PlaylistSummary`. */
+export interface PlaylistSummary {
+  id: number;
+  name: string;
+  kind: string;
+  trackCount: number;
+  coverHash: string | null;
+  updatedAt: number;
+}
+
+/** Miroir de `library::lyrics::LyricLine`. */
+export interface LyricLine {
+  atMs: number;
+  text: string;
+}
+
+/** Miroir de `library::lyrics::Lyrics`. */
+export interface Lyrics {
+  /** Lignes horodatées, triées. Vide si les paroles ne sont pas synchronisées. */
+  synced: LyricLine[];
+  plain: string[];
 }
 
 /** Miroir de `db::repository::LibraryCounts`. */
@@ -357,6 +383,33 @@ export const ipc = {
 
   wrapped: (period: StatsPeriod = "allTime", top = 10): Promise<Wrapped> =>
     invoke<Wrapped>("wrapped", { period, top }),
+
+  // ── Collection ───────────────────────────────────────────────────────
+
+  createPlaylist: (name: string): Promise<number> =>
+    invoke<number>("create_playlist", { name }),
+  listPlaylists: (): Promise<PlaylistSummary[]> =>
+    invoke<PlaylistSummary[]>("list_playlists"),
+  renamePlaylist: (playlistId: number, name: string): Promise<void> =>
+    invoke<void>("rename_playlist", { playlistId, name }),
+  deletePlaylist: (playlistId: number): Promise<void> =>
+    invoke<void>("delete_playlist", { playlistId }),
+  addToPlaylist: (playlistId: number, trackIds: number[]): Promise<number> =>
+    invoke<number>("add_to_playlist", { playlistId, trackIds }),
+  removeFromPlaylist: (playlistId: number, position: number): Promise<void> =>
+    invoke<void>("remove_from_playlist", { playlistId, position }),
+  playlistTracks: (playlistId: number): Promise<TrackSummary[]> =>
+    invoke<TrackSummary[]>("playlist_tracks", { playlistId }),
+
+  /** Bascule le favori et retourne le nouvel état. */
+  toggleLoved: (trackId: number): Promise<boolean> =>
+    invoke<boolean>("toggle_loved", { trackId }),
+  lovedTracks: (): Promise<TrackSummary[]> => invoke<TrackSummary[]>("loved_tracks"),
+
+  trackLyrics: (trackId: number): Promise<Lyrics> =>
+    invoke<Lyrics>("track_lyrics", { trackId }),
+  setTrackLyrics: (trackId: number, raw: string): Promise<Lyrics> =>
+    invoke<Lyrics>("set_track_lyrics", { trackId, raw }),
 };
 
 /** Millisecondes → « 1 240 » minutes, sans décimale. */
@@ -371,6 +424,26 @@ export function formatDurationLong(milliseconds: number): string {
 
   if (hours === 0) return `${minutes} min`;
   return `${hours} h ${(minutes % 60).toString().padStart(2, "0")}`;
+}
+
+/**
+ * Horodatage → « 12 mars 2025 ».
+ *
+ * Les dates récentes sont exprimées en relatif : « aujourd'hui » se lit plus
+ * vite qu'une date qu'il faut comparer mentalement à celle du jour.
+ */
+export function formatDate(milliseconds: number): string {
+  const days = Math.floor((Date.now() - milliseconds) / 86_400_000);
+
+  if (days <= 0) return "aujourd'hui";
+  if (days === 1) return "hier";
+  if (days < 7) return `il y a ${days} jours`;
+
+  return new Date(milliseconds).toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 /** Millisecondes → « 3:42 ». */

@@ -21,7 +21,7 @@
         "theme": "Dark",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "backgroundColor": "#0A0A0C"
+        "backgroundColor": "#08080A"
       }
     ],
     "security": {

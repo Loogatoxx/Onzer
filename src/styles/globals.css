@@ -3,45 +3,56 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    Jetons de design d'Onzer.
 
-   Ces variables sont la SEULE source de vérité pour les couleurs. Aucun
-   composant ne doit écrire une valeur hexadécimale en dur : c'est ce qui
-   permettra de faire évoluer l'identité visuelle sans repasser sur 40 fichiers.
+   # Parti pris chromatique : monochrome, plus un accent rare
+   Une interface musicale doit s'effacer devant les pochettes. Les couleurs de
+   l'écran viennent des albums, pas du châssis. Toute la charpente est donc en
+   niveaux de gris, et le violet n'apparaît qu'à trois endroits : le morceau en
+   cours, l'élément de navigation actif, et la barre de progression.
+
+   Aucun dégradé sur de grandes surfaces. Un dégradé attire l'œil ; s'il est
+   partout, il n'attire plus rien et fatigue.
+
+   # Parti pris typographique : Avenir Next
+   Circular, la fonte de Spotify, est une linéale géométrique. Avenir, dessinée
+   par Adrian Frutiger en 1988, est l'ancêtre direct de cette famille : même
+   construction sur le cercle, mêmes proportions généreuses, la même chaleur.
+   Elle est livrée avec macOS — aucun téléchargement, aucune requête réseau — et
+   monte jusqu'au poids Heavy, ce qui donne de vrais titres d'affichage.
    ═══════════════════════════════════════════════════════════════════════════ */
 @theme {
-  /* Fonds, du plus profond au plus élevé */
-  --color-base: #0a0a0c;
-  --color-surface: #131317;
-  --color-elevated: #1b1b21;
-  --color-line: #26262e;
+  /* Fonds, du plus profond au plus élevé. */
+  --color-base: #08080a;
+  --color-surface: #121214;
+  --color-elevated: #1c1c20;
+  --color-raised: #26262b;
+  --color-line: #232327;
+  --color-line-soft: #1a1a1e;
 
-  /* Texte */
-  --color-ink: #f2f2f5;
-  --color-ink-muted: #8b8b96;
-  --color-ink-faint: #5a5a64;
+  /* Texte. */
+  --color-ink: #f5f5f6;
+  --color-ink-muted: #a2a2aa;
+  --color-ink-faint: #6b6b74;
 
-  /* Accents — identité violet → cyan */
+  /* L'accent. Rare, par principe. */
   --color-accent: #8b5cf6;
   --color-accent-soft: #a78bfa;
   --color-accent-alt: #22d3ee;
 
-  /* Néons réservés aux statistiques : chaque section a sa couleur, ce qui
-     donne du rythme au défilement sans casser l'identité de l'application. */
-  --color-neon-lime: #c6f24e;
-  --color-neon-pink: #ff5ca8;
-  --color-neon-amber: #ffb020;
+  /* États. */
+  --color-ok: #4ade80;
+  --color-warn: #e0a33a;
+  --color-danger: #ef6a6a;
 
-  /* Police d'affichage. Sur macOS, SF Pro Display monte jusqu'au poids 900 :
-     inutile d'embarquer une fonte, et rien ne transite par le réseau. */
-  --font-display: "SF Pro Display", -apple-system, "Inter", "Helvetica Neue",
-    system-ui, sans-serif;
+  /* Typographie. */
+  --font-sans:
+    "Avenir Next", "Avenir", -apple-system, "Helvetica Neue", system-ui,
+    sans-serif;
+  --font-display:
+    "Avenir Next", "Avenir", -apple-system, "Helvetica Neue", system-ui,
+    sans-serif;
 
-  /* États */
-  --color-ok: #34d399;
-  --color-warn: #fbbf24;
-  --color-danger: #f87171;
-
-  /* Courbes d'animation : une seule pour toute l'application, c'est ce qui
-     donne l'impression que tout bouge « du même geste ». */
+  /* Une seule courbe pour toute l'application : c'est ce qui donne
+     l'impression que tout bouge du même geste. */
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -55,8 +66,11 @@
   body {
     background-color: var(--color-base);
     color: var(--color-ink);
-    font-family:
-      ui-sans-serif, -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+    font-family: var(--font-sans);
+    /* Avenir Next a une hauteur d'x généreuse : à taille égale, elle paraît
+       plus grande qu'une grotesque. On compense légèrement. */
+    font-size: 14px;
+    letter-spacing: -0.006em;
     -webkit-font-smoothing: antialiased;
     /* Une application native ne se sélectionne pas au glissé de souris. */
     user-select: none;
@@ -64,7 +78,30 @@
     overflow: hidden;
   }
 
-  /* Respecte le réglage d'accessibilité du système. */
+  /* Barres de défilement discrètes : présentes quand on défile, invisibles
+     le reste du temps. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: transparent;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  *:hover::-webkit-scrollbar-thumb {
+    background: var(--color-raised);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-faint);
+    background-clip: content-box;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -88,21 +125,20 @@
 
 @layer utilities {
   /* ── Typographie d'affichage ─────────────────────────────────────────
-     Des chiffres qui remplissent l'écran. Le crénage serré est ce qui
-     distingue un titre massif d'un simple texte agrandi : sans lui, les
-     grandes tailles paraissent lâches et amateur. */
+     Le crénage serré est ce qui distingue un titre massif d'un texte
+     simplement agrandi. Sans lui, les grandes tailles paraissent lâches. */
   .display {
     font-family: var(--font-display);
-    font-weight: 860;
-    letter-spacing: -0.045em;
-    line-height: 0.92;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
   }
 
-  .display-tight {
+  .display-xl {
     font-family: var(--font-display);
-    font-weight: 860;
-    letter-spacing: -0.055em;
-    line-height: 0.85;
+    font-weight: 800;
+    letter-spacing: -0.045em;
+    line-height: 0.9;
   }
 
   /* Chiffres à chasse fixe : un compteur qui s'anime ne doit pas faire
@@ -111,20 +147,13 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Dégradé appliqué au texte lui-même. */
-  .text-gradient {
-    background-clip: text;
-    -webkit-background-clip: text;
-    color: transparent;
-  }
-
   /* Apparition au défilement. */
   .reveal {
     opacity: 0;
-    transform: translateY(28px);
+    transform: translateY(22px);
     transition:
-      opacity 700ms var(--ease-out-soft),
-      transform 700ms var(--ease-out-soft);
+      opacity 650ms var(--ease-out-soft),
+      transform 650ms var(--ease-out-soft);
   }
 
   .reveal-visible {

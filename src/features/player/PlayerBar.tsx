@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 
 import { Artwork } from "@/features/library/Artwork";
+import { Icon, IconButton } from "@/components/Icon";
 import { formatDuration, type PlaybackSnapshot, type RepeatMode } from "@/lib/ipc";
 
 interface PlayerBarProps {
   state: PlaybackSnapshot;
+  isLoved: boolean;
+  panel: "closed" | "lyrics" | "queue";
   onToggle: () => void;
   onNext: () => void;
   onPrevious: () => void;
@@ -12,14 +15,25 @@ interface PlayerBarProps {
   onVolume: (volume: number) => void;
   onShuffle: (shuffle: boolean) => void;
   onRepeat: () => void;
+  onToggleLoved: () => void;
+  onOpenPanel: (tab: "lyrics" | "queue") => void;
 }
 
 /**
  * Barre de lecture.
  *
- * Volontairement sobre : le travail graphique viendra plus tard. Elle est
- * néanmoins complète fonctionnellement — lecture, navigation, déplacement dans
- * le morceau, volume, aléatoire et répétition.
+ * # Pourquoi les commandes sont au centre
+ *
+ * Elles étaient à gauche jusqu'ici, ce qui est défendable : la main y va
+ * naturellement. Mais la barre occupe toute la largeur de la fenêtre, et sur un
+ * écran large les commandes se retrouvaient tassées dans un coin pendant que le
+ * milieu restait vide.
+ *
+ * Au centre, elles gagnent une chose qu'aucune autre disposition ne permet : la
+ * **barre de progression peut faire toute la largeur utile**. Sur un morceau de
+ * quatre minutes, cela fait la différence entre viser une seconde et en viser
+ * dix. Le morceau en cours reste à gauche, les réglages à droite : trois zones
+ * de rôles distincts, et pas un pixel perdu.
  */
 export function PlayerBar(props: PlayerBarProps) {
   const { state } = props;
@@ -30,84 +44,138 @@ export function PlayerBar(props: PlayerBarProps) {
   }
 
   return (
-    <div className="shrink-0 border-t border-line bg-surface">
-      <Seekbar
-        positionMs={state.positionMs}
-        durationMs={state.durationMs || track.durationMs}
-        onSeek={props.onSeek}
-      />
+    <footer className="shrink-0 px-2 pb-2">
+      <div className="flex items-center gap-4 rounded-xl bg-surface px-4 py-3">
+        {/* ── Ce qui joue ──────────────────────────────────────────────── */}
+        <div className="flex w-[26%] min-w-0 shrink-0 items-center gap-3">
+          <Artwork hash={track.artworkHash} className="h-14 w-14 rounded-md" />
 
-      {/* Disposition : commandes à gauche, morceau à droite.
-          La main part naturellement vers la gauche pour agir, et l'œil vers la
-          droite pour lire — l'information suit le sens de lecture. */}
-      <div className="flex items-center gap-4 px-4 py-2.5">
-        <div className="flex shrink-0 items-center gap-1">
-          <IconButton
-            label={state.shuffle ? "Aléatoire : activé" : "Aléatoire : désactivé"}
-            active={state.shuffle}
-            onClick={() => props.onShuffle(!state.shuffle)}
-          >
-            <path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
-          </IconButton>
-
-          <IconButton label="Précédent" onClick={props.onPrevious}>
-            <path d="M19 20 9 12l10-8v16ZM5 19V5" />
-          </IconButton>
-
-          <button
-            type="button"
-            aria-label={state.isPlaying ? "Pause" : "Lecture"}
-            onClick={props.onToggle}
-            className="mx-1 flex h-9 w-9 items-center justify-center rounded-full bg-ink text-base transition-transform hover:scale-105"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
-              {state.isPlaying ? (
-                <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
-              ) : (
-                <path d="M6 3l14 9-14 9V3z" />
-              )}
-            </svg>
-          </button>
-
-          <IconButton label="Suivant" onClick={props.onNext}>
-            <path d="m5 4 10 8-10 8V4ZM19 5v14" />
-          </IconButton>
-
-          <RepeatButton mode={state.repeat} onClick={props.onRepeat} />
-        </div>
-
-        <div className="flex w-28 shrink-0 items-center gap-2">
-          <svg
-            viewBox="0 0 24 24"
-            className="h-3.5 w-3.5 shrink-0 text-ink-faint"
-            fill="currentColor"
-            aria-hidden
-          >
-            <path d="M11 5 6 9H2v6h4l5 4V5z" />
-          </svg>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={state.volume}
-            aria-label="Volume"
-            onChange={(event) => props.onVolume(Number(event.target.value))}
-            className="h-1 w-full cursor-pointer appearance-none rounded-full bg-elevated accent-accent"
-          />
-        </div>
-
-        {/* Le morceau en cours occupe l'espace restant, aligné à droite. */}
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
-          <div className="min-w-0 text-right">
-            <p className="truncate text-sm text-ink">{track.title}</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-ink">{track.title}</p>
             <p className="truncate text-xs text-ink-muted">
               {track.artist ?? "Artiste inconnu"}
             </p>
           </div>
-          <Artwork hash={track.artworkHash} />
+
+          <button
+            type="button"
+            title={props.isLoved ? "Retirer des favoris" : "Ajouter aux favoris"}
+            aria-label={props.isLoved ? "Retirer des favoris" : "Ajouter aux favoris"}
+            onClick={props.onToggleLoved}
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+              props.isLoved ? "text-accent" : "text-ink-faint hover:text-ink"
+            }`}
+          >
+            <Icon name={props.isLoved ? "heartFilled" : "heart"} size={17} />
+          </button>
+        </div>
+
+        {/* ── Commandes ────────────────────────────────────────────────── */}
+        <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            <IconButton
+              name="shuffle"
+              label={state.shuffle ? "Aléatoire : activé" : "Aléatoire : désactivé"}
+              active={state.shuffle}
+              onClick={() => props.onShuffle(!state.shuffle)}
+            />
+
+            <IconButton name="previous" label="Précédent" onClick={props.onPrevious} />
+
+            <button
+              type="button"
+              aria-label={state.isPlaying ? "Pause" : "Lecture"}
+              title={state.isPlaying ? "Pause" : "Lecture"}
+              onClick={props.onToggle}
+              className="mx-1 flex h-10 w-10 items-center justify-center rounded-full bg-ink text-base transition-transform duration-150 hover:scale-[1.06] active:scale-95"
+            >
+              {/* Le triangle de lecture est optiquement décentré : sa masse est
+                  à gauche, il faut le pousser d'un poil pour qu'il paraisse
+                  centré dans le disque. */}
+              <span className={state.isPlaying ? "" : "translate-x-[1px]"}>
+                <Icon name={state.isPlaying ? "pause" : "play"} size={18} />
+              </span>
+            </button>
+
+            <IconButton name="next" label="Suivant" onClick={props.onNext} />
+
+            <RepeatButton mode={state.repeat} onClick={props.onRepeat} />
+          </div>
+
+          <Seekbar
+            positionMs={state.positionMs}
+            durationMs={state.durationMs || track.durationMs}
+            onSeek={props.onSeek}
+          />
+        </div>
+
+        {/* ── Réglages ─────────────────────────────────────────────────── */}
+        <div className="flex w-[26%] shrink-0 items-center justify-end gap-1">
+          <IconButton
+            name="lyrics"
+            label="Paroles"
+            active={props.panel === "lyrics"}
+            onClick={() => props.onOpenPanel("lyrics")}
+          />
+          <IconButton
+            name="queue"
+            label="File d'attente"
+            active={props.panel === "queue"}
+            onClick={() => props.onOpenPanel("queue")}
+          />
+
+          <VolumeControl volume={state.volume} onVolume={props.onVolume} />
         </div>
       </div>
+    </footer>
+  );
+}
+
+/**
+ * Réglage du volume.
+ *
+ * L'icône est cliquable et coupe le son en mémorisant le niveau précédent :
+ * couper puis rétablir ne doit pas obliger à retrouver son réglage au pixel.
+ */
+function VolumeControl({
+  volume,
+  onVolume,
+}: {
+  volume: number;
+  onVolume: (volume: number) => void;
+}) {
+  const [beforeMute, setBeforeMute] = useState(0.8);
+  const muted = volume === 0;
+
+  return (
+    <div className="ml-1 flex items-center gap-2">
+      <button
+        type="button"
+        title={muted ? "Rétablir le son" : "Couper le son"}
+        aria-label={muted ? "Rétablir le son" : "Couper le son"}
+        onClick={() => {
+          if (muted) {
+            onVolume(beforeMute);
+          } else {
+            setBeforeMute(volume);
+            onVolume(0);
+          }
+        }}
+        className="text-ink-muted transition-colors hover:text-ink"
+      >
+        <Icon name={muted ? "volumeMute" : "volume"} size={17} />
+      </button>
+
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.01}
+        value={volume}
+        aria-label="Volume"
+        onChange={(event) => onVolume(Number(event.target.value))}
+        className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-raised accent-ink"
+      />
     </div>
   );
 }
@@ -188,8 +256,8 @@ function Seekbar({
   }
 
   return (
-    <div className="flex items-center gap-2.5 px-4 pt-2">
-      <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">
+    <div className="flex w-full items-center gap-2.5">
+      <span className="numerals w-9 shrink-0 text-right text-[11px] text-ink-faint">
         {formatDuration(shown)}
       </span>
 
@@ -204,17 +272,25 @@ function Seekbar({
         onPointerMove={(event) => {
           if (dragging !== null) setDragging(positionFromEvent(event));
         }}
-        className="group h-3 flex-1 cursor-pointer py-1"
+        className="group relative h-3 flex-1 cursor-pointer py-1"
       >
-        <div className="h-1 overflow-hidden rounded-full bg-elevated">
+        <div className="h-1 overflow-hidden rounded-full bg-raised">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-accent to-accent-alt"
+            className="h-full rounded-full bg-ink-muted transition-colors group-hover:bg-accent"
             style={{ width: `${ratio * 100}%` }}
           />
         </div>
+
+        {/* La poignée n'apparaît qu'au survol : en permanence, elle attirerait
+            l'œil sur un réglage qu'on ne touche presque jamais. */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink opacity-0 transition-opacity group-hover:opacity-100"
+          style={{ left: `${ratio * 100}%` }}
+        />
       </div>
 
-      <span className="w-9 shrink-0 text-[11px] tabular-nums text-ink-faint">
+      <span className="numerals w-9 shrink-0 text-[11px] text-ink-faint">
         {formatDuration(durationMs)}
       </span>
     </div>
@@ -238,49 +314,11 @@ const REPEAT_LABELS: Record<RepeatMode, string> = {
  */
 function RepeatButton({ mode, onClick }: { mode: RepeatMode; onClick: () => void }) {
   return (
-    <IconButton label={REPEAT_LABELS[mode]} active={mode !== "off"} onClick={onClick}>
-      <path d="m17 2 4 4-4 4" />
-      <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
-      <path d="m7 22-4-4 4-4" />
-      <path d="M21 13v1a4 4 0 0 1-4 4H3" />
-      {mode === "one" && <path d="M11 10h1v4" />}
-    </IconButton>
-  );
-}
-
-function IconButton({
-  label,
-  active = false,
-  onClick,
-  children,
-}: {
-  label: string;
-  active?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
+    <IconButton
+      name={mode === "one" ? "repeatOne" : "repeat"}
+      label={REPEAT_LABELS[mode]}
+      active={mode !== "off"}
       onClick={onClick}
-      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-elevated ${
-        active ? "text-accent" : "text-ink-muted"
-      }`}
-    >
-      <svg
-        viewBox="0 0 24 24"
-        className="h-4 w-4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        {children}
-      </svg>
-    </button>
+    />
   );
 }

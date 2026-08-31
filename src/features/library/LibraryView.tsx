@@ -47,6 +47,10 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
     setQuery("");
     setPlaylist(generated);
 
+    // La lecture a démarré côté backend : on s'assure que la barre apparaisse
+    // immédiatement, sans attendre le premier changement de morceau.
+    playback.refresh();
+
     try {
       const ids = generated.tracks.map((track) => track.trackId);
       const loaded = await ipc.listTracks(1000);

@@ -56,6 +56,18 @@ export function usePlayback() {
   return {
     state,
     error,
+
+    /**
+     * Recharge l'état depuis le backend.
+     *
+     * Filet de sécurité pour les actions qui démarrent la lecture sans passer
+     * par ce hook — une playlist générée, par exemple. Le backend émet bien
+     * l'événement, mais dépendre d'un seul canal pour faire apparaître le
+     * lecteur serait fragile.
+     */
+    refresh: useCallback(() => {
+      void ipc.playbackState().then(setState).catch(() => undefined);
+    }, []),
     dismissError: useCallback(() => setError(null), []),
 
     play: useCallback(

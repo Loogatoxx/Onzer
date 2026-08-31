@@ -6,7 +6,7 @@
 //! présence de chaque morceau.
 
 use chrono::{Datelike, Local, Timelike};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::analysis::worker::{self, AnalysisProgress};
 use crate::audio::queue::QueueItem;
@@ -36,7 +36,13 @@ fn current_context(output_device: Option<String>) -> ListeningContext {
 }
 
 /// Génère une playlist, la joue, et la retourne.
+///
+/// `app` sert à **annoncer le changement d'état de lecture**. Les commandes de
+/// `playback` retournent leur instantané, ce qui suffit à rafraîchir
+/// l'interface ; celles-ci retournent la playlist. Sans émission explicite, la
+/// barre de lecture n'apparaîtrait qu'au premier changement de morceau.
 async fn generate_and_play(
+    app: &AppHandle,
     state: &AppState,
     kind: PlaylistKind,
     length: usize,
@@ -83,6 +89,12 @@ async fn generate_and_play(
             Some(session_id),
         )
         .await?;
+
+    // La lecture vient de démarrer : l'interface doit le savoir tout de suite.
+    let _ = app.emit(
+        crate::commands::playback::STATE_EVENT,
+        player.snapshot().await,
+    );
 
     let progress = worker::progress(&state.pool).await?;
 
@@ -151,11 +163,13 @@ fn base_subtitle(kind: &PlaylistKind, context: &ListeningContext) -> String {
 /// Radio construite autour d'un morceau.
 #[tauri::command]
 pub async fn start_radio(
+    app: AppHandle,
     state: State<'_, AppState>,
     seed_track_id: i64,
     length: Option<usize>,
 ) -> Result<GeneratedPlaylist> {
     generate_and_play(
+        &app,
         &state,
         PlaylistKind::Radio { seed_track_id },
         length.unwrap_or(DEFAULT_LENGTH).clamp(5, 100),
@@ -166,10 +180,12 @@ pub async fn start_radio(
 /// Ce qui convient à ce moment précis de la journée.
 #[tauri::command]
 pub async fn start_for_now(
+    app: AppHandle,
     state: State<'_, AppState>,
     length: Option<usize>,
 ) -> Result<GeneratedPlaylist> {
     generate_and_play(
+        &app,
         &state,
         PlaylistKind::ForNow,
         length.unwrap_or(DEFAULT_LENGTH).clamp(5, 100),
@@ -180,10 +196,12 @@ pub async fn start_for_now(
 /// Morceaux aimés autrefois, plus écoutés depuis longtemps.
 #[tauri::command]
 pub async fn start_forgotten(
+    app: AppHandle,
     state: State<'_, AppState>,
     length: Option<usize>,
 ) -> Result<GeneratedPlaylist> {
     generate_and_play(
+        &app,
         &state,
         PlaylistKind::Forgotten,
         length.unwrap_or(DEFAULT_LENGTH).clamp(5, 100),

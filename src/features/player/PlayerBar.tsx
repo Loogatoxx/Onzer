@@ -37,17 +37,10 @@ export function PlayerBar(props: PlayerBarProps) {
         onSeek={props.onSeek}
       />
 
+      {/* Disposition : commandes à gauche, morceau à droite.
+          La main part naturellement vers la gauche pour agir, et l'œil vers la
+          droite pour lire — l'information suit le sens de lecture. */}
       <div className="flex items-center gap-4 px-4 py-2.5">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <Artwork hash={track.artworkHash} />
-          <div className="min-w-0">
-            <p className="truncate text-sm text-ink">{track.title}</p>
-            <p className="truncate text-xs text-ink-muted">
-              {track.artist ?? "Artiste inconnu"}
-            </p>
-          </div>
-        </div>
-
         <div className="flex shrink-0 items-center gap-1">
           <IconButton
             label={state.shuffle ? "Aléatoire : activé" : "Aléatoire : désactivé"}
@@ -83,7 +76,7 @@ export function PlayerBar(props: PlayerBarProps) {
           <RepeatButton mode={state.repeat} onClick={props.onRepeat} />
         </div>
 
-        <div className="flex w-32 shrink-0 items-center gap-2">
+        <div className="flex w-28 shrink-0 items-center gap-2">
           <svg
             viewBox="0 0 24 24"
             className="h-3.5 w-3.5 shrink-0 text-ink-faint"
@@ -102,6 +95,17 @@ export function PlayerBar(props: PlayerBarProps) {
             onChange={(event) => props.onVolume(Number(event.target.value))}
             className="h-1 w-full cursor-pointer appearance-none rounded-full bg-elevated accent-accent"
           />
+        </div>
+
+        {/* Le morceau en cours occupe l'espace restant, aligné à droite. */}
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+          <div className="min-w-0 text-right">
+            <p className="truncate text-sm text-ink">{track.title}</p>
+            <p className="truncate text-xs text-ink-muted">
+              {track.artist ?? "Artiste inconnu"}
+            </p>
+          </div>
+          <Artwork hash={track.artworkHash} />
         </div>
       </div>
     </div>

@@ -9,11 +9,13 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "app": "tauri dev",
-    "app:build": "tauri build"
+    "cache:mount": "sh tools/build-cache/ensure-mounted.sh",
+    "app": "npm run cache:mount && tauri dev",
+    "app:build": "npm run cache:mount && tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

@@ -187,3 +187,65 @@ recommandation exigera plus tard — ces données étant, par nature, impossible
 reconstituer après coup.
 
 ---
+
+## Entrée 005 — Politique de stockage et scanner de bibliothèque
+
+**📅 Date :** 2026-08-31
+
+**💬 Prompt**
+Le SSD Lexar ne contient encore aucune musique. Consigne de continuer l'ensemble du
+développement en réglant les problèmes au fur et à mesure, avec une contrainte forte :
+**tout ce qui est lourd en stockage doit aller sur le SSD**, le disque interne du Mac
+manquant de place. Pour le visuel, rester basique — le travail graphique sera repris
+plus tard.
+
+**🤖 Réponse (résumé)**
+Audit de l'espace disque avant toute décision : 65 Go libres en interne, et surtout
+**3,1 Go déjà consommés par le cache de compilation Rust** — contre 284 Ko pour la base.
+L'ADR-006 avait donc fait le mauvais arbitrage en plaçant ce cache sur le disque interne.
+Comme il ne peut pas non plus vivre directement sur le volume exFAT (les fichiers
+AppleDouble font planter le build script de Tauri), la sortie retenue est une **image
+disque APFS posée sur le Lexar** : stockage physique sur le SSD, système de fichiers natif.
+Développement ensuite du scanner de bibliothèque complet : lecture des tags avec repli sur
+le nom de fichier, rangement selon la convention, dédoublonnage en deux passes,
+déplacement réversible, vignettes de pochettes et indexation plein texte.
+
+**🔧 Modifications**
+- ➕ `.onzer-build-cache.sparsebundle` (hors dépôt) + `tools/build-cache/ensure-mounted.sh`
+  — cache de compilation déplacé sur le SSD, monté automatiquement par `npm run app`
+- ➕ `src-tauri/src/library/naming.rs` — assainissement exFAT et construction des chemins
+- ➕ `src-tauri/src/library/metadata.rs` — lecture des tags via lofty, repli sur le nom de
+  fichier, séparation des featurings
+- ➕ `src-tauri/src/library/hash.rs` — empreinte BLAKE3 par échantillonnage
+- ➕ `src-tauri/src/library/artwork.rs` — vignettes 512 px mutualisées par album
+- ➕ `src-tauri/src/library/importer.rs` — pipeline d'import, déplacement inter-volumes
+  vérifié avant suppression de la source
+- ➕ `src-tauri/src/library/scanner.rs` — parcours récursif, progression, contrôle de
+  disponibilité
+- ➕ `src-tauri/src/db/repository.rs` — upserts transactionnels, recherche FTS5, compteurs
+- ➕ `src-tauri/src/commands/library.rs` — 7 commandes IPC + événement de progression
+- ➕ `src/features/library/` — écran de configuration, liste, recherche, barre de
+  progression, pochettes
+- ✏️ `src-tauri/build.rs` — purge récursive des AppleDouble, généralisée à tout le crate
+- ✏️ `docs/ARCHITECTURE.md` — **ADR-009** (politique de stockage) et **ADR-010**
+  (pipeline d'import)
+
+**🐞 Défaut de conception trouvé par les tests**
+Le dédoublonnage par tags ne comparait que le titre et la durée. Deux albums différents
+possédant chacun une piste « Intro » de durée voisine auraient été fusionnés à tort.
+L'artiste a été ajouté au critère, et un test dédié verrouille désormais ce comportement.
+Un second incident AppleDouble a par ailleurs frappé `capabilities/`, d'où la
+généralisation de la purge dans `build.rs`.
+
+**✅ Vérifications effectuées**
+- **83 tests Rust au vert**, dont 15 tests de bout en bout fabriquant de vrais fichiers
+  WAV tagués, les important, puis vérifiant à la fois le disque et la base
+- Frontend compilé, TypeScript strict sans erreur
+- Application lancée sans erreur, interface rendue sans erreur console
+
+**🎯 Objectif**
+Rendre la bibliothèque réellement alimentable, et corriger un arbitrage de stockage qui
+aurait progressivement saturé le disque interne. La contrainte « le volumineux va sur le
+SSD » est désormais inscrite en ADR plutôt que tenue de mémoire.
+
+---

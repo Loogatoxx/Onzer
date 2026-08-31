@@ -5,4 +5,5 @@
 //! métier, ce qui garde le cœur testable par `cargo test` sans lancer
 //! l'application.
 
+pub mod library;
 pub mod system;

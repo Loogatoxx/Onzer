@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permissions accordées à la fenêtre principale d'Onzer.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "dialog:allow-open"]
 }

@@ -1,17 +1,23 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  Les artefacts de compilation sortent du volume exFAT. Deux raisons :
+#  Le cache de compilation Rust vit sur le SSD externe, dans un volume APFS.
 #
-#  1. CORRECTION D'UN BUG RÉEL. macOS écrit des fichiers AppleDouble « ._* »
-#     sur les systèmes de fichiers non natifs. Le build script de Tauri parcourt
-#     les fichiers .toml de `target/` et plante sur « ._default.toml », qui est
-#     un binaire et non de l'UTF-8.
+#  POURQUOI PAS SIMPLEMENT `target/` DANS LE PROJET ?
+#  Le projet est sur un volume exFAT, sur lequel macOS écrit des fichiers
+#  AppleDouble « ._* ». Le build script de Tauri parcourt les .toml de
+#  `target/` et panique sur « ._default.toml », qui n'est pas de l'UTF-8.
 #
-#  2. VITESSE. Une compilation Rust génère des dizaines de milliers de petits
-#     fichiers. Le NVMe interne va bien plus vite qu'un SSD USB en exFAT.
+#  POURQUOI PAS SUR LE DISQUE INTERNE ?
+#  Un cache Rust/Tauri dépasse vite les 3 Go, et le disque interne est compté.
+#  Le stockage volumineux doit rester sur le SSD.
 #
-#  ⚠️ Chemin absolu et donc spécifique à cette machine : Cargo n'interprète ni
-#     « ~ » ni les variables d'environnement dans ce fichier. Sur une autre
-#     machine, adapter cette unique ligne.
+#  LA SOLUTION : une image disque APFS posée sur le Lexar. Le stockage est
+#  physiquement sur le SSD, mais le système de fichiers est natif — donc ni
+#  fichiers AppleDouble, ni lenteurs exFAT sur les petits fichiers.
+#  L'image est « sparse » : elle n'occupe que ce qui est réellement utilisé.
+#
+#  Le montage est automatique via `npm run app` (voir tools/build-cache/).
+#  Si le volume n'est pas monté, Cargo recrée simplement un dossier vide à cet
+#  endroit — d'où la vérification faite par le script avant chaque lancement.
 # ═══════════════════════════════════════════════════════════════════════════
 [build]
-target-dir = "/Users/carlos/Library/Caches/onzer/target"
+target-dir = "/Volumes/OnzerBuild/target"

@@ -44,6 +44,30 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Hash de contenu des fichiers audio (dédoublonnage et ré-identification)
 blake3 = "1"
 
+# Lecture et écriture des tags audio, pochettes incluses.
+# Couvre MP3, FLAC, M4A/AAC, OGG et WAV avec une API unifiée.
+lofty = "0.22.2"
+
+# Parcours récursif de la bibliothèque
+walkdir = "2.5.0"
+
+# Normalisation des noms d'artistes et d'albums : décomposition NFD puis
+# suppression des diacritiques, pour que « Beyoncé » et « Beyonce » se
+# dédoublonnent.
+unicode-normalization = "0.1.25"
+# Redimensionnement des pochettes. Les fonctionnalités sont limitées aux
+# formats réellement embarqués dans les fichiers audio : sans cela, le crate
+# tire une trentaine de décodeurs inutiles et alourdit la compilation.
+image = { version = "0.25.6", default-features = false, features = [
+    "jpeg",
+    "png",
+    "webp",
+    "gif",
+] }
+# Sélecteur de dossier natif macOS, pour choisir la racine de bibliothèque.
+# La version doit rester alignée sur @tauri-apps/plugin-dialog côté npm.
+tauri-plugin-dialog = "2.7"
+
 [dev-dependencies]
 tempfile = "3"
 

@@ -4,6 +4,7 @@
 //! exFAT n'est pas journalisé et gère mal les verrous POSIX, deux conditions
 //! réunies pour corrompre une base SQLite.
 
+pub mod repository;
 pub mod settings;
 
 use std::path::Path;

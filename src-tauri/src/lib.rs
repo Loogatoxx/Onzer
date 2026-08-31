@@ -6,6 +6,7 @@
 pub mod commands;
 pub mod core;
 pub mod db;
+pub mod library;
 
 use std::path::PathBuf;
 
@@ -27,6 +28,8 @@ pub fn run() {
     init_tracing();
 
     tauri::Builder::default()
+        // Sélecteur de dossier natif, pour choisir la racine de bibliothèque.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // `app_data_dir` pointe vers ~/Library/Application Support/Onzer
             // sur macOS. On ne code jamais ce chemin en dur.
@@ -74,7 +77,16 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::system::app_status])
+        .invoke_handler(tauri::generate_handler![
+            commands::system::app_status,
+            commands::library::set_library_root,
+            commands::library::import_folder,
+            commands::library::list_tracks,
+            commands::library::search_tracks,
+            commands::library::library_counts,
+            commands::library::refresh_availability,
+            commands::library::artwork_data_uri,
+        ])
         .run(tauri::generate_context!())
         .expect("échec au lancement d'Onzer");
 }

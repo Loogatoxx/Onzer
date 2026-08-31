@@ -255,6 +255,93 @@ de FTS5 et insensibilité aux accents.
 
 ---
 
+## ADR-009 — Politique de stockage : le volumineux va sur le SSD
+
+**Contexte.** Le disque interne du Mac dispose d'environ 65 Go libres sur 228 Go.
+L'audit a montré que le poste le plus lourd n'était pas les données de l'application
+mais **le cache de compilation Rust : 3,1 Go dès les premiers builds**, contre 284 Ko
+pour la base. L'ADR-006 le plaçait sur le disque interne pour contourner exFAT ;
+c'était le mauvais arbitrage.
+
+**Décision.** Règle générale : **tout ce qui est volumineux ou régénérable va sur le
+SSD ; seul ce qui est petit et doit survivre au débranchement reste en interne.**
+
+| Donnée | Emplacement | Volume estimé | Justification |
+|---|---|---|---|
+| Fichiers audio | SSD Lexar | Des dizaines de Go | Le contenu, par nature |
+| Cache de compilation | SSD, image APFS | 3 à 8 Go | Volumineux et entièrement régénérable |
+| Base SQLite | Disque interne | ~10 Mo/an | Doit rester lisible SSD débranché, et exFAT n'est pas journalisé |
+| Vignettes de pochettes | Disque interne | ~30 Mo | L'interface doit rester illustrée SSD débranché |
+| Pochettes pleine résolution | *Non stockées* | 0 | Déjà présentes dans les fichiers audio ; relues à la demande |
+| Vecteurs d'analyse audio | Base SQLite | < 1 Mo | 20 flottants par morceau : négligeable |
+
+Empreinte totale sur le disque interne après plusieurs années d'usage : **moins de
+100 Mo**.
+
+**Le cas du cache de compilation.** Il ne pouvait aller ni sur le disque interne (trop
+volumineux) ni directement sur le volume exFAT (fichiers AppleDouble faisant planter le
+build script de Tauri). La sortie par le haut est une **image disque APFS posée sur le
+SSD** : stockage physique sur le Lexar, système de fichiers natif.
+
+```
+/Volumes/Lexar/Perso/Projet/.onzer-build-cache.sparsebundle
+        └── monté sur /Volumes/OnzerBuild  (APFS, 60 Go, « sparse »)
+```
+
+L'image est *sparse* : elle n'occupe que l'espace réellement utilisé (33 Mo à vide).
+`npm run app` monte le volume automatiquement via
+[`tools/build-cache/ensure-mounted.sh`](../tools/build-cache/ensure-mounted.sh).
+
+**Conséquences.**
+- ✅ 3,1 Go rendus au disque interne, et les builds sont plus rapides qu'en exFAT
+  (APFS gère bien mieux les dizaines de milliers de petits fichiers d'un build Rust).
+- ⚠️ Le volume doit être monté pour compiler. Sans nouveau risque : le projet lui-même
+  vivant sur le Lexar, un SSD débranché empêchait déjà toute compilation.
+- ⚠️ Règle à tenir pour la suite : **toute nouvelle donnée volumineuse va sur le SSD.**
+  Le disque interne est réservé à ce qui doit survivre au débranchement.
+
+---
+
+## ADR-010 — Import : dédoublonnage en deux passes, déplacement réversible
+
+**Contexte.** L'utilisateur ne veut « pas gérer les métadonnées chiantes à la main ».
+L'import doit donc absorber des fichiers de qualité très inégale — tags complets, tags
+partiels, ou aucun tag — et éviter les doublons sans intervention.
+
+**Décision — l'ordre des opérations n'est pas arbitraire :**
+
+| # | Étape | Pourquoi à cette place |
+|---|---|---|
+| 1 | Empreinte de contenu | Bien moins coûteux que de décoder les tags. Élimine les doublons stricts d'emblée |
+| 2 | Lecture des métadonnées | Repli sur le nom de fichier si les tags manquent |
+| 3 | Dédoublonnage par tags | Rattrape le même titre ré-encodé, invisible à l'empreinte |
+| 4 | Calcul du chemin + résolution de collision | |
+| 5 | **Déplacement du fichier** | En dernier : un doublon ne doit jamais faire bouger un fichier |
+| 6 | Vignette de pochette | Un échec ici n'échoue pas l'import : un morceau sans pochette reste écoutable |
+| 7 | Insertion en base | Transaction unique : pas d'artiste orphelin en cas d'échec |
+
+**L'artiste fait partie du critère de dédoublonnage.** S'en tenir au titre et à la durée
+produit des faux positifs sur les titres génériques : deux albums différents possèdent
+très souvent chacun une piste « Intro » de durée voisine. *Ce défaut a été trouvé par un
+test, pas par relecture.*
+
+**Découpage des artistes : volontairement conservateur.** Seules les mentions explicites
+de featuring (`feat.`, `ft.`, `featuring`…) sont découpées. Découper sur `&` ou sur la
+virgule démantèlerait « Earth, Wind & Fire » ou « Simon & Garfunkel ». Mieux vaut un
+artiste composé qu'un faux découpage.
+
+**Conséquences.**
+- ✅ Un fichier corrompu au milieu de 3 000 titres n'interrompt pas le scan : les échecs
+  sont comptés et rapportés.
+- ✅ Chaque déplacement est journalisé dans `import_jobs` avec son chemin d'origine :
+  l'opération reste annulable.
+- ⚠️ Le dédoublonnage par tags reste une heuristique. Une empreinte du **signal audio**
+  serait plus fiable, mais coûte 1 à 2 s de CPU par fichier ; elle sera calculée
+  gratuitement lors de l'analyse pour la recommandation, et pourra alors affiner ce
+  premier tri.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

@@ -58,16 +58,27 @@ npm run app
 | `npm run build` | Vérifie les types TypeScript et compile le frontend seul |
 | `cargo test` *(dans `src-tauri/`)* | Exécute les tests du cœur métier |
 
-### ⚠️ Le dossier de compilation vit hors du projet
+### ⚠️ Le cache de compilation vit sur le SSD, dans un volume APFS
 
-Le dépôt est hébergé sur un volume **exFAT**, sur lequel macOS crée des fichiers
-AppleDouble `._*`. Le build script de Tauri parcourt les fichiers `.toml` de
-`target/` et **plante** en tombant sur l'un d'eux.
+Deux contraintes se croisent : le cache Rust dépasse vite les 3 Go (trop pour le
+disque interne), mais il ne peut pas vivre sur le volume exFAT non plus — macOS y
+crée des fichiers AppleDouble `._*` qui font **planter** le build script de Tauri.
 
-[`.cargo/config.toml`](.cargo/config.toml) redirige donc les artefacts vers
-`~/Library/Caches/onzer/target`. Cela corrige le bug et accélère nettement les
-compilations. Le chemin y est absolu — Cargo n'interprète pas `~` — donc
-**une seule ligne est à adapter sur une autre machine**.
+La solution est une image disque APFS posée sur le Lexar :
+
+```
+/Volumes/Lexar/Perso/Projet/.onzer-build-cache.sparsebundle
+        └── monté sur /Volumes/OnzerBuild
+```
+
+`npm run app` la monte automatiquement. Pour la recréer :
+
+```bash
+hdiutil create -type SPARSEBUNDLE -fs APFS -size 60g -volname OnzerBuild /Volumes/Lexar/Perso/Projet/.onzer-build-cache.sparsebundle
+```
+
+Voir l'ADR-009 pour la politique de stockage complète — en résumé :
+**le volumineux va sur le SSD, seul le petit et l'indispensable restent en interne.**
 
 ---
 

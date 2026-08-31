@@ -149,6 +149,23 @@ export interface AnalysisProgress {
   total: number;
 }
 
+/** Miroir de `identify::worker::IdentificationProgress`. */
+export interface IdentificationProgress {
+  identified: number;
+  pending: number;
+  /** Morceaux absents des bases publiques. Ce n'est pas un échec. */
+  notFound: number;
+  failed: number;
+  total: number;
+}
+
+/** Miroir de `commands::identify::IdentificationStatus`. */
+export interface IdentificationStatus {
+  /** La clé AcoustID est-elle renseignée ? La clé elle-même ne revient jamais. */
+  configured: boolean;
+  progress: IdentificationProgress;
+}
+
 /** Doit correspondre à `commands::library::SCAN_PROGRESS_EVENT`. */
 const SCAN_PROGRESS_EVENT = "library://scan-progress";
 /** Doit correspondre à `commands::playback::STATE_EVENT`. */
@@ -236,6 +253,18 @@ export const ipc = {
     invoke<AnalysisProgress>("analysis_progress"),
 
   reanalyzeLibrary: (): Promise<number> => invoke<number>("reanalyze_library"),
+
+  // ── Identification par empreinte acoustique ──────────────────────────
+
+  identificationStatus: (): Promise<IdentificationStatus> =>
+    invoke<IdentificationStatus>("identification_status"),
+
+  setAcoustidKey: (key: string): Promise<void> =>
+    invoke<void>("set_acoustid_key", { key }),
+
+  retryIdentifications: (): Promise<number> => invoke<number>("retry_identifications"),
+
+  reidentifyLibrary: (): Promise<number> => invoke<number>("reidentify_library"),
 };
 
 /** Millisecondes → « 3:42 ». */

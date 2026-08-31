@@ -32,6 +32,20 @@ const MAX_EXCERPT_SECONDS: f32 = 90.0;
 /// Proportion du morceau ignorée en tête, pour éviter les intros atypiques.
 const SKIP_INTRO_RATIO: f32 = 0.10;
 
+/// Paramètres de décodage.
+///
+/// L'analyse de features et l'empreinte acoustique ont des besoins opposés sur
+/// un point précis : la première saute l'intro pour être représentative, la
+/// seconde **doit partir de zéro** pour correspondre à la référence indexée par
+/// AcoustID.
+#[derive(Debug, Clone, Copy)]
+pub struct DecodeRequest {
+    pub target_rate: u32,
+    pub max_seconds: f32,
+    /// Proportion du morceau ignorée en tête. Zéro pour une empreinte.
+    pub skip_intro_ratio: f32,
+}
+
 /// Signal mono prêt à analyser.
 pub struct DecodedAudio {
     pub samples: Vec<f32>,
@@ -40,8 +54,20 @@ pub struct DecodedAudio {
     pub duration_seconds: f32,
 }
 
-/// Décode un fichier en mono à [`ANALYSIS_SAMPLE_RATE`].
+/// Décode un fichier en mono, aux paramètres d'analyse.
 pub fn decode_for_analysis(path: &Path) -> Result<DecodedAudio> {
+    decode(
+        path,
+        DecodeRequest {
+            target_rate: ANALYSIS_SAMPLE_RATE,
+            max_seconds: MAX_EXCERPT_SECONDS,
+            skip_intro_ratio: SKIP_INTRO_RATIO,
+        },
+    )
+}
+
+/// Décode un fichier en mono, à la demande.
+pub fn decode(path: &Path, request: DecodeRequest) -> Result<DecodedAudio> {
     let file = std::fs::File::open(path)?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
 
@@ -83,8 +109,8 @@ pub fn decode_for_analysis(path: &Path) -> Result<DecodedAudio> {
         .map_err(|error| OnzerError::Invalid(format!("codec non géré : {error}")))?;
 
     // Bornes de l'extrait, exprimées en échantillons de la source.
-    let skip_frames = (duration_seconds * SKIP_INTRO_RATIO * source_rate as f32) as u64;
-    let wanted_frames = (MAX_EXCERPT_SECONDS * source_rate as f32) as u64;
+    let skip_frames = (duration_seconds * request.skip_intro_ratio * source_rate as f32) as u64;
+    let wanted_frames = (request.max_seconds * source_rate as f32) as u64;
 
     let mut mono = Vec::new();
     let mut frames_seen = 0_u64;
@@ -144,11 +170,11 @@ pub fn decode_for_analysis(path: &Path) -> Result<DecodedAudio> {
         ));
     }
 
-    let samples = resample_linear(&mono, source_rate, ANALYSIS_SAMPLE_RATE);
+    let samples = resample_linear(&mono, source_rate, request.target_rate);
 
     Ok(DecodedAudio {
         samples,
-        sample_rate: ANALYSIS_SAMPLE_RATE,
+        sample_rate: request.target_rate,
         duration_seconds: if duration_seconds > 0.0 {
             duration_seconds
         } else {

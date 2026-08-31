@@ -336,6 +336,140 @@ async fn link_artist(
     Ok(())
 }
 
+/// Réécrit l'identité d'un morceau après identification.
+///
+/// # Pourquoi une mise à jour et non une réinsertion
+///
+/// Supprimer puis réinsérer serait plus simple à écrire, mais **impossible** :
+/// `play_events` référence le morceau en `ON DELETE RESTRICT`, précisément pour
+/// que l'historique d'écoute survive. Et c'est heureux — perdre l'historique
+/// d'un morceau parce qu'on vient de corriger son titre serait absurde.
+///
+/// Tout se joue donc en une transaction : artistes, album, genres, index de
+/// recherche et ligne du morceau, ou rien.
+#[allow(clippy::too_many_arguments)]
+pub async fn update_track_identity(
+    pool: &SqlitePool,
+    track_id: i64,
+    metadata: &TrackMetadata,
+    relative_path: &str,
+    content_hash: &str,
+    file_size: i64,
+    artwork_hash: Option<&str>,
+    recording_mbid: Option<&str>,
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let now = now_ms();
+
+    let filing_artist_id = match metadata.filing_artist() {
+        Some(name) => Some(upsert_artist(&mut tx, name, now).await?),
+        None => None,
+    };
+
+    let album_id = match metadata.album.as_deref() {
+        Some(title) => Some(
+            upsert_album(&mut tx, title, filing_artist_id, metadata.year, artwork_hash, now).await?,
+        ),
+        None => None,
+    };
+
+    let normalized_title = normalize_key(&metadata.title);
+
+    sqlx::query(
+        "UPDATE tracks SET
+             title = ?, normalized_title = ?, album_id = ?, track_no = ?, disc_no = ?,
+             year = ?, relative_path = ?, content_hash = ?, file_size = ?,
+             recording_mbid = ?, identification_state = 'done', identified_at = ?,
+             analysis_error = NULL
+         WHERE id = ?",
+    )
+    .bind(&metadata.title)
+    .bind(&normalized_title)
+    .bind(album_id)
+    .bind(metadata.track_no)
+    .bind(metadata.disc_no)
+    .bind(metadata.year)
+    .bind(relative_path)
+    .bind(content_hash)
+    .bind(file_size)
+    .bind(recording_mbid)
+    .bind(now)
+    .bind(track_id)
+    .execute(&mut *tx)
+    .await?;
+
+    // Les crédits sont remplacés et non complétés : les anciens venaient de
+    // tags approximatifs, les nouveaux d'une base vérifiée.
+    sqlx::query("DELETE FROM track_artists WHERE track_id = ?")
+        .bind(track_id)
+        .execute(&mut *tx)
+        .await?;
+
+    for (position, name) in metadata.artists.iter().enumerate() {
+        let artist_id = upsert_artist(&mut tx, name, now).await?;
+        link_artist(&mut tx, track_id, artist_id, "main", position as i64).await?;
+    }
+    for (position, name) in metadata.featured_artists.iter().enumerate() {
+        let artist_id = upsert_artist(&mut tx, name, now).await?;
+        link_artist(&mut tx, track_id, artist_id, "featuring", position as i64).await?;
+    }
+
+    sqlx::query("DELETE FROM track_genres WHERE track_id = ?")
+        .bind(track_id)
+        .execute(&mut *tx)
+        .await?;
+
+    for genre in &metadata.genres {
+        let genre_id = upsert_genre(&mut tx, genre).await?;
+        sqlx::query("INSERT OR IGNORE INTO track_genres (track_id, genre_id) VALUES (?, ?)")
+            .bind(track_id)
+            .bind(genre_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    // L'index de recherche est reconstruit : il porte des noms d'artistes
+    // agrégés qu'aucune mise à jour partielle ne saurait rattraper.
+    sqlx::query("DELETE FROM tracks_fts WHERE track_id = ?")
+        .bind(track_id)
+        .execute(&mut *tx)
+        .await?;
+
+    let searchable_artists = metadata
+        .artists
+        .iter()
+        .chain(metadata.featured_artists.iter())
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    sqlx::query(
+        "INSERT INTO tracks_fts (track_id, title, artist_names, album_title)
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind(track_id)
+    .bind(&metadata.title)
+    .bind(searchable_artists)
+    .bind(metadata.album.as_deref().unwrap_or(""))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Marque une identification comme infructueuse.
+pub async fn mark_identification(pool: &SqlitePool, track_id: i64, state: &str) -> Result<()> {
+    sqlx::query("UPDATE tracks SET identification_state = ?, identified_at = ? WHERE id = ?")
+        .bind(state)
+        .bind(now_ms())
+        .bind(track_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  Lecture
 // ════════════════════════════════════════════════════════════════════════════

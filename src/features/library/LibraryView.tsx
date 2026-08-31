@@ -10,6 +10,7 @@ import {
   type TrackSummary,
 } from "@/lib/ipc";
 import { DiscoverBar } from "@/features/discover/DiscoverBar";
+import { IdentifyPanel } from "@/features/identify/IdentifyPanel";
 import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
 import { TrackList } from "./TrackList";
@@ -193,6 +194,10 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
           onGenerated={(generated) => void showGenerated(generated)}
           onError={setError}
         />
+
+        <div className="no-drag mt-2.5">
+          <IdentifyPanel />
+        </div>
       </header>
 
       {playlist !== null && (

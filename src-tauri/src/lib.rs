@@ -8,6 +8,7 @@ pub mod audio;
 pub mod commands;
 pub mod core;
 pub mod db;
+pub mod identify;
 pub mod ingest;
 pub mod library;
 pub mod reco;
@@ -131,6 +132,12 @@ pub fn run() {
             });
             analysis::worker::spawn(pool.clone(), Arc::clone(&shared_paths));
 
+            // Ouvrier d'identification. Séparé du précédent à dessein :
+            // l'analyse est purement locale et fonctionne hors ligne, celle-ci
+            // dépend du réseau et d'une clé d'API. Les mélanger empêcherait la
+            // recommandation de fonctionner sans connexion.
+            identify::worker::spawn(pool.clone(), Arc::clone(&shared_paths));
+
             app.manage(AppState {
                 pool,
                 paths: shared_paths,
@@ -167,6 +174,10 @@ pub fn run() {
             commands::reco::analysis_progress,
             commands::reco::reanalyze_library,
             commands::reco::reco_diagnostics,
+            commands::identify::identification_status,
+            commands::identify::set_acoustid_key,
+            commands::identify::retry_identifications,
+            commands::identify::reidentify_library,
         ])
         .run(tauri::generate_context!())
         .expect("échec au lancement d'Onzer");

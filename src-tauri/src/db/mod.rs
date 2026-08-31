@@ -87,7 +87,7 @@ mod tests {
         // Le numéro suit le dernier fichier de `migrations/`. Ce test échoue
         // volontairement à chaque ajout : c'est le rappel qu'une migration ne
         // se glisse pas en douce.
-        assert_eq!(schema_version(&pool).await.unwrap(), 2);
+        assert_eq!(schema_version(&pool).await.unwrap(), 3);
     }
 
     #[tokio::test]

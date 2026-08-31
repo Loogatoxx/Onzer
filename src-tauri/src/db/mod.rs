@@ -83,7 +83,46 @@ mod tests {
     #[tokio::test]
     async fn les_migrations_sappliquent() {
         let (_dir, pool) = base_de_test().await;
-        assert_eq!(schema_version(&pool).await.unwrap(), 1);
+
+        // Le numéro suit le dernier fichier de `migrations/`. Ce test échoue
+        // volontairement à chaque ajout : c'est le rappel qu'une migration ne
+        // se glisse pas en douce.
+        assert_eq!(schema_version(&pool).await.unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn les_vues_de_qualite_du_moteur_sont_interrogeables() {
+        let (_dir, pool) = base_de_test().await;
+
+        // Sans historique elles sont vides, mais elles doivent être valides :
+        // une erreur SQL ne doit pas se découvrir en production.
+        for vue in ["reco_quality", "reco_strategy_quality"] {
+            sqlx::query(&format!("SELECT * FROM {vue}"))
+                .fetch_all(&pool)
+                .await
+                .unwrap_or_else(|error| panic!("la vue {vue} est invalide : {error}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn les_six_strategies_sont_amorcees() {
+        let (_dir, pool) = base_de_test().await;
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reco_strategies")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(count, 6);
+
+        // Toutes démarrent sur la loi uniforme : « je ne sais rien ».
+        let neutres: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM reco_strategies WHERE alpha = 1 AND beta = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        assert_eq!(neutres, 6);
     }
 
     /// Vérifie que le SQLite embarqué expose bien FTS5 : sans lui, toute la

@@ -71,6 +71,8 @@ rodio = { version = "0.22", default-features = false, features = ["playback", "s
 uuid = { version = "1.20.0", features = ["v4"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
+rustfft = "6.4.1"
+symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "flac", "aac", "isomp4", "vorbis", "ogg", "pcm", "wav", "aiff"] }
 
 [dev-dependencies]
 tempfile = "3"

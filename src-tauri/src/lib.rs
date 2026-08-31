@@ -3,12 +3,14 @@
 //! Ce crate porte toute la logique ; `main.rs` ne fait que l'appeler.
 //! Découpage détaillé dans `docs/ARCHITECTURE.md`.
 
+pub mod analysis;
 pub mod audio;
 pub mod commands;
 pub mod core;
 pub mod db;
 pub mod ingest;
 pub mod library;
+pub mod reco;
 
 use std::path::PathBuf;
 use std::sync::Arc;

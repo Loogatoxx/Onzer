@@ -58,17 +58,26 @@ pub async fn find_by_content_hash(pool: &SqlitePool, hash: &str) -> Result<Optio
 ///
 /// Quand l'artiste est inconnu (`None`), la comparaison ne porte que sur le
 /// titre et la durée — c'est délibérément plus permissif, faute de mieux.
+///
+/// `duration_ms` vaut `None` lorsque l'appelant ignore la durée — cas d'un
+/// script externe interrogeant la bibliothèque avant de télécharger. Le critère
+/// de durée est alors **entièrement écarté**, et non remplacé par une valeur
+/// arbitraire qui exclurait tous les morceaux d'une autre longueur.
 pub async fn find_by_tags(
     pool: &SqlitePool,
     normalized_title: &str,
     normalized_artist: Option<&str>,
-    duration_ms: i64,
+    duration_ms: Option<i64>,
 ) -> Result<Option<i64>> {
+    let lower = duration_ms.map(|duration| duration - DURATION_TOLERANCE_MS);
+    let upper = duration_ms.map(|duration| duration + DURATION_TOLERANCE_MS);
+
     let id = sqlx::query_scalar(
         // Paramètres numérotés : `?4` est réutilisé deux fois dans la clause.
         "SELECT t.id FROM tracks t
          WHERE t.normalized_title = ?1
-           AND t.duration_ms BETWEEN ?2 AND ?3
+           AND (?2 IS NULL OR t.duration_ms >= ?2)
+           AND (?3 IS NULL OR t.duration_ms <= ?3)
            AND t.deleted_at IS NULL
            AND (
                 ?4 IS NULL
@@ -81,8 +90,8 @@ pub async fn find_by_tags(
          LIMIT 1",
     )
     .bind(normalized_title)
-    .bind(duration_ms - DURATION_TOLERANCE_MS)
-    .bind(duration_ms + DURATION_TOLERANCE_MS)
+    .bind(lower)
+    .bind(upper)
     .bind(normalized_artist)
     .fetch_optional(pool)
     .await?;

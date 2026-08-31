@@ -109,6 +109,16 @@ impl AudioDevice {
     }
 
     pub fn seek(&self, position: Duration) {
+        // La position cible est publiée **avant** d'envoyer la commande.
+        //
+        // Le thread audio traite les commandes de façon asynchrone : sans cette
+        // ligne, l'instantané renvoyé à l'interface juste après un déplacement
+        // contiendrait encore l'ancienne position, et le curseur reviendrait
+        // visiblement en arrière avant de sauter au bon endroit.
+        self.shared
+            .position_ms
+            .store(position.as_millis() as i64, Ordering::Release);
+
         self.send(Command::Seek(position));
     }
 
@@ -199,6 +209,8 @@ fn audio_thread(
             Ok(Command::Seek(position)) => {
                 position_moved = true;
                 if let Err(error) = player.try_seek(position) {
+                    // Certains formats ne savent pas se déplacer. On le signale
+                    // sans interrompre la lecture.
                     tracing::warn!(%error, "saut impossible sur ce format");
                 }
             }

@@ -11,6 +11,7 @@ use walkdir::WalkDir;
 
 use crate::core::{PathResolver, Result};
 use crate::library::importer::{self, FileHandling, ImportOutcome};
+use crate::library::naming::INBOX_DIR;
 
 /// Progression émise pendant le parcours, à chaque fichier traité.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -47,14 +48,24 @@ pub fn collect_audio_files(folder: &Path) -> Vec<std::path::PathBuf> {
     WalkDir::new(folder)
         .follow_links(false)
         .into_iter()
-        // Élague les dossiers cachés dès la descente : inutile d'explorer
-        // « .git » ou « .Spotlight-V100 ».
-        .filter_entry(|entry| !importer::should_skip(entry.path()) || entry.depth() == 0)
+        // Élague dès la descente les dossiers cachés — inutile d'explorer
+        // « .git » ou « .Spotlight-V100 » — ainsi que le dépôt surveillé, dont
+        // les fichiers peuvent être des téléchargements en cours.
+        .filter_entry(|entry| {
+            entry.depth() == 0
+                || (!importer::should_skip(entry.path()) && !is_inbox(entry.path()))
+        })
         .filter_map(std::result::Result::ok)
         .filter(|entry| entry.file_type().is_file())
         .map(walkdir::DirEntry::into_path)
         .filter(|path| importer::is_importable(path))
         .collect()
+}
+
+fn is_inbox(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == INBOX_DIR)
 }
 
 /// Importe tout le contenu audio d'un dossier.
@@ -205,6 +216,23 @@ mod tests {
         fs::write(hidden.join("supprime.mp3"), b"x").unwrap();
 
         assert!(collect_audio_files(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn nexplore_pas_le_depot_surveille() {
+        // Les fichiers du dépôt peuvent être des téléchargements en cours :
+        // les indexer donnerait des morceaux tronqués dans la bibliothèque.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("range.mp3"), b"x").unwrap();
+
+        let inbox = dir.path().join(INBOX_DIR);
+        fs::create_dir_all(&inbox).unwrap();
+        fs::write(inbox.join("en-cours.mp3"), b"x").unwrap();
+
+        let found = collect_audio_files(dir.path());
+
+        assert_eq!(found.len(), 1);
+        assert!(found[0].ends_with("range.mp3"));
     }
 
     #[test]

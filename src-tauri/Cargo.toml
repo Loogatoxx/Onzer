@@ -70,6 +70,7 @@ tauri-plugin-dialog = "2.7"
 rodio = { version = "0.22", default-features = false, features = ["playback", "symphonia-all"] }
 uuid = { version = "1.20.0", features = ["v4"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -308,3 +308,71 @@ Ouvrir la boucle de collecte de données le plus tôt possible. Le moteur de rec
 n'existe pas encore, mais chaque écoute enregistrée à partir de maintenant l'alimentera —
 et ces données sont, par nature, impossibles à reconstituer rétroactivement.
 
+---
+
+## Entrée 007 — Corrections du lecteur et pipeline d'import automatique
+
+**📅 Date :** 2026-08-31
+
+**💬 Prompt**
+Le lecteur fonctionne, avec deux retours : le curseur de progression revient à sa position
+d'origine au relâchement avant de sauter au bon endroit, et le mode « répéter un morceau »
+semble se comporter comme une répétition normale. Feu vert pour enchaîner sur l'étape
+suivante ensuite. Les remarques sur l'interface viendront plus tard.
+
+**🤖 Réponse (résumé)**
+Le retour du curseur avait une cause précise : la commande de déplacement est traitée de
+façon **asynchrone** par le thread audio, si bien que l'instantané renvoyé à l'interface
+contenait encore l'ancienne position. Corrigé des deux côtés — le thread publie la position
+cible avant même d'envoyer la commande, et l'interface maintient la cible jusqu'à
+confirmation.
+Sur la répétition, le comportement était conforme à la convention (Spotify, Apple Music :
+« suivant » change de morceau même en répétition unitaire), mais **invisible** : même icône
+que la répétition totale, et la différence ne se manifeste qu'à la fin d'un titre. Le mode
+a désormais sa propre icône, avec un 1 dans la boucle, et un libellé explicite.
+Enchaînement ensuite sur le pipeline d'import automatique.
+
+**🔧 Modifications**
+- ✏️ `src-tauri/src/audio/device.rs` — publication immédiate de la position cible au
+  déplacement
+- ✏️ `src/features/player/PlayerBar.tsx` — maintien de la cible jusqu'à confirmation,
+  avec filet de sécurité ; icône dédiée et libellés pour les trois modes de répétition
+- ➕ `src-tauri/src/ingest/inbox.rs` — dossier surveillé par scrutin, avec détection de
+  stabilité des fichiers, 11 tests
+- ➕ `src-tauri/src/ingest/token.rs` — jeton d'API en `chmod 600`, comparaison en temps
+  constant, 6 tests
+- ➕ `src-tauri/src/ingest/server.rs` — API locale `axum` : `health`, `exists`, `import`
+- ➕ `src-tauri/src/library/metadata.rs` — `MetadataHint` et son arbitrage face aux tags
+- ➕ `docs/IMPORT_API.md` — contrat complet pour scripts externes
+- ➕ `tools/downloader/onzer_client.py` — client Python sans dépendance, utilisable en
+  ligne de commande ou comme module
+- ✏️ `docs/ARCHITECTURE.md` — **ADR-013** (import automatique) et **ADR-014** (l'import
+  range toujours)
+
+**🐞 Trois défauts trouvés pendant les vérifications**
+1. **Boucle de réimport infinie.** Un fichier dont l'import échoue reste dans le dépôt : il
+   aurait été retenté toutes les six secondes, indéfiniment, saturant les journaux et la
+   table `import_jobs`. Trouvé par un test.
+2. **`GET /exists` ne trouvait rien.** La fonction phare de l'API était cassée : quand le
+   script ne fournit pas de durée, une valeur factice de dix minutes était utilisée, et le
+   critère de durée excluait alors tous les morceaux d'une autre longueur. La durée est
+   désormais un `Option` réellement écarté quand elle est absente. Trouvé en interrogeant
+   l'API sur un vrai morceau de la bibliothèque.
+3. **Import laissé en vrac.** Un fichier déposé à la racine de la bibliothèque puis importé
+   n'était pas rangé, la commande basculant en mode « indexer sans déplacer ». Constaté en
+   observant la bibliothèque réelle. Corrigé par l'ADR-014.
+
+**✅ Vérifications effectuées**
+- **154 tests au vert**, clippy sans avertissement
+- API testée en conditions réelles : refus sans jeton (401), refus d'un mauvais jeton,
+  `health`, `exists` avec et sans durée, rejet d'un chemin relatif et d'un fichier absent,
+  permissions `-rw-------` du fichier de jeton
+- Dossier surveillé testé de bout en bout avec un vrai fichier audio : import automatique,
+  artiste déduit du nom de fichier, rangement dans `Singles`. **Toutes les traces du test
+  ont été supprimées** et la bibliothèque vérifiée identique à son état initial.
+
+**🎯 Objectif**
+Fermer la boucle d'alimentation de la bibliothèque : un script externe peut désormais
+interroger Onzer avant de télécharger, puis lui remettre le fichier, sans jamais avoir à
+connaître son fonctionnement interne.
+

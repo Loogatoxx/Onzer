@@ -400,6 +400,79 @@ secondes, changement de morceau en cours de route.
 
 ---
 
+## ADR-013 — Import automatique : dossier surveillé + API locale
+
+**Contexte.** L'utilisateur veut brancher un script de téléchargement sans « gérer les
+métadonnées chiantes à la main ». Le script doit rester totalement indépendant d'Onzer.
+
+**Décision.** Deux voies d'entrée vers le **même** pipeline d'import. Contrat complet :
+[`IMPORT_API.md`](IMPORT_API.md).
+
+### Le dossier surveillé est scruté, pas notifié
+
+`notify` paraît plus élégant qu'un scrutin, mais échoue sur ce cas d'usage précis :
+
+| Situation | `notify` | Scrutin toutes les 2 s |
+|---|---|---|
+| Fichier déposé application fermée | ❌ Événement perdu à jamais | ✅ Vu au démarrage suivant |
+| **Téléchargement en cours** | ❌ Événement dès la création, fichier incomplet | ✅ Attend la stabilisation |
+| exFAT | Support inégal | ✅ Indifférent |
+
+Le second point est décisif : `yt-dlp` crée le fichier **avant** de le remplir. Importer
+sur l'événement de création reviendrait à avaler un MP3 tronqué, à le taguer de travers et
+à le ranger définitivement. Un fichier n'est donc importé qu'après **3 secondes de taille
+inchangée**.
+
+### Un jeton, même sur la boucle locale
+
+Écouter sur `127.0.0.1` n'isole de rien : toute application de la machine peut y émettre des
+requêtes, **y compris une page web ouverte dans un navigateur**. Sans jeton, un site visité
+pourrait lire la bibliothèque ou y injecter des fichiers. Le jeton est généré au premier
+démarrage, stocké en `chmod 600`, et comparé en **temps constant**.
+
+### `GET /exists` — la route qui compte
+
+Elle permet au script de demander « ai-je déjà ce morceau ? » **avant** de télécharger.
+Économiser un téléchargement vaut mieux que le rejeter comme doublon après coup.
+
+**Conséquences.**
+- ✅ Un script n'a besoin que de trois requêtes HTTP, ou de rien du tout s'il utilise le
+  dossier de dépôt.
+- ✅ Arbitrage des métadonnées explicite : un vrai tag bat une indication, une indication bat
+  une déduction faite depuis le nom de fichier.
+- ⚠️ Un import échoué laisse le fichier dans le dépôt et **n'est pas retenté** — sans quoi un
+  fichier corrompu serait réessayé toutes les six secondes indéfiniment. *Défaut trouvé par
+  un test.*
+- ⚠️ Le dépôt est exclu du scan de bibliothèque, sinon un téléchargement en cours y serait
+  indexé.
+
+---
+
+## ADR-014 — « Importer un dossier » range toujours
+
+**Contexte.** La commande d'import passait en mode « indexer sans déplacer » lorsque le
+dossier choisi se trouvait dans la bibliothèque. L'intention était de gérer le rescan d'une
+bibliothèque déjà organisée.
+
+**Le défaut.** Deux intentions très différentes étaient confondues :
+
+| Ce que fait l'utilisateur | Ce qu'il attend | Ce qui se passait |
+|---|---|---|
+| Rescanner sa bibliothèque rangée | Ne rien déplacer | ✅ Correct |
+| Déposer des fichiers dans le dossier puis cliquer « Importer » | **Qu'ils soient rangés** | ❌ Laissés en vrac à la racine |
+
+*Constaté sur la bibliothèque réelle de l'utilisateur : un morceau importé était resté à la
+racine au lieu d'être classé sous `Damso/Singles/`.*
+
+**Décision.** L'import range **toujours**. Un fichier déjà exactement à sa place n'est
+simplement pas déplacé : `resolve_collision` exclut désormais le fichier source de la
+détection de collision, faute de quoi réimporter une bibliothèque rangée renommerait chaque
+morceau en « … (2) ».
+
+Le mode `IndexInPlace` reste disponible pour une future commande de rescan explicite.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

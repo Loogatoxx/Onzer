@@ -25,6 +25,13 @@ pub const UNSORTED_DIR: &str = "_À trier";
 /// l'unité par un script d'import.
 pub const SINGLES_DIR: &str = "Singles";
 
+/// Dossier de dépôt surveillé, à la racine de la bibliothèque.
+///
+/// Défini ici plutôt que dans `ingest` parce qu'il s'agit d'une convention de
+/// nommage de la bibliothèque : le scanner doit savoir l'exclure, sans quoi il
+/// indexerait des fichiers en cours de téléchargement.
+pub const INBOX_DIR: &str = "_Inbox";
+
 /// Rend une chaîne utilisable comme nom de dossier ou de fichier.
 ///
 /// Retourne `None` si rien d'exploitable ne subsiste, à charge de l'appelant

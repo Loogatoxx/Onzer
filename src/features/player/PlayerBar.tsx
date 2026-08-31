@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Artwork } from "@/features/library/Artwork";
-import { formatDuration, type PlaybackSnapshot } from "@/lib/ipc";
+import { formatDuration, type PlaybackSnapshot, type RepeatMode } from "@/lib/ipc";
 
 interface PlayerBarProps {
   state: PlaybackSnapshot;
@@ -50,7 +50,7 @@ export function PlayerBar(props: PlayerBarProps) {
 
         <div className="flex shrink-0 items-center gap-1">
           <IconButton
-            label="Aléatoire"
+            label={state.shuffle ? "Aléatoire : activé" : "Aléatoire : désactivé"}
             active={state.shuffle}
             onClick={() => props.onShuffle(!state.shuffle)}
           >
@@ -80,23 +80,16 @@ export function PlayerBar(props: PlayerBarProps) {
             <path d="m5 4 10 8-10 8V4ZM19 5v14" />
           </IconButton>
 
-          <IconButton
-            label={`Répétition : ${state.repeat}`}
-            active={state.repeat !== "off"}
-            onClick={props.onRepeat}
-          >
-            <path d="m17 2 4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3" />
-          </IconButton>
-
-          {/* Le mode « un seul morceau » mérite un repère visuel : sans lui,
-              l'utilisateur ne distingue pas les deux modes de répétition. */}
-          {state.repeat === "one" && (
-            <span className="-ml-1 text-[10px] font-semibold text-accent">1</span>
-          )}
+          <RepeatButton mode={state.repeat} onClick={props.onRepeat} />
         </div>
 
         <div className="flex w-32 shrink-0 items-center gap-2">
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-ink-faint" fill="currentColor" aria-hidden>
+          <svg
+            viewBox="0 0 24 24"
+            className="h-3.5 w-3.5 shrink-0 text-ink-faint"
+            fill="currentColor"
+            aria-hidden
+          >
             <path d="M11 5 6 9H2v6h4l5 4V5z" />
           </svg>
           <input
@@ -116,11 +109,30 @@ export function PlayerBar(props: PlayerBarProps) {
 }
 
 /**
+ * Tolérance de confirmation d'un déplacement.
+ *
+ * Le backend publie sa position quatre fois par seconde. Tant que la position
+ * reçue n'est pas revenue près de la cible, on considère que le déplacement
+ * n'est pas encore confirmé.
+ */
+const SEEK_CONFIRM_TOLERANCE_MS = 700;
+
+/** Au-delà, on rend la main : un format qui refuse le déplacement ne
+ *  confirmerait jamais, et le curseur resterait bloqué sur la cible. */
+const SEEK_CONFIRM_TIMEOUT_MS = 2000;
+
+/**
  * Barre de progression cliquable.
  *
- * Pendant un glissement, l'affichage suit le doigt et **ignore les battements
- * du backend** : sans cela, la poignée sauterait en arrière à chaque
- * rafraîchissement, ce qui rend le déplacement inutilisable.
+ * Deux protections contre le clignotement, pour des raisons différentes :
+ *
+ * * pendant le glissement, l'affichage suit le doigt et **ignore les battements
+ *   du backend**, sans quoi la poignée sauterait en arrière à chaque
+ *   rafraîchissement ;
+ * * après le relâchement, la **cible est maintenue** jusqu'à ce que le backend
+ *   confirme. Le thread audio traite le déplacement de façon asynchrone : sans
+ *   ce maintien, le curseur reviendrait visiblement à l'ancienne position avant
+ *   de sauter à la bonne.
  */
 function Seekbar({
   positionMs,
@@ -132,8 +144,10 @@ function Seekbar({
   onSeek: (positionMs: number) => void;
 }) {
   const [dragging, setDragging] = useState<number | null>(null);
-  const shown = dragging ?? positionMs;
-  const ratio = durationMs > 0 ? Math.min(1, shown / durationMs) : 0;
+  const [pending, setPending] = useState<number | null>(null);
+
+  const shown = dragging ?? pending ?? positionMs;
+  const ratio = durationMs > 0 ? Math.min(1, Math.max(0, shown / durationMs)) : 0;
 
   // Le glissement se termine où qu'aille la souris, y compris hors de la barre.
   useEffect(() => {
@@ -141,12 +155,27 @@ function Seekbar({
 
     const stop = () => {
       onSeek(dragging);
+      setPending(dragging);
       setDragging(null);
     };
 
     window.addEventListener("pointerup", stop, { once: true });
     return () => window.removeEventListener("pointerup", stop);
   }, [dragging, onSeek]);
+
+  // Le backend a rejoint la cible : on lui rend la main.
+  useEffect(() => {
+    if (pending !== null && Math.abs(positionMs - pending) < SEEK_CONFIRM_TOLERANCE_MS) {
+      setPending(null);
+    }
+  }, [positionMs, pending]);
+
+  // Filet de sécurité si la confirmation n'arrive jamais.
+  useEffect(() => {
+    if (pending === null) return;
+    const timer = setTimeout(() => setPending(null), SEEK_CONFIRM_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [pending]);
 
   function positionFromEvent(event: React.PointerEvent<HTMLDivElement>): number {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -185,6 +214,33 @@ function Seekbar({
         {formatDuration(durationMs)}
       </span>
     </div>
+  );
+}
+
+const REPEAT_LABELS: Record<RepeatMode, string> = {
+  off: "Répétition : désactivée",
+  all: "Répétition : toute la file",
+  one: "Répétition : ce morceau uniquement",
+};
+
+/**
+ * Bouton de répétition, à trois états.
+ *
+ * Le mode « ce morceau » a sa **propre icône**, avec un 1 dans la boucle.
+ * Un simple changement de couleur ne suffisait pas : rien ne distinguait
+ * visuellement « toute la file » de « ce morceau », et la différence de
+ * comportement ne se manifeste qu'à la fin d'un titre — soit plusieurs minutes
+ * plus tard.
+ */
+function RepeatButton({ mode, onClick }: { mode: RepeatMode; onClick: () => void }) {
+  return (
+    <IconButton label={REPEAT_LABELS[mode]} active={mode !== "off"} onClick={onClick}>
+      <path d="m17 2 4 4-4 4" />
+      <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+      <path d="m7 22-4-4 4-4" />
+      <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+      {mode === "one" && <path d="M11 10h1v4" />}
+    </IconButton>
   );
 }
 

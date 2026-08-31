@@ -86,19 +86,15 @@ pub async fn import_folder(
         )));
     }
 
-    // Importer un dossier déjà situé dans la bibliothèque ne doit pas
-    // réorganiser les fichiers, seulement les indexer.
-    let handling = if paths.relativize(&source).is_ok() {
-        FileHandling::IndexInPlace
-    } else {
-        FileHandling::Organize
-    };
-
+    // Toujours ranger, y compris si le dossier choisi est la bibliothèque
+    // elle-même : cliquer « Importer un dossier » exprime l'intention de faire
+    // ranger, pas seulement d'indexer. Un fichier déjà à sa place ne bouge pas
+    // (voir `resolve_collision`).
     let summary = scanner::import_folder(
         &state.pool,
         &paths,
         &source,
-        handling,
+        FileHandling::Organize,
         "scan",
         |progress| {
             // Un échec d'émission (fenêtre fermée) ne doit pas interrompre

@@ -446,6 +446,48 @@ async fn alimente_la_base_et_la_recherche() {
     );
 }
 
+/// Cas d'usage de la route `GET /api/v1/exists` : un script externe demande
+/// « ai-je déjà ce morceau ? » sans connaître sa durée.
+#[tokio::test]
+async fn retrouve_un_morceau_sans_connaitre_sa_duree() {
+    let bac = bac().await;
+
+    make_track(
+        &bac.source_dir.join("d.wav"),
+        3000,
+        21,
+        Tags {
+            title: Some("Macarena"),
+            artist: Some("Damso"),
+            ..Default::default()
+        },
+    );
+    assert_eq!(importer_dossier(&bac).await.imported, 1);
+
+    // Sans durée : le critère doit être écarté, pas remplacé par une valeur
+    // arbitraire qui exclurait tous les morceaux d'une autre longueur.
+    let trouve = repository::find_by_tags(&bac.pool, "macarena", Some("damso"), None)
+        .await
+        .unwrap();
+    assert!(trouve.is_some(), "le morceau existe pourtant bien");
+
+    // Avec la bonne durée : trouvé également.
+    assert!(
+        repository::find_by_tags(&bac.pool, "macarena", Some("damso"), Some(3000))
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    // Avec une durée franchement fausse : non trouvé.
+    assert!(
+        repository::find_by_tags(&bac.pool, "macarena", Some("damso"), Some(600_000))
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
 #[tokio::test]
 async fn nagrege_pas_deux_graphies_du_meme_artiste() {
     let bac = bac().await;
@@ -582,6 +624,75 @@ async fn journalise_le_chemin_dorigine_pour_permettre_une_annulation() {
 
     assert_eq!(source, origine.display().to_string());
     assert_eq!(destination.as_deref(), Some("Artiste/Singles/Titre.wav"));
+}
+
+#[tokio::test]
+async fn range_un_fichier_depose_a_la_racine_de_la_bibliotheque() {
+    let bac = bac().await;
+
+    // Cas réel : l'utilisateur copie un fichier directement dans le dossier de
+    // bibliothèque, puis demande à l'importer. Il attend qu'il soit RANGÉ.
+    let a_la_racine = bac.library_root.join("Damso - Macarena.wav");
+    make_track(&a_la_racine, 1000, 55, Tags::default());
+
+    let summary = scanner::import_folder(
+        &bac.pool,
+        &bac.paths,
+        &bac.library_root,
+        FileHandling::Organize,
+        "scan",
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.imported, 1, "erreurs : {:?}", summary.errors);
+    assert!(
+        bac.library_root.join("Damso/Singles/Macarena.wav").is_file(),
+        "le fichier devait être rangé, pas laissé à la racine"
+    );
+    assert!(!a_la_racine.exists());
+}
+
+#[tokio::test]
+async fn reimporter_une_bibliotheque_deja_rangee_ne_renomme_rien() {
+    let bac = bac().await;
+
+    // Un fichier déjà exactement à sa place ne doit pas entrer en collision
+    // avec lui-même : sans cette précaution, il deviendrait « … (2).wav ».
+    let deja_range = bac.library_root.join("Air/1998 - Moon Safari/01 - Sexy Boy.wav");
+    make_track(
+        &deja_range,
+        1000,
+        56,
+        Tags {
+            title: Some("Sexy Boy"),
+            artist: Some("Air"),
+            album: Some("Moon Safari"),
+            year: Some(1998),
+            track: Some(1),
+            ..Default::default()
+        },
+    );
+
+    let summary = scanner::import_folder(
+        &bac.pool,
+        &bac.paths,
+        &bac.library_root,
+        FileHandling::Organize,
+        "scan",
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.imported, 1, "erreurs : {:?}", summary.errors);
+    assert!(deja_range.is_file(), "le fichier ne devait pas bouger");
+
+    let fichiers = std::fs::read_dir(bac.library_root.join("Air/1998 - Moon Safari"))
+        .unwrap()
+        .count();
+    assert_eq!(fichiers, 1, "aucun doublon « (2) » ne doit apparaître");
 }
 
 #[tokio::test]

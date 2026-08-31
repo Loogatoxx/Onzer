@@ -71,6 +71,82 @@ impl TrackMetadata {
     }
 }
 
+/// Métadonnées fournies par un script externe lors d'un import automatique.
+///
+/// Un téléchargeur connaît souvent le titre et l'artiste par la page source,
+/// alors que le fichier obtenu n'a aucun tag exploitable.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataHint {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub year: Option<u32>,
+    pub track_no: Option<u32>,
+    pub disc_no: Option<u32>,
+    pub genre: Option<String>,
+}
+
+impl MetadataHint {
+    /// Applique les indications aux métadonnées lues dans le fichier.
+    ///
+    /// **Règle d'arbitrage :** un vrai tag présent dans le fichier prime
+    /// toujours sur une indication. En revanche, si les métadonnées ont été
+    /// **déduites du nom de fichier** (`from_filename`), les indications
+    /// l'emportent : le script connaît la source, le nom de fichier n'est
+    /// qu'une supposition.
+    pub fn apply(&self, metadata: &mut TrackMetadata) {
+        let guessed = metadata.from_filename;
+
+        if let Some(title) = self.non_empty(&self.title) {
+            if guessed || metadata.title.is_empty() {
+                metadata.title = title;
+            }
+        }
+
+        if let Some(artist) = self.non_empty(&self.artist) {
+            if guessed || metadata.artists.is_empty() {
+                let (main, featured) = split_featuring(&artist);
+                metadata.artists = main;
+                metadata.featured_artists = featured;
+            }
+        }
+
+        if let Some(album) = self.non_empty(&self.album) {
+            if guessed || metadata.album.is_none() {
+                metadata.album = Some(album);
+            }
+        }
+
+        if let Some(album_artist) = self.non_empty(&self.album_artist) {
+            if guessed || metadata.album_artist.is_none() {
+                metadata.album_artist = Some(album_artist);
+            }
+        }
+
+        if let Some(genre) = self.non_empty(&self.genre) {
+            if metadata.genres.is_empty() {
+                metadata.genres.push(genre);
+            }
+        }
+
+        // Les valeurs numériques ne comblent que les manques : une année
+        // extraite d'un tag est plus fiable qu'une année devinée d'une page web.
+        metadata.year = metadata.year.or(self.year);
+        metadata.track_no = metadata.track_no.or(self.track_no);
+        metadata.disc_no = metadata.disc_no.or(self.disc_no);
+    }
+
+    fn non_empty(&self, value: &Option<String>) -> Option<String> {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_string)
+    }
+}
+
 /// Lit les métadonnées d'un fichier audio.
 pub fn read(path: &Path) -> Result<TrackMetadata> {
     let tagged = lofty::read_from_path(path)

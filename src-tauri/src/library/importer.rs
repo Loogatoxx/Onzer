@@ -20,6 +20,7 @@ use sqlx::SqlitePool;
 
 use crate::core::{OnzerError, PathResolver, Result};
 use crate::db::repository::{self, NewTrack};
+use crate::library::metadata::MetadataHint;
 use crate::library::{artwork, hash, metadata, naming};
 
 #[derive(Debug)]
@@ -53,9 +54,25 @@ pub async fn import_file(
     handling: FileHandling,
     origin: &str,
 ) -> Result<ImportOutcome> {
+    import_file_with_hint(pool, paths, source, handling, origin, None).await
+}
+
+/// Import avec indications de métadonnées fournies par un script externe.
+///
+/// C'est la voie empruntée par le dossier surveillé et l'API locale : le
+/// téléchargeur connaît souvent l'artiste et le titre par la page source, là où
+/// le fichier obtenu n'a aucun tag exploitable.
+pub async fn import_file_with_hint(
+    pool: &SqlitePool,
+    paths: &PathResolver,
+    source: &Path,
+    handling: FileHandling,
+    origin: &str,
+    hint: Option<&MetadataHint>,
+) -> Result<ImportOutcome> {
     let source_display = source.display().to_string();
 
-    match import_inner(pool, paths, source, handling, origin).await {
+    match import_inner(pool, paths, source, handling, origin, hint).await {
         Ok(outcome) => Ok(outcome),
         Err(error) => {
             // Un échec est tracé en base : sans cela, un fichier qui refuse
@@ -82,6 +99,7 @@ async fn import_inner(
     source: &Path,
     handling: FileHandling,
     origin: &str,
+    hint: Option<&MetadataHint>,
 ) -> Result<ImportOutcome> {
     // ── 1. Doublon strict ───────────────────────────────────────────────
     let content_hash = hash::content_hash(source)?;
@@ -94,7 +112,11 @@ async fn import_inner(
     }
 
     // ── 2. Métadonnées ──────────────────────────────────────────────────
-    let meta = metadata::read(source)?;
+    let mut meta = metadata::read(source)?;
+
+    if let Some(hint) = hint {
+        hint.apply(&mut meta);
+    }
 
     // ── 3. Doublon par tags ─────────────────────────────────────────────
     let normalized_title = naming::normalize_key(&meta.title);
@@ -104,7 +126,7 @@ async fn import_inner(
         pool,
         &normalized_title,
         normalized_artist.as_deref(),
-        meta.duration_ms,
+        Some(meta.duration_ms),
     )
     .await?
     {
@@ -135,7 +157,7 @@ async fn import_inner(
                 extension: &meta.format,
             });
 
-            let unique = resolve_collision(paths, &desired)?;
+            let unique = resolve_collision(paths, &desired, source)?;
             move_into_library(paths, source, &unique)?;
             unique
         }
@@ -192,8 +214,12 @@ async fn import_inner(
 /// Indispensable sur exFAT, **insensible à la casse** : deux morceaux nommés
 /// « Intro » et « INTRO » dans le même album viseraient le même fichier, et le
 /// second écraserait silencieusement le premier.
-fn resolve_collision(paths: &PathResolver, desired: &str) -> Result<String> {
-    if !paths.resolve(desired)?.exists() {
+///
+/// `source` est exclu de la détection : un fichier **déjà rangé au bon endroit**
+/// n'entre pas en collision avec lui-même. Sans cette exception, réimporter une
+/// bibliothèque déjà organisée renommerait chaque morceau en « … (2) ».
+fn resolve_collision(paths: &PathResolver, desired: &str, source: &Path) -> Result<String> {
+    if !is_taken(paths, desired, source)? {
         return Ok(desired.to_string());
     }
 
@@ -209,7 +235,7 @@ fn resolve_collision(paths: &PathResolver, desired: &str) -> Result<String> {
             format!("{stem} ({suffix}).{extension}")
         };
 
-        if !paths.resolve(&candidate)?.exists() {
+        if !is_taken(paths, &candidate, source)? {
             return Ok(candidate);
         }
     }
@@ -217,6 +243,24 @@ fn resolve_collision(paths: &PathResolver, desired: &str) -> Result<String> {
     Err(OnzerError::Invalid(format!(
         "impossible de trouver un nom libre pour « {desired} »"
     )))
+}
+
+/// Le chemin est-il occupé par un **autre** fichier que la source ?
+fn is_taken(paths: &PathResolver, candidate: &str, source: &Path) -> Result<bool> {
+    let destination = paths.resolve(candidate)?;
+
+    if !destination.exists() {
+        return Ok(false);
+    }
+
+    // Comparaison canonique : le même fichier peut être désigné par deux
+    // chemins différents (liens, « ./ », casse sur exFAT).
+    let same_file = match (destination.canonicalize(), source.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => destination == source,
+    };
+
+    Ok(!same_file)
 }
 
 /// Déplace le fichier dans la bibliothèque, en créant l'arborescence.

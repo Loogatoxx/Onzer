@@ -7,9 +7,11 @@ pub mod audio;
 pub mod commands;
 pub mod core;
 pub mod db;
+pub mod ingest;
 pub mod library;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::SqlitePool;
@@ -28,9 +30,10 @@ const PLAYBACK_TICK: Duration = Duration::from_millis(250);
 /// État partagé, injecté dans chaque commande par Tauri.
 pub struct AppState {
     pub pool: SqlitePool,
-    /// Sous verrou : la racine de bibliothèque change quand l'utilisateur la
-    /// configure ou quand le SSD est rebranché.
-    pub paths: RwLock<PathResolver>,
+    /// Sous verrou partagé : la racine de bibliothèque change quand
+    /// l'utilisateur la configure ou quand le SSD est rebranché, et les tâches
+    /// d'import automatique doivent voir ce changement sans redémarrage.
+    pub paths: Arc<RwLock<PathResolver>>,
     /// `None` si aucun périphérique audio n'a pu être ouvert. L'application
     /// reste alors pleinement utilisable pour gérer la bibliothèque — seule la
     /// lecture est indisponible.
@@ -104,9 +107,21 @@ pub fn run() {
                 }
             };
 
+            let data_dir = paths.data_dir().to_path_buf();
+            let shared_paths = Arc::new(RwLock::new(paths));
+
+            // Import automatique : dossier surveillé et API locale. Un échec
+            // ici ne compromet pas le démarrage (voir `ingest::start`).
+            ingest::start(
+                pool.clone(),
+                Arc::clone(&shared_paths),
+                &data_dir,
+                ingest::server::DEFAULT_PORT,
+            );
+
             app.manage(AppState {
                 pool,
-                paths: RwLock::new(paths),
+                paths: shared_paths,
                 player,
             });
 

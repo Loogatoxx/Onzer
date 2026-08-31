@@ -34,7 +34,6 @@ use std::path::Path;
 
 use crate::core::{OnzerError, Result};
 
-use decode::ANALYSIS_SAMPLE_RATE;
 use key::DetectedKey;
 use spectral::{FrameFeatures, SpectralAnalyzer, FRAME_SIZE, HOP_SIZE, MFCC_COUNT};
 
@@ -282,7 +281,7 @@ fn standard_deviation(values: &[f32]) -> f32 {
 mod tests {
     use super::*;
 
-    const RATE: u32 = ANALYSIS_SAMPLE_RATE;
+    const RATE: u32 = decode::ANALYSIS_SAMPLE_RATE;
 
     /// Signal synthétique : somme de sinusoïdes, éventuellement pulsée.
     fn synth(seconds: f32, partials: &[(f32, f32)], pulse_bpm: Option<f32>) -> Vec<f32> {

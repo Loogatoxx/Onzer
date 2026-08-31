@@ -72,7 +72,8 @@ impl Strategy {
         }
     }
 
-    pub fn from_str(value: &str) -> Option<Self> {
+    /// Reconstruit une stratégie depuis la clé stockée en base.
+    pub fn from_key(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|s| s.as_str() == value)
     }
 
@@ -436,9 +437,9 @@ mod tests {
     #[test]
     fn les_identifiants_font_laller_retour() {
         for strategy in Strategy::ALL {
-            assert_eq!(Strategy::from_str(strategy.as_str()), Some(strategy));
+            assert_eq!(Strategy::from_key(strategy.as_str()), Some(strategy));
         }
-        assert_eq!(Strategy::from_str("inconnue"), None);
+        assert_eq!(Strategy::from_key("inconnue"), None);
     }
 
     #[test]

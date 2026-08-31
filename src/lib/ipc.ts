@@ -170,6 +170,87 @@ export interface IdentificationStatus {
   progress: IdentificationProgress;
 }
 
+// ── Statistiques ──────────────────────────────────────────────────────
+
+/**
+ * Miroir de `stats::Period`.
+ *
+ * Une énumération Rust à données se sérialise en objet étiqueté :
+ * `Period::Days(30)` devient `{ days: 30 }`, `Period::AllTime` devient
+ * `"allTime"`.
+ */
+export type StatsPeriod = { days: number } | "allTime";
+
+export interface ArtistStat {
+  id: number;
+  name: string;
+  plays: number;
+  listenedMs: number;
+}
+
+export interface TrackStat {
+  id: number;
+  title: string;
+  artist: string | null;
+  artworkHash: string | null;
+  plays: number;
+  listenedMs: number;
+}
+
+export interface AlbumStat {
+  id: number;
+  title: string;
+  artist: string | null;
+  artworkHash: string | null;
+  plays: number;
+  listenedMs: number;
+}
+
+export interface HourSlice {
+  hour: number;
+  plays: number;
+  listenedMs: number;
+}
+
+export interface Behaviour {
+  totalPlays: number;
+  qualifiedPlays: number;
+  earlySkipRate: number;
+  completionRate: number;
+  avgCompletion: number;
+  peakHour: number | null;
+  weekendShare: number;
+  manualShare: number;
+}
+
+export interface Totals {
+  listenedMs: number;
+  distinctTracks: number;
+  distinctArtists: number;
+  sessions: number;
+  longestSessionMs: number;
+  discoveries: number;
+}
+
+export interface Persona {
+  title: string;
+  description: string;
+}
+
+/** Miroir de `stats::Wrapped`. */
+export interface Wrapped {
+  periodLabel: string;
+  totals: Totals;
+  behaviour: Behaviour;
+  topArtists: ArtistStat[];
+  topTracks: TrackStat[];
+  topAlbums: AlbumStat[];
+  clock: HourSlice[];
+  persona: Persona;
+  /** Faux quand l'historique est trop mince pour être parlant. */
+  hasEnoughData: boolean;
+}
+
 /** Doit correspondre à `commands::library::SCAN_PROGRESS_EVENT`. */
 const SCAN_PROGRESS_EVENT = "library://scan-progress";
 /** Doit correspondre à `commands::playback::STATE_EVENT`. */
@@ -269,7 +350,28 @@ export const ipc = {
   retryIdentifications: (): Promise<number> => invoke<number>("retry_identifications"),
 
   reidentifyLibrary: (): Promise<number> => invoke<number>("reidentify_library"),
+
+  // ── Statistiques ─────────────────────────────────────────────────────
+  // Un seul aller-retour pour toute la page : la découper ferait clignoter
+  // les sections, chacune arrivant à son rythme.
+
+  wrapped: (period: StatsPeriod = "allTime", top = 10): Promise<Wrapped> =>
+    invoke<Wrapped>("wrapped", { period, top }),
 };
+
+/** Millisecondes → « 1 240 » minutes, sans décimale. */
+export function toMinutes(milliseconds: number): number {
+  return Math.round(milliseconds / 60_000);
+}
+
+/** Millisecondes → « 4 h 12 ». */
+export function formatDurationLong(milliseconds: number): string {
+  const minutes = toMinutes(milliseconds);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours === 0) return `${minutes} min`;
+  return `${hours} h ${(minutes % 60).toString().padStart(2, "0")}`;
+}
 
 /** Millisecondes → « 3:42 ». */
 export function formatDuration(milliseconds: number): string {

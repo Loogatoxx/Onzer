@@ -11,6 +11,7 @@ import {
 } from "@/lib/ipc";
 import { DiscoverBar } from "@/features/discover/DiscoverBar";
 import { IdentifyPanel } from "@/features/identify/IdentifyPanel";
+import { WrappedView } from "@/features/stats/WrappedView";
 import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
 import { TrackList } from "./TrackList";
@@ -27,6 +28,15 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const [playlist, setPlaylist] = useState<GeneratedPlaylist | null>(null);
+
+  /**
+   * Bibliothèque ou statistiques.
+   *
+   * Les deux vues partagent la même coquille plutôt que d'être des pages
+   * séparées : c'est ce qui garde la barre de lecture à l'écran. Passer aux
+   * statistiques ne doit pas donner l'impression d'avoir coupé la musique.
+   */
+  const [mode, setMode] = useState<"library" | "stats">("library");
 
   const playback = usePlayback();
   const importing = progress !== null;
@@ -169,35 +179,45 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
     <div className="flex h-full flex-col">
       <header className="drag-region shrink-0 border-b border-line px-5 pb-3 pt-9">
         <div className="no-drag flex items-center gap-3">
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Rechercher un titre, un artiste, un album…"
-            className="flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
-          />
+          {mode === "library" && (
+            <>
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Rechercher un titre, un artiste, un album…"
+                className="flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
+              />
 
-          <button
-            type="button"
-            disabled={importing}
-            onClick={() => void importFolder()}
-            className="shrink-0 rounded-lg bg-gradient-to-br from-accent to-accent-alt px-4 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
-            {importing ? "Import en cours…" : "Importer un dossier"}
-          </button>
+              <button
+                type="button"
+                disabled={importing}
+                onClick={() => void importFolder()}
+                className="shrink-0 rounded-lg bg-gradient-to-br from-accent to-accent-alt px-4 py-2 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {importing ? "Import en cours…" : "Importer un dossier"}
+              </button>
+            </>
+          )}
+
+          <ModeToggle mode={mode} onChange={setMode} />
         </div>
 
-        <Counters counts={counts} libraryRoot={libraryRoot} />
+        {mode === "library" && (
+          <>
+            <Counters counts={counts} libraryRoot={libraryRoot} />
 
-        <DiscoverBar
-          disabled={importing || (counts?.tracks ?? 0) === 0}
-          onGenerated={(generated) => void showGenerated(generated)}
-          onError={setError}
-        />
+            <DiscoverBar
+              disabled={importing || (counts?.tracks ?? 0) === 0}
+              onGenerated={(generated) => void showGenerated(generated)}
+              onError={setError}
+            />
 
-        <div className="no-drag mt-2.5">
-          <IdentifyPanel />
-        </div>
+            <div className="no-drag mt-2.5">
+              <IdentifyPanel />
+            </div>
+          </>
+        )}
       </header>
 
       {playlist !== null && (
@@ -225,14 +245,18 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <TrackList
-          tracks={tracks}
-          currentTrackId={playback.state?.current?.trackId ?? null}
-          isPlaying={playback.state?.isPlaying ?? false}
-          onPlay={playFrom}
-          onRadio={startRadio}
-          {...(reasons === undefined ? {} : { reasons })}
-        />
+        {mode === "stats" ? (
+          <WrappedView />
+        ) : (
+          <TrackList
+            tracks={tracks}
+            currentTrackId={playback.state?.current?.trackId ?? null}
+            isPlaying={playback.state?.isPlaying ?? false}
+            onPlay={playFrom}
+            onRadio={startRadio}
+            {...(reasons === undefined ? {} : { reasons })}
+          />
+        )}
       </div>
 
       {playback.state !== null && (
@@ -247,6 +271,37 @@ export function LibraryView({ libraryRoot }: { libraryRoot: string }) {
           onRepeat={() => void playback.cycleRepeat(playback.state?.repeat ?? "off")}
         />
       )}
+    </div>
+  );
+}
+
+/** Bascule entre la bibliothèque et les statistiques. */
+function ModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: "library" | "stats";
+  onChange: (mode: "library" | "stats") => void;
+}) {
+  return (
+    <div className="ml-auto flex shrink-0 gap-1 rounded-lg border border-line bg-surface p-1">
+      {(
+        [
+          ["library", "Bibliothèque"],
+          ["stats", "Statistiques"],
+        ] as const
+      ).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onChange(value)}
+          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+            mode === value ? "bg-ink text-base" : "text-ink-muted hover:text-ink"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

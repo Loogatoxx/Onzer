@@ -24,6 +24,17 @@
   --color-accent-soft: #a78bfa;
   --color-accent-alt: #22d3ee;
 
+  /* Néons réservés aux statistiques : chaque section a sa couleur, ce qui
+     donne du rythme au défilement sans casser l'identité de l'application. */
+  --color-neon-lime: #c6f24e;
+  --color-neon-pink: #ff5ca8;
+  --color-neon-amber: #ffb020;
+
+  /* Police d'affichage. Sur macOS, SF Pro Display monte jusqu'au poids 900 :
+     inutile d'embarquer une fonte, et rien ne transite par le réseau. */
+  --font-display: "SF Pro Display", -apple-system, "Inter", "Helvetica Neue",
+    system-ui, sans-serif;
+
   /* États */
   --color-ok: #34d399;
   --color-warn: #fbbf24;
@@ -76,6 +87,51 @@
 }
 
 @layer utilities {
+  /* ── Typographie d'affichage ─────────────────────────────────────────
+     Des chiffres qui remplissent l'écran. Le crénage serré est ce qui
+     distingue un titre massif d'un simple texte agrandi : sans lui, les
+     grandes tailles paraissent lâches et amateur. */
+  .display {
+    font-family: var(--font-display);
+    font-weight: 860;
+    letter-spacing: -0.045em;
+    line-height: 0.92;
+  }
+
+  .display-tight {
+    font-family: var(--font-display);
+    font-weight: 860;
+    letter-spacing: -0.055em;
+    line-height: 0.85;
+  }
+
+  /* Chiffres à chasse fixe : un compteur qui s'anime ne doit pas faire
+     danser la mise en page. */
+  .numerals {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Dégradé appliqué au texte lui-même. */
+  .text-gradient {
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+  }
+
+  /* Apparition au défilement. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+      opacity 700ms var(--ease-out-soft),
+      transform 700ms var(--ease-out-soft);
+  }
+
+  .reveal-visible {
+    opacity: 1;
+    transform: none;
+  }
+
   /* Zone de glissement de la fenêtre (barre de titre masquée). */
   .drag-region {
     -webkit-app-region: drag;

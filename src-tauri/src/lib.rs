@@ -12,6 +12,7 @@ pub mod identify;
 pub mod ingest;
 pub mod library;
 pub mod reco;
+pub mod stats;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -178,6 +179,7 @@ pub fn run() {
             commands::identify::set_acoustid_key,
             commands::identify::retry_identifications,
             commands::identify::reidentify_library,
+            commands::stats::wrapped,
         ])
         .run(tauri::generate_context!())
         .expect("échec au lancement d'Onzer");

@@ -1,14 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { Icon } from "@/components/Icon";
 import { DiscoverPanel } from "@/features/home/DiscoverPanel";
-import {
-  formatDuration,
-  ipc,
-  type PlaylistComparison,
-  type SpotifyStatus,
-} from "@/lib/ipc";
+import { formatDuration, ipc, type PlaylistComparison } from "@/lib/ipc";
 
 /**
  * Ce qui manque à la bibliothèque.
@@ -85,12 +80,7 @@ function FromPlaylist() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [status, setStatus] = useState<SpotifyStatus | null>(null);
-  const [editing, setEditing] = useState(false);
-
-  useEffect(() => {
-    void ipc.spotifyStatus().then(setStatus).catch(() => undefined);
-  }, []);
+  const [pasted, setPasted] = useState("");
 
   function copy(text: string, key: string) {
     void navigator.clipboard.writeText(text);
@@ -104,6 +94,19 @@ function FromPlaylist() {
       setSaveCommand(await ipc.playlistSaveCommand(url));
     } catch (cause) {
       setError(String(cause));
+    }
+  }
+
+  async function comparePasted() {
+    setLoading(true);
+    setError(null);
+
+    try {
+      setComparison(await ipc.comparePlaylistText(pasted));
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -130,45 +133,59 @@ function FromPlaylist() {
   return (
     <section>
       <h2 className="display text-[clamp(1.15rem,2.4vw,1.6rem)] text-ink">
-        Depuis une playlist Spotify
+        Depuis une liste que tu possèdes
       </h2>
-      <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-ink-muted">
-        En deux temps : ton <span className="font-mono">spotdl</span> récupère la
-        liste, Onzer la compare. Spotify ne laisse plus une application lire une
-        playlist sans abonnement payant — ce détour contourne le mur sans rien
-        forcer.
+      <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-ink-muted">
+        Colle n&apos;importe quelle liste de titres — Onzer reconnaît le format
+        tout seul. La comparaison ne dépend d&apos;aucun service.
       </p>
 
-      {/* ── 0. Les identifiants ──────────────────────────────────────── */}
-      {status !== null && (!status.configured || editing) ? (
-        <Credentials
-          onSaved={() => {
-            setEditing(false);
-            void ipc.spotifyStatus().then(setStatus);
-          }}
+      <div className="mt-5 rounded-xl bg-surface p-4">
+        <p className="text-[13px] font-semibold text-ink">Coller une liste</p>
+        <p className="mt-1 text-[12px] leading-relaxed text-ink-faint">
+          Un CSV exporté (Exportify et compagnie), ou une ligne par morceau au
+          format <span className="font-mono">Artiste - Titre</span>.
+        </p>
+
+        <textarea
+          value={pasted}
+          spellCheck={false}
+          onChange={(event) => setPasted(event.target.value)}
+          placeholder={"Damso - Macarena\nNépal - Radeau\nLuidji - Bandana"}
+          className="mt-3 h-40 w-full resize-none rounded-lg bg-base p-3 font-mono text-[12px] leading-relaxed text-ink placeholder:text-ink-faint focus:outline focus:outline-1 focus:outline-accent"
         />
-      ) : (
-        status?.configured === true && (
-          <p className="mt-4 text-[11px] text-ink-faint">
-            Identifiants Spotify enregistrés
-            {status.idHint != null && (
-              <span className="ml-1.5 font-mono">{status.idHint}</span>
-            )}
-            <span className="mx-1.5">·</span>
-            ils seront glissés dans les commandes ci-dessous
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="ml-2 underline underline-offset-2 transition-colors hover:text-ink"
-            >
-              modifier
-            </button>
-          </p>
-        )
-      )}
+
+        <button
+          type="button"
+          disabled={loading || pasted.trim() === ""}
+          onClick={() => void comparePasted()}
+          className="mt-3 flex items-center gap-2 rounded-full bg-ink px-5 py-2 text-[13px] font-semibold text-base transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          <span className={loading ? "animate-spin" : ""}>
+            <Icon name={loading ? "repeat" : "search"} size={15} />
+          </span>
+          Comparer cette liste
+        </button>
+      </div>
+
+      <details className="mt-6 rounded-xl bg-surface/60 p-4">
+        <summary className="cursor-pointer text-[13px] font-semibold text-ink-muted transition-colors hover:text-ink">
+          Passer par spotdl — plus automatique, mais capricieux
+        </summary>
+
+        <p className="mt-3 max-w-2xl text-[12px] leading-relaxed text-ink-faint">
+          <span className="font-mono">spotdl save</span> récupère la liste tout
+          seul depuis un lien. Mais Spotify a fermé son API aux applications sans
+          abonnement payant — tes identifiants n&apos;y changent rien, c&apos;est
+          mesuré — et le contournement anonyme de spotdl s&apos;appuie sur un
+          analyseur des pages de Spotify qui tombe régulièrement en panne
+          (<span className="font-mono">Could not get general hashes</span>).
+          Quand il marche, c&apos;est le plus confortable ; sinon, la zone de
+          collage ci-dessus, elle, marche toujours.
+        </p>
 
       {/* ── 1. Produire la liste ─────────────────────────────────────── */}
-      <div className="mt-6 flex flex-wrap gap-3">
+      <div className="mt-4 flex flex-wrap gap-3">
         <input
           type="text"
           value={url}
@@ -216,13 +233,7 @@ function FromPlaylist() {
             comptez plusieurs minutes.
           </p>
 
-          {saveCommand.includes("--client-secret") && (
-            <p className="mt-2 text-[11px] leading-relaxed text-warn">
-              Cette ligne contient ton <em>client secret</em> en clair — c'est ce
-              qu'attend spotdl. Ne la colle nulle part ailleurs que dans ton
-              terminal.
-            </p>
-          )}
+
         </div>
       )}
 
@@ -238,8 +249,9 @@ function FromPlaylist() {
             <Icon name={loading ? "repeat" : "folder"} size={15} />
           </span>
           {loading ? "Comparaison…" : "2. Choisir le fichier obtenu"}
-        </button>
-      </div>
+          </button>
+        </div>
+      </details>
 
       {error !== null && (
         <p className="mt-4 rounded-lg bg-danger/10 px-4 py-3 text-[13px] leading-relaxed text-danger">
@@ -334,89 +346,5 @@ function FromPlaylist() {
         </div>
       )}
     </section>
-  );
-}
-
-/**
- * Saisie des identifiants d'application Spotify.
- *
- * # Pourquoi ils servent encore
- *
- * Onzer n'interroge plus l'API lui-même — Spotify le lui interdit sans
- * abonnement payant. Mais `spotdl`, interrogé anonymement, se fait éconduire
- * sur les grandes playlists : l'erreur remontée est un obscur
- * `'NoneType' object is not subscriptable` au fond de sa couche réseau.
- * Ses propres identifiants lèvent la limite.
- *
- * Onzer les stocke et les glisse dans les commandes qu'il propose. Il ne s'en
- * sert pour aucun appel.
- */
-function Credentials({ onSaved }: { onSaved: () => void }) {
-  const [id, setId] = useState("");
-  const [secret, setSecret] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    setError(null);
-    try {
-      await ipc.setSpotifyCredentials(id.trim(), secret.trim());
-      onSaved();
-    } catch (cause) {
-      setError(String(cause));
-    }
-  }
-
-  return (
-    <div className="mt-5 rounded-xl bg-surface p-5">
-      <p className="text-[15px] font-semibold text-ink">
-        Deux identifiants à créer, une fois
-      </p>
-
-      <ol className="mt-3 space-y-1.5 text-[13px] leading-relaxed text-ink-muted">
-        <li>
-          1. Ouvre <span className="font-mono text-ink">developer.spotify.com/dashboard</span>
-        </li>
-        <li>2. « Create app » — n&apos;importe quel nom, n&apos;importe quelle description</li>
-        <li>
-          3. Recopie ici le <span className="text-ink">Client ID</span> et le{" "}
-          <span className="text-ink">Client Secret</span>
-        </li>
-      </ol>
-
-      <div className="mt-4 space-y-2">
-        <input
-          type="text"
-          value={id}
-          spellCheck={false}
-          onChange={(event) => setId(event.target.value)}
-          placeholder="Client ID"
-          className="h-10 w-full rounded-lg bg-base px-3 font-mono text-xs text-ink placeholder:text-ink-faint focus:outline focus:outline-1 focus:outline-accent"
-        />
-        <input
-          type="password"
-          value={secret}
-          spellCheck={false}
-          onChange={(event) => setSecret(event.target.value)}
-          placeholder="Client Secret"
-          className="h-10 w-full rounded-lg bg-base px-3 font-mono text-xs text-ink placeholder:text-ink-faint focus:outline focus:outline-1 focus:outline-accent"
-        />
-      </div>
-
-      {error !== null && <p className="mt-3 text-[12px] text-danger">{error}</p>}
-
-      <button
-        type="button"
-        disabled={id.trim() === "" || secret.trim() === ""}
-        onClick={() => void save()}
-        className="mt-4 rounded-full bg-ink px-5 py-2 text-[13px] font-semibold text-base transition-opacity hover:opacity-90 disabled:opacity-40"
-      >
-        Enregistrer
-      </button>
-
-      <p className="mt-4 text-[11px] leading-relaxed text-ink-faint">
-        Onzer ne s&apos;en sert pour aucun appel : il les glisse dans les
-        commandes qu&apos;il te propose, pour que spotdl ne soit plus éconduit.
-      </p>
-    </div>
   );
 }

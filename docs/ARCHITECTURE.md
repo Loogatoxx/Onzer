@@ -1112,6 +1112,49 @@ formes de navigation sont en filaire, et l'œil repère immédiatement l'intruse
 
 ---
 
+## ADR-038 — Comparer ne doit dépendre d'aucun service
+
+**Contexte.** Les identifiants Spotify ont été glissés dans la commande `spotdl save`, comme
+demandé. Quatre mesures ont suivi :
+
+| Voie | Résultat |
+|---|---|
+| API officielle + identifiants (`--use-official-api`) | **403** — abonnement payant exigé sur le compte propriétaire |
+| Contournement anonyme, playlist | `BaseClientError: Could not get general hashes` |
+| Contournement anonyme, liens de titres | Fichier vide, 0 titre |
+| La même commande, deux heures plus tôt | **548 titres** |
+
+Les identifiants sont donc **inertes** : sans `--use-official-api`, `spotdl` les ignore et
+passe par un analyseur des pages web de Spotify ; avec, il retombe sur le 403. Les afficher
+exposait le *client secret* à l'écran pour aucun bénéfice — ils ont été retirés des commandes
+proposées.
+
+**Le vrai problème.** Aller chercher la liste est le maillon fragile, et il ne nous appartient
+pas : il dépend d'un scraper tiers face à une API hostile, qui marchait le matin et plus
+l'après-midi. Aucune correction de notre côté ne peut le rendre fiable.
+
+**Décision.** La comparaison — qui, elle, est notre travail — n'en dépend plus. Onzer accepte
+**toute liste de titres**, reconnue automatiquement :
+
+| Forme | D'où elle vient |
+|---|---|
+| JSON `.spotdl` | `spotdl save`, quand il fonctionne |
+| CSV | Exportify et la plupart des exportateurs |
+| Texte brut | Un copier-coller, une liste écrite à la main |
+
+Deux détails d'analyse méritent d'être notés, parce qu'ils cassent en silence sinon : le
+découpage CSV **respecte les guillemets** (« Penelope, pt. 2 » contient une virgule), et seul
+un tiret **entouré d'espaces** sépare l'artiste du titre (« Jay-Z » ne doit pas être coupé).
+
+Vérifié sur la playlist réelle de 548 titres, convertie en texte : 548 analysés, artistes et
+titres corrects.
+
+**La voie `spotdl` reste proposée**, repliée derrière un dépliant et accompagnée de ce
+qu'elle vaut : la plus confortable quand elle marche, inutilisable quand Spotify ferme sa
+porte.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

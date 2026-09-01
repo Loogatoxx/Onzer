@@ -49,6 +49,27 @@ pub struct PlaylistComparison {
     pub command: String,
 }
 
+/// Compare une liste collée à la main.
+///
+/// # Pourquoi cette porte existe
+///
+/// Aller chercher la liste chez Spotify s'est révélé le maillon fragile : l'API
+/// est fermée sans abonnement payant, et le contournement anonyme de `spotdl`
+/// dépend d'un analyseur des bundles JavaScript de Spotify qui cesse de
+/// fonctionner du jour au lendemain — vérifié, il marchait le matin et plus
+/// l'après-midi.
+///
+/// La comparaison, elle, ne dépend de personne. Accepter n'importe quelle
+/// liste — un CSV exporté, un copier-coller, trois lignes écrites à la main —
+/// rend la fonctionnalité indépendante d'un service tiers.
+#[tauri::command]
+pub async fn compare_playlist_text(
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<PlaylistComparison> {
+    compare(&state, &text, "Ta liste").await
+}
+
 /// Compare un fichier `.spotdl` à la bibliothèque.
 #[tauri::command]
 pub async fn compare_playlist_file(
@@ -59,8 +80,18 @@ pub async fn compare_playlist_file(
         .await
         .map_err(|error| OnzerError::Invalid(format!("fichier illisible : {error}")))?;
 
-    let tracks = spotdl::parse(&raw)?;
-    let playlist_name = spotdl::playlist_name(&raw).unwrap_or_else(|| "Playlist".to_string());
+    compare(&state, &raw, "Playlist").await
+}
+
+/// Le rapprochement lui-même, commun aux deux portes d'entrée.
+async fn compare(
+    state: &State<'_, AppState>,
+    raw: &str,
+    fallback_name: &str,
+) -> Result<PlaylistComparison> {
+    let tracks = spotdl::parse_list(raw)?;
+    let playlist_name =
+        spotdl::playlist_name(raw).unwrap_or_else(|| fallback_name.to_string());
     let total = tracks.len();
 
     let mut missing = Vec::new();
@@ -85,7 +116,7 @@ pub async fn compare_playlist_file(
         }
     }
 
-    let command = download_command(&missing, &playlist_name, &state).await;
+    let command = download_command(&missing, &playlist_name, state).await;
 
     Ok(PlaylistComparison {
         playlist_name,
@@ -147,14 +178,13 @@ async fn download_command(
     }
 
     format!(
-        "xargs -a {} -d '\\n' {} download --output {}{}",
+        "xargs -a {} -d '\\n' {} download --output {}",
         shell_quote(&list_path.display().to_string()),
         shell_quote(&spotdl_binary()),
         shell_quote(&format!(
             "{}/{{artists}} - {{title}}.{{output-ext}}",
             inbox.display()
-        )),
-        credential_flags(&state.pool).await
+        ))
     )
 }
 
@@ -176,12 +206,17 @@ pub async fn playlist_save_command(state: State<'_, AppState>, url: String) -> R
         None => std::path::PathBuf::from("playlist.spotdl"),
     };
 
+    // Sans options d'identifiants : mesuré, elles ne changent rien.
+    // `spotdl save` passe par un contournement anonyme qui les ignore, et
+    // `--use-official-api` retombe sur le 403 de l'abonnement. Les afficher
+    // exposerait le client secret à l'écran pour aucun bénéfice.
+    let _ = &state;
+
     Ok(format!(
-        "{} save {} --save-file {}{}",
+        "{} save {} --save-file {}",
         shell_quote(&spotdl_binary()),
         shell_quote(url),
-        shell_quote(&destination.display().to_string()),
-        credential_flags(&state.pool).await
+        shell_quote(&destination.display().to_string())
     ))
 }
 
@@ -215,38 +250,6 @@ fn spotdl_binary() -> String {
 
 fn dirs_home() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(std::path::PathBuf::from)
-}
-
-/// Les identifiants Spotify, en options de ligne de commande.
-///
-/// # Pourquoi ils sont nécessaires ici
-///
-/// Sans eux, `spotdl` interroge Spotify anonymement et se fait éconduire sur
-/// les grandes playlists — l'erreur remontée est un obscur
-/// `'NoneType' object is not subscriptable` au fond de sa couche réseau.
-/// Renseigner ses propres identifiants d'application lève la limite.
-///
-/// C'est la même paire que celle saisie dans Onzer. Elle ne sert plus à
-/// interroger l'API nous-mêmes — Spotify nous l'interdit désormais — mais elle
-/// reste exactement ce dont l'outil de l'utilisateur a besoin.
-///
-/// La chaîne est vide quand rien n'est renseigné : mieux vaut une commande
-/// incomplète qu'une commande portant des guillemets vides, qui échouerait
-/// avec un message encore moins clair.
-async fn credential_flags(pool: &sqlx::SqlitePool) -> String {
-    let id: Option<String> = settings::get(pool, SPOTIFY_ID).await.ok().flatten();
-    let secret: Option<String> = settings::get(pool, SPOTIFY_SECRET).await.ok().flatten();
-
-    match (id, secret) {
-        (Some(id), Some(secret)) if !id.trim().is_empty() && !secret.trim().is_empty() => {
-            format!(
-                " --client-id {} --client-secret {}",
-                shell_quote(id.trim()),
-                shell_quote(secret.trim())
-            )
-        }
-        _ => String::new(),
-    }
 }
 
 /// Réglages : identifiants d'application Spotify.

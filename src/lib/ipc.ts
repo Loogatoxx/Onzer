@@ -549,6 +549,15 @@ export const ipc = {
   comparePlaylistFile: (path: string): Promise<PlaylistComparison> =>
     invoke<PlaylistComparison>("compare_playlist_file", { path }),
 
+  /**
+   * Compare une liste collée à la main.
+   *
+   * Accepte un CSV exporté, un copier-coller « Artiste - Titre », ou le JSON
+   * d'un fichier `.spotdl`. Le format est reconnu tout seul.
+   */
+  comparePlaylistText: (text: string): Promise<PlaylistComparison> =>
+    invoke<PlaylistComparison>("compare_playlist_text", { text }),
+
   /** La commande qui produit le fichier à comparer. */
   playlistSaveCommand: (url: string): Promise<string> =>
     invoke<string>("playlist_save_command", { url }),

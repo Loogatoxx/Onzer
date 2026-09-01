@@ -55,8 +55,218 @@ impl PlaylistTrack {
     }
 }
 
+/// Analyse une liste de titres, quelle qu'en soit la forme.
+///
+/// # Pourquoi trois formats
+///
+/// La comparaison est le travail d'Onzer ; **aller chercher la liste ne l'est
+/// pas**. Or cette étape s'est révélée le maillon fragile : l'API Spotify est
+/// fermée sans abonnement payant, et le contournement anonyme de `spotdl`
+/// dépend d'un analyseur des bundles JavaScript de Spotify qui cesse de
+/// fonctionner du jour au lendemain — vérifié, il marchait le matin et plus
+/// l'après-midi.
+///
+/// Onzer accepte donc **tout ce qui ressemble à une liste de titres** :
+///
+/// | Forme | D'où elle vient |
+/// |---|---|
+/// | JSON `.spotdl` | `spotdl save`, quand il fonctionne |
+/// | CSV | Exportify et la plupart des exportateurs de playlists |
+/// | Texte brut | Un copier-coller, une liste écrite à la main |
+///
+/// Le format est reconnu tout seul : demander à l'utilisateur de le déclarer
+/// serait lui faire porter un détail qui ne le regarde pas.
+pub fn parse_list(raw: &str) -> Result<Vec<PlaylistTrack>> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(OnzerError::Invalid("la liste est vide".to_string()));
+    }
+
+    // Le JSON se reconnaît à son premier caractère : inutile de tenter une
+    // analyse coûteuse pour l'écarter.
+    if trimmed.starts_with('[') {
+        return parse(trimmed);
+    }
+
+    let tracks = parse_lines(trimmed);
+    if tracks.is_empty() {
+        return Err(OnzerError::Invalid(
+            "aucun titre reconnu — attendu une ligne par morceau, du genre              « Artiste - Titre », un CSV exporté, ou un fichier .spotdl"
+                .to_string(),
+        ));
+    }
+
+    Ok(tracks)
+}
+
+/// Analyse un CSV ou du texte brut, ligne par ligne.
+fn parse_lines(raw: &str) -> Vec<PlaylistTrack> {
+    let mut lines = raw.lines().peekable();
+
+    // Un CSV exporté commence par ses en-têtes. On y cherche les colonnes qui
+    // nous intéressent plutôt que d'exiger un ordre : les exportateurs ne
+    // s'accordent pas dessus.
+    let columns = lines
+        .peek()
+        .filter(|first| first.contains(','))
+        .and_then(|first| csv_columns(first));
+
+    if columns.is_some() {
+        lines.next();
+    }
+
+    lines
+        .filter_map(|line| match &columns {
+            Some(columns) => from_csv(line, columns),
+            None => from_text(line),
+        })
+        .collect()
+}
+
+/// Position des colonnes utiles dans un en-tête CSV.
+struct Columns {
+    title: usize,
+    artist: usize,
+    album: Option<usize>,
+    duration_ms: Option<usize>,
+}
+
+fn csv_columns(header: &str) -> Option<Columns> {
+    let cells: Vec<String> = split_csv(header)
+        .into_iter()
+        .map(|cell| cell.trim().to_lowercase())
+        .collect();
+
+    let find = |needles: &[&str]| {
+        cells
+            .iter()
+            .position(|cell| needles.iter().any(|needle| cell.contains(needle)))
+    };
+
+    Some(Columns {
+        title: find(&["track name", "title", "titre", "name"])?,
+        artist: find(&["artist name", "artist", "artiste"])?,
+        album: find(&["album name", "album"]),
+        duration_ms: find(&["duration (ms)", "duration_ms"]),
+    })
+}
+
+fn from_csv(line: &str, columns: &Columns) -> Option<PlaylistTrack> {
+    let cells = split_csv(line);
+    let title = cells.get(columns.title)?.trim().to_string();
+    if title.is_empty() {
+        return None;
+    }
+
+    // Les exportateurs séparent les artistes multiples par une virgule à
+    // l'intérieur d'une cellule déjà entre guillemets.
+    let artists: Vec<String> = cells
+        .get(columns.artist)
+        .map(|cell| {
+            cell.split(&[',', ';'][..])
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let duration_ms = columns
+        .duration_ms
+        .and_then(|index| cells.get(index))
+        .and_then(|cell| cell.trim().parse::<i64>().ok())
+        .unwrap_or(0);
+
+    Some(build(title, artists, album_cell(&cells, columns), duration_ms))
+}
+
+fn album_cell(cells: &[String], columns: &Columns) -> Option<String> {
+    columns
+        .album
+        .and_then(|index| cells.get(index))
+        .map(|cell| cell.trim().to_string())
+        .filter(|cell| !cell.is_empty())
+}
+
+/// Découpe une ligne CSV en respectant les guillemets.
+///
+/// Un titre comme « Bonnie & Clyde, pt. 2 » contient une virgule : découper
+/// naïvement le couperait en deux colonnes.
+fn split_csv(line: &str) -> Vec<String> {
+    let mut cells = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+
+    for character in line.chars() {
+        match character {
+            '"' => quoted = !quoted,
+            ',' if !quoted => cells.push(std::mem::take(&mut current)),
+            other => current.push(other),
+        }
+    }
+
+    cells.push(current);
+    cells
+}
+
+/// Analyse une ligne de texte libre : « Artiste - Titre ».
+///
+/// L'ordre inverse — « Titre - Artiste » — existe aussi, et rien ne permet de
+/// les distinguer à coup sûr. On retient la convention la plus répandue, celle
+/// qu'emploient `spotdl` et la plupart des exportateurs.
+fn from_text(line: &str) -> Option<PlaylistTrack> {
+    let line = line.trim();
+
+    // Les lignes vides, les numéros de piste isolés et les commentaires ne
+    // sont pas des morceaux.
+    if line.is_empty() || line.starts_with('#') {
+        return None;
+    }
+
+    // Un tiret entouré d'espaces sépare l'artiste du titre ; un tiret collé
+    // appartient au texte (« Jay-Z », « lo-fi »).
+    let (artist, title) = match line.split_once(" - ") {
+        Some((artist, title)) => (artist.trim().to_string(), title.trim().to_string()),
+        // Sans séparateur, toute la ligne est le titre : la comparaison portera
+        // sur lui seul, ce qui reste exploitable.
+        None => (String::new(), line.to_string()),
+    };
+
+    if title.is_empty() {
+        return None;
+    }
+
+    let artists = if artist.is_empty() {
+        Vec::new()
+    } else {
+        vec![artist]
+    };
+
+    Some(build(title, artists, None, 0))
+}
+
+fn build(
+    title: String,
+    artists: Vec<String>,
+    album: Option<String>,
+    duration_ms: i64,
+) -> PlaylistTrack {
+    let query = match artists.first() {
+        Some(artist) => format!("{artist} - {title}"),
+        None => title.clone(),
+    };
+
+    PlaylistTrack {
+        title,
+        artists,
+        album,
+        duration_ms,
+        url: String::new(),
+        query,
+    }
+}
+
 /// Analyse le contenu d'un fichier `.spotdl`.
-pub fn parse(raw: &str) -> Result<Vec<PlaylistTrack>> {
+fn parse(raw: &str) -> Result<Vec<PlaylistTrack>> {
     let entries: Vec<Entry> = serde_json::from_str(raw).map_err(|error| {
         OnzerError::Invalid(format!(
             "fichier illisible — est-ce bien un fichier produit par « spotdl save » ? ({error})"
@@ -264,5 +474,90 @@ mod tests {
         // Le rapprochement portera alors sur le titre et l'artiste seuls.
         let tracks = parse(r#"[{"name": "Titre", "artist": "X"}]"#).unwrap();
         assert_eq!(tracks[0].duration_ms, 0);
+    }
+}
+
+#[cfg(test)]
+mod tests_listes {
+    use super::*;
+
+    #[test]
+    fn lit_un_csv_exporte() {
+        // Format d'Exportify et de la plupart des exportateurs. L'ordre des
+        // colonnes varie d'un outil à l'autre : on les cherche par leur nom.
+        let csv = "\"Track Name\",\"Artist Name(s)\",\"Album Name\",\"Duration (ms)\"\n\
+                   \"Macarena\",\"Damso\",\"Ipséité\",206400\n\
+                   \"BXL ZOO\",\"Damso, Hamza\",\"Lithopédion\",180000";
+
+        let tracks = parse_list(csv).unwrap();
+
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[0].title, "Macarena");
+        assert_eq!(tracks[0].duration_ms, 206_400);
+        assert_eq!(tracks[1].artists, vec!["Damso", "Hamza"]);
+    }
+
+    #[test]
+    fn une_virgule_dans_un_titre_ne_decale_pas_les_colonnes() {
+        // « Penelope, pt. 2 » couperait la ligne en deux si l'on découpait
+        // naïvement sur les virgules.
+        let csv = "Track Name,Artist Name\n\"Penelope, pt. 2\",Aupinard";
+
+        let tracks = parse_list(csv).unwrap();
+        assert_eq!(tracks[0].title, "Penelope, pt. 2");
+        assert_eq!(tracks[0].main_artist(), Some("Aupinard"));
+    }
+
+    #[test]
+    fn lit_un_copier_coller() {
+        let texte = "Damso - Macarena\nNépal - Radeau\n\nLuidji - Bandana";
+
+        let tracks = parse_list(texte).unwrap();
+
+        assert_eq!(tracks.len(), 3, "les lignes vides sont écartées");
+        assert_eq!(tracks[0].main_artist(), Some("Damso"));
+        assert_eq!(tracks[0].title, "Macarena");
+    }
+
+    #[test]
+    fn un_tiret_colle_appartient_au_texte() {
+        // « Jay-Z » ne doit pas être coupé en « Jay » et « Z ». Seul un tiret
+        // entouré d'espaces sépare.
+        let tracks = parse_list("Jay-Z - Dirt Off Your Shoulder").unwrap();
+
+        assert_eq!(tracks[0].main_artist(), Some("Jay-Z"));
+        assert_eq!(tracks[0].title, "Dirt Off Your Shoulder");
+    }
+
+    #[test]
+    fn une_ligne_sans_separateur_reste_exploitable() {
+        // La comparaison portera sur le titre seul : moins précis, mais
+        // toujours utile.
+        let tracks = parse_list("Macarena").unwrap();
+
+        assert_eq!(tracks[0].title, "Macarena");
+        assert!(tracks[0].artists.is_empty());
+        assert_eq!(tracks[0].query, "Macarena");
+    }
+
+    #[test]
+    fn ignore_les_commentaires_et_les_lignes_vides() {
+        let tracks = parse_list("# ma liste\n\nDamso - Macarena\n   \n").unwrap();
+        assert_eq!(tracks.len(), 1);
+    }
+
+    #[test]
+    fn le_json_reste_reconnu() {
+        // La détection ne doit pas casser le chemin d'origine.
+        let tracks =
+            parse_list(r#"[{"name":"Macarena","artist":"Damso","duration":206.4}]"#).unwrap();
+
+        assert_eq!(tracks[0].duration_ms, 206_400);
+    }
+
+    #[test]
+    fn une_liste_vide_est_refusee_avec_une_explication() {
+        let erreur = parse_list("   ").unwrap_err().to_string();
+        assert!(erreur.contains("vide"), "{erreur}");
     }
 }

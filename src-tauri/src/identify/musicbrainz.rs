@@ -43,6 +43,11 @@ pub struct RecordingMetadata {
     pub genre: Option<String>,
     /// Durée de l'enregistrement selon MusicBrainz. Sert à corroborer.
     pub length_ms: Option<i64>,
+    /// Titres de toutes les parutions rattachées.
+    ///
+    /// Sert à reconnaître un album qu'Onzer a lui-même écrit depuis cette
+    /// fiche, et qu'il faut donc pouvoir défaire.
+    pub release_titles: Vec<String>,
     /// Nombre de parutions rattachées, compilations comprises.
     ///
     /// Zéro trahit souvent une fiche versée depuis un rip, sans existence
@@ -93,6 +98,11 @@ impl MusicBrainzClient {
 fn build_metadata(recording: Recording) -> RecordingMetadata {
     let (artists, featured_artists) = split_artist_credit(&recording.artist_credit);
     let release_count = recording.releases.len();
+    let release_titles: Vec<String> = recording
+        .releases
+        .iter()
+        .map(|release| release.title.clone())
+        .collect();
 
     // `pick_release` ne rend qu'une parution *représentative* : elle vaut `None`
     // quand le morceau n'est connu que par des compilations. Une parution reste
@@ -121,6 +131,7 @@ fn build_metadata(recording: Recording) -> RecordingMetadata {
         disc_no,
         genre: best_genre(&recording.genres),
         length_ms: recording.length.map(i64::from),
+        release_titles,
         release_count,
     }
 }

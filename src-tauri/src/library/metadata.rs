@@ -410,6 +410,34 @@ pub fn rewrite_identity(
     Ok(())
 }
 
+
+/// Efface l'album, l'année et la pochette d'un fichier.
+///
+/// Appelé quand Onzer découvre qu'il avait lui-même écrit un album de
+/// compilation. La pochette part avec le reste : une image fausse affirme
+/// quelque chose, un carré vide n'affirme rien.
+pub fn clear_album(path: &Path) -> Result<()> {
+    use lofty::config::WriteOptions;
+    use lofty::prelude::TagExt;
+
+    let mut tagged = lofty::read_from_path(path)
+        .map_err(|error| OnzerError::Invalid(format!("lecture des tags : {error}")))?;
+
+    let Some(tag) = tagged.primary_tag_mut() else {
+        return Ok(()); // rien à effacer
+    };
+
+    tag.remove_album();
+    tag.remove_year();
+    tag.remove_key(&ItemKey::RecordingDate);
+    tag.remove_picture_type(lofty::picture::PictureType::CoverFront);
+
+    tag.save_to_path(path, WriteOptions::default())
+        .map_err(|error| OnzerError::Invalid(format!("écriture des tags : {error}")))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

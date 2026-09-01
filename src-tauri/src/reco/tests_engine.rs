@@ -114,6 +114,51 @@ async fn genere_une_playlist_de_la_longueur_demandee() {
 }
 
 #[tokio::test]
+async fn remplit_toujours_la_longueur_demandee() {
+    // # Le défaut que ce test verrouille
+    //
+    // Les règles de diversité peuvent ne plus laisser aucun candidat
+    // admissible avant la fin : la playlist s'arrêtait alors une place trop
+    // tôt. Le symptôme n'apparaissait qu'une fois sur quelques dizaines — un
+    // hasard venu de l'ordre d'itération d'une `HashMap` — ce qui le rendait
+    // irreproductible et invisible.
+    //
+    // On vérifie donc la propriété sur plusieurs longueurs et plusieurs
+    // graines, plutôt que sur un cas unique qui pourrait passer par chance.
+    let (_dir, pool) = bibliotheque(5, 6).await;
+    let data = engine::load(&pool, &contexte()).await.unwrap();
+
+    for longueur in [5, 12, 15, 20, 28] {
+        for graine in [1_u64, 5, 42, 777] {
+            let playlist =
+                engine::generate(&data, &PlaylistKind::ForNow, longueur, &mut Rng::new(graine));
+
+            assert_eq!(
+                playlist.len(),
+                longueur,
+                "longueur {longueur}, graine {graine} : playlist incomplète"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn la_completion_ne_reintroduit_jamais_un_doublon() {
+    // La complétion lève les règles de confort, jamais la règle dure : deux
+    // fois le même morceau se verrait immédiatement.
+    let (_dir, pool) = bibliotheque(3, 5).await;
+    let data = engine::load(&pool, &contexte()).await.unwrap();
+
+    // 15 morceaux en tout, et on en demande 15 : la complétion est forcément
+    // sollicitée.
+    let playlist = engine::generate(&data, &PlaylistKind::ForNow, 15, &mut Rng::new(3));
+
+    let uniques: std::collections::HashSet<i64> =
+        playlist.iter().map(|track| track.track_id).collect();
+    assert_eq!(uniques.len(), playlist.len());
+}
+
+#[tokio::test]
 async fn la_playlist_ne_contient_aucun_doublon() {
     let (_dir, pool) = bibliotheque(6, 8).await;
     let data = engine::load(&pool, &contexte()).await.unwrap();

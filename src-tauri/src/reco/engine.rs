@@ -412,6 +412,26 @@ struct ScoredPools {
 }
 
 impl ScoredPools {
+    /// Tous les viviers réunis, chacun portant sa stratégie d'origine.
+    ///
+    /// Sert uniquement à la passe de complétion : la raison affichée doit
+    /// rester honnête, on garde donc la stratégie qui a proposé le morceau.
+    fn everything(&self) -> Vec<(Candidate, f64, Strategy)> {
+        let mut all = Vec::new();
+
+        for (pool, strategy) in [
+            (&self.similarity, Strategy::Similarity),
+            (&self.affinity, Strategy::Affinity),
+            (&self.context, Strategy::Context),
+            (&self.discovery, Strategy::Discovery),
+            (&self.forgotten, Strategy::Forgotten),
+        ] {
+            all.extend(pool.iter().map(|(candidate, score)| (*candidate, *score, strategy)));
+        }
+
+        all
+    }
+
     fn for_strategy(&self, strategy: Strategy) -> &[(Candidate, f64)] {
         match strategy {
             Strategy::Similarity => &self.similarity,
@@ -521,6 +541,32 @@ fn score_pools(data: &EngineData, kind: &PlaylistKind, now: i64) -> ScoredPools 
         }
     }
 
+    // ── Ordre déterministe ──────────────────────────────────────────────
+    //
+    // Les viviers sont construits en parcourant une `HashMap`, dont l'ordre
+    // d'itération est **volontairement randomisé à chaque exécution** du
+    // processus. Deux morceaux à score identique changeaient donc de rang d'un
+    // lancement à l'autre, et la sélection gloutonne pouvait se retrouver
+    // coincée par les règles de diversité — produisant une playlist plus courte
+    // que demandé, une fois sur quelques dizaines.
+    //
+    // C'est un défaut qui ne se voit presque jamais et qui, quand il se voit,
+    // n'est pas reproductible. Trier par score décroissant puis par
+    // identifiant rend la génération **entièrement déterministe pour une
+    // graine donnée** — ce que la documentation de `generate` promettait déjà.
+    for pool in [
+        &mut similarity,
+        &mut affinity_pool,
+        &mut context_pool,
+        &mut discovery,
+        &mut forgotten,
+    ] {
+        pool.sort_by(|a, b| {
+            b.1.total_cmp(&a.1)
+                .then_with(|| a.0.track_id.cmp(&b.0.track_id))
+        });
+    }
+
     ScoredPools {
         similarity,
         affinity: affinity_pool,
@@ -539,7 +585,9 @@ fn centroid_of_favourites(data: &EngineData) -> Option<Vec<f32>> {
         .map(|(track_id, score)| (*track_id, *score))
         .collect();
 
-    ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+    // L'identifiant départage les ex æquo. Sans lui, l'ordre vient de celui
+    // d'une `HashMap`, randomisé à chaque exécution du processus.
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
     let favourites: Vec<i64> = ranked
         .into_iter()
@@ -551,7 +599,16 @@ fn centroid_of_favourites(data: &EngineData) -> Option<Vec<f32>> {
     if favourites.is_empty() {
         // Bibliothèque sans historique : le centre de l'espace sonore fait un
         // point de départ neutre acceptable.
-        let all: Vec<i64> = data.meta.keys().copied().collect();
+        //
+        // Le tri n'est pas cosmétique. L'addition flottante n'est pas
+        // associative : sommer les mêmes vecteurs dans un ordre différent donne
+        // un barycentre différent des derniers bits près. Cela suffisait à
+        // inverser deux similarités quasi ex æquo, donc à changer la playlist —
+        // et, une fois sur quelques dizaines, à coincer la sélection gloutonne
+        // contre les règles de diversité. Un défaut irreproductible, jusqu'à ce
+        // qu'on cherche d'où venait le hasard.
+        let mut all: Vec<i64> = data.meta.keys().copied().collect();
+        all.sort_unstable();
         return data.space.centroid(&all);
     }
 
@@ -563,7 +620,7 @@ fn centroid_of_favourites(data: &EngineData) -> Option<Vec<f32>> {
 /// `None` si aucun de ses morceaux n'est encore analysé — le mix retombe alors
 /// sur le goût général, ce qui vaut mieux qu'un mix vide.
 fn centroid_of_artist(data: &EngineData, artist_id: i64) -> Option<Vec<f32>> {
-    let tracks: Vec<i64> = data
+    let mut tracks: Vec<i64> = data
         .meta
         .iter()
         .filter(|(_, meta)| meta.artist_id == Some(artist_id))
@@ -574,6 +631,9 @@ fn centroid_of_artist(data: &EngineData, artist_id: i64) -> Option<Vec<f32>> {
         return None;
     }
 
+    // Même raison que pour le barycentre général : l'ordre de sommation change
+    // le résultat des derniers bits près.
+    tracks.sort_unstable();
     data.space.centroid(&tracks)
 }
 
@@ -668,7 +728,57 @@ pub fn generate(
         });
     }
 
+    // ── Complétion ──────────────────────────────────────────────────────
+    //
+    // Les règles de diversité peuvent ne plus laisser aucun candidat
+    // admissible avant la fin : la playlist s'arrête alors une ou deux places
+    // trop tôt, sans que rien ne l'explique à l'utilisateur. On termine donc
+    // avec les règles de confort levées — le même morceau reste interdit deux
+    // fois, mais l'espacement des artistes cède.
+    if chosen.len() < length {
+        complete(&mut chosen, &guard, &pools, length);
+    }
+
     chosen
+}
+
+/// Termine une playlist trop courte, espacement des artistes en moins.
+fn complete(
+    chosen: &mut Vec<GeneratedTrack>,
+    guard: &DiversityGuard,
+    pools: &ScoredPools,
+    length: usize,
+) {
+    let everything = pools.everything();
+    if everything.is_empty() {
+        return;
+    }
+
+    let mut relaxed = guard.relaxed();
+
+    while chosen.len() < length {
+        let admissible: Vec<(Candidate, f64)> = everything
+            .iter()
+            .map(|(candidate, score, _)| (*candidate, *score))
+            .collect();
+
+        let Some((candidate, score)) = relaxed.best(&admissible) else {
+            break; // la bibliothèque est réellement épuisée
+        };
+
+        let strategy = everything
+            .iter()
+            .find(|(other, _, _)| other.track_id == candidate.track_id)
+            .map_or(Strategy::Similarity, |(_, _, strategy)| *strategy);
+
+        relaxed.push(candidate);
+        chosen.push(GeneratedTrack {
+            track_id: candidate.track_id,
+            strategy,
+            reason: strategy.label(),
+            score,
+        });
+    }
 }
 
 /// Adapte les règles de diversité à la bibliothèque réellement disponible.

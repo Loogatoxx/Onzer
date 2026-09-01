@@ -750,6 +750,71 @@ pochettes assemblées disent qu'il s'agit d'un assemblage, et montrent ce qu'il 
 
 ---
 
+## ADR-024 — Corriger une règle ne défait pas ce qu'elle a écrit
+
+**Contexte.** L'ADR-021 a corrigé `pick_release` : quand toutes les parutions d'un
+enregistrement sont des compilations, il n'y a pas d'album connu. Mais « Macarena » restait
+affiché avec la pochette d'*I migliori anni '90*, une compilation italienne de 2009 — parce
+que la mauvaise valeur était déjà en base, dans les tags du fichier, et jusque dans son
+chemin sur le disque.
+
+**Décision — `identify::revise`.** Une passe, jouée une seule fois (jalonnée par un réglage),
+qui interroge MusicBrainz **une fois par album** et non par morceau : tous les titres d'un
+album partagent le même verdict, et 253 requêtes là où 60 suffisent n'useraient que la
+patience du service.
+
+| Verdict | Condition | Effet |
+|---|---|---|
+| `Replace` | Une parution non-compilation existe et porte un autre nom | Album et année corrigés |
+| `Clear` | Aucune, **et** l'album en base figure parmi les parutions de la fiche | Album, année et pochette effacés |
+| `Keep` | Tout le reste | Rien |
+
+La seconde condition du `Clear` est essentielle : un album que l'utilisateur avait renseigné
+lui-même et que MusicBrainz ignore ne doit **jamais** être effacé. On ne défait que ce qu'on
+a soi-même écrit.
+
+**Pourquoi effacer la pochette.** Une image fausse affirme quelque chose ; un carré vide
+n'affirme rien. La pochette d'origine n'était pas récupérable — Onzer l'avait écrasée dans le
+fichier, et aucune copie n'avait survécu.
+
+**Le disque doit suivre la base.** Effacer l'album laissait le fichier dans un dossier
+portant encore son nom : la base et le disque se contredisaient. `refile_without_album` range
+le morceau sous `Artiste/Singles/` et supprime le dossier vidé — en n'y retirant que ce
+qu'Onzer y avait lui-même déposé (`cover.jpg`). Tout autre fichier arrête le nettoyage.
+
+---
+
+## ADR-025 — Une playlist courte est un défaut, pas un compromis
+
+**Contexte.** Un test du moteur échouait une fois sur une quinzaine, sans jamais être
+reproductible.
+
+**La cause.** L'ordre d'itération d'une `HashMap` est **volontairement randomisé à chaque
+exécution** du processus Rust. Il déterminait celui des viviers de candidats, et l'addition
+flottante n'étant pas associative, il changeait jusqu'au barycentre de l'espace sonore aux
+derniers bits près. Deux similarités quasi ex æquo s'inversaient, et la sélection gloutonne
+se retrouvait parfois coincée contre les règles de diversité.
+
+**Ce que le hasard masquait.** Une fois l'ordre rendu déterministe, l'échec est devenu
+systématique : le moteur rendait **14 titres sur 15 demandés**. Ce n'était pas un test
+fragile, c'était un vrai défaut que l'aléa rendait invisible — et le même symptôme que
+l'ADR-016, par une autre cause.
+
+**Décisions.**
+
+1. Ordre déterministe partout : viviers triés par score puis par identifiant, identifiants
+   triés avant tout calcul de barycentre. La génération est désormais entièrement
+   reproductible pour une graine donnée, comme sa documentation le promettait déjà.
+2. **Passe de complétion** : si la sélection s'arrête avant la longueur demandée, elle
+   termine avec les règles de **confort** levées — délai de carence et quota par artiste. La
+   règle **dure** reste entière : jamais deux fois le même morceau. Un titre moins bien
+   espacé vaut mieux qu'un titre manquant ; un doublon, lui, se verrait.
+
+Le test correspondant vérifie la propriété sur cinq longueurs et quatre graines : un cas
+unique aurait pu passer par chance.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

@@ -10,6 +10,13 @@ use crate::core::Result;
 pub const LIBRARY_ROOT: &str = "library_root";
 pub const LIBRARY_VOLUME: &str = "library_volume";
 
+/// Version de révision des albums déjà appliquée.
+///
+/// La révision interroge MusicBrainz une fois par album : la rejouer à chaque
+/// démarrage userait la patience du service pour ne rien découvrir de neuf.
+/// Incrémenter `revise::VERSION` la déclenche à nouveau.
+pub const ALBUMS_REVISION: &str = "albums_revision";
+
 /// Lit un réglage brut (JSON). `None` si la clé est absente ou vaut `null`.
 pub async fn get_raw(pool: &SqlitePool, key: &str) -> Result<Option<String>> {
     let value: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")

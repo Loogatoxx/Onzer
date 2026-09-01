@@ -130,7 +130,14 @@ function ResumeGrid({
   onPlay: (tracks: TrackSummary[], index: number) => void;
 }) {
   return (
-    <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+    // `auto-fill` et non un nombre fixe de colonnes : avec une seule écoute
+    // en mémoire, une grille de quatre colonnes réduisait la carte au quart de
+    // la largeur et tronquait le titre à « M.. ». Une largeur minimale garantit
+    // qu'une carte reste lisible quel qu'en soit le nombre.
+    <div
+      className="mt-6 grid gap-2"
+      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(15rem, 1fr))" }}
+    >
       {tracks.map((track, index) => (
         <button
           key={track.id}
@@ -141,7 +148,7 @@ function ResumeGrid({
         >
           <Artwork hash={track.artworkHash} className="h-14 w-14 rounded-none" />
 
-          <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 flex-1 flex-col">
             <span className="block truncate text-[13px] font-semibold text-ink">
               {track.title}
             </span>

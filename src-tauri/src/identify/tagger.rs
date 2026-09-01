@@ -399,6 +399,7 @@ mod tests {
             disc_no: Some(1),
             genre: Some("french house".into()),
             length_ms: Some(301_000),
+            release_titles: vec!["Discovery".into()],
             release_count: 2,
         }
     }

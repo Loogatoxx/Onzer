@@ -238,7 +238,11 @@ async fn import_inner(
 /// `source` est exclu de la détection : un fichier **déjà rangé au bon endroit**
 /// n'entre pas en collision avec lui-même. Sans cette exception, réimporter une
 /// bibliothèque déjà organisée renommerait chaque morceau en « … (2) ».
-fn resolve_collision(paths: &PathResolver, desired: &str, source: &Path) -> Result<String> {
+pub(crate) fn resolve_collision(
+    paths: &PathResolver,
+    desired: &str,
+    source: &Path,
+) -> Result<String> {
     if !is_taken(paths, desired, source)? {
         return Ok(desired.to_string());
     }
@@ -284,7 +288,11 @@ fn is_taken(paths: &PathResolver, candidate: &str, source: &Path) -> Result<bool
 }
 
 /// Déplace le fichier dans la bibliothèque, en créant l'arborescence.
-fn move_into_library(paths: &PathResolver, source: &Path, relative_path: &str) -> Result<()> {
+pub(crate) fn move_into_library(
+    paths: &PathResolver,
+    source: &Path,
+    relative_path: &str,
+) -> Result<()> {
     let destination = paths.resolve(relative_path)?;
 
     if let Some(parent) = destination.parent() {
@@ -335,6 +343,77 @@ pub fn is_importable(path: &Path) -> bool {
 /// Chemin absolu d'un morceau, pour la lecture audio.
 pub fn absolute_path(paths: &PathResolver, relative_path: &str) -> Result<PathBuf> {
     paths.resolve(relative_path)
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Rangement des morceaux devenus sans album
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Nom de la pochette déposée à côté d'un album par `identify::tagger`.
+const ALBUM_COVER_FILE: &str = "cover.jpg";
+
+/// Range un morceau sans album sous `Artiste/Singles/`.
+///
+/// # Quand cela sert
+///
+/// Un album de compilation attribué à tort a laissé le fichier dans un dossier
+/// portant son nom — « Damso/2009 - I migliori anni '90/ » pour un morceau de
+/// 2017. Effacer l'album en base ne suffit pas : le disque continue d'affirmer
+/// le contraire, et l'utilisateur qui l'ouvre dans le Finder le voit.
+///
+/// Retourne le nouveau chemin relatif, ou `None` si rien n'a bougé — auquel cas
+/// l'ancien reste valable.
+pub fn refile_without_album(paths: &PathResolver, path: &Path) -> Option<String> {
+    let meta = metadata::read(path).ok()?;
+
+    let desired = naming::build_relative_path(&naming::FilingInfo {
+        filing_artist: meta.filing_artist(),
+        album: None,
+        year: None,
+        track_no: None,
+        disc_no: None,
+        title: &meta.title,
+        extension: &meta.format,
+    });
+
+    if paths.relativize(path).ok().as_deref() == Some(desired.as_str()) {
+        return None; // déjà à sa place
+    }
+
+    let unique = resolve_collision(paths, &desired, path).ok()?;
+    move_into_library(paths, path, &unique).ok()?;
+
+    if let Some(parent) = path.parent() {
+        prune_album_dir(parent);
+    }
+
+    Some(unique)
+}
+
+/// Supprime un dossier d'album vidé, et la pochette qu'Onzer y avait écrite.
+///
+/// On n'y retire que ce qu'Onzer a lui-même déposé. Tout autre fichier arrête
+/// le nettoyage : ce n'est pas à lui d'en décider.
+fn prune_album_dir(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+
+        // Les fichiers de service de macOS ne comptent pas comme du contenu.
+        if name == ALBUM_COVER_FILE || name == ".DS_Store" || name.starts_with("._") {
+            continue;
+        }
+
+        return; // il reste du contenu : on ne touche à rien
+    }
+
+    // `remove_dir_all` est ici sans danger : on vient de vérifier qu'il ne
+    // reste que ce qu'Onzer a déposé.
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[cfg(test)]

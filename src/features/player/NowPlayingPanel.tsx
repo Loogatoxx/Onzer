@@ -422,7 +422,7 @@ function QueuePane({
             className="flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors hover:bg-elevated"
           >
             <Artwork hash={item.artworkHash} className="h-10 w-10 rounded" />
-            <span className="min-w-0 flex-1">
+            <span className="flex min-w-0 flex-1 flex-col">
               <span className="block truncate text-[13px] font-medium text-ink">
                 {item.title}
               </span>

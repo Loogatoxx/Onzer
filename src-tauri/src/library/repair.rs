@@ -44,6 +44,8 @@ pub struct RepairReport {
     pub files_set_aside: u64,
     /// Morceaux dont les tags d'origine ont pu être retrouvés.
     pub originals_recovered: u64,
+    /// Morceaux sans album sortis d'un dossier d'album.
+    pub refiled: u64,
 }
 
 impl RepairReport {
@@ -52,6 +54,7 @@ impl RepairReport {
             && self.merged == 0
             && self.files_set_aside == 0
             && self.originals_recovered == 0
+            && self.refiled == 0
     }
 }
 
@@ -60,13 +63,62 @@ pub async fn run(pool: &SqlitePool, paths: &PathResolver) -> Result<RepairReport
     let hashed = backfill_audio_hashes(pool, paths).await?;
     let (merged, files_set_aside) = merge_duplicates(pool, paths).await?;
     let originals_recovered = recover_original_tags(pool, paths).await?;
+    let refiled = refile_albumless(pool, paths).await?;
 
     Ok(RepairReport {
         hashed,
         merged,
         files_set_aside,
         originals_recovered,
+        refiled,
     })
+}
+
+/// Range les morceaux sans album restés dans un dossier d'album.
+///
+/// Un album de compilation attribué à tort a été effacé en base, mais le
+/// fichier, lui, dormait toujours dans un dossier portant son nom : la base et
+/// le disque se contredisaient.
+///
+/// La règle est étroite à dessein. Seuls les morceaux **sans album** rangés
+/// ailleurs que dans `Singles` ou `_À trier` sont concernés — déplacer plus
+/// largement reviendrait à réorganiser la bibliothèque sans qu'on l'ait
+/// demandé.
+async fn refile_albumless(pool: &SqlitePool, paths: &PathResolver) -> Result<u64> {
+    let orphans: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, relative_path FROM tracks
+          WHERE album_id IS NULL AND deleted_at IS NULL
+            AND relative_path NOT LIKE '%/' || ?1 || '/%'
+            AND relative_path NOT LIKE ?2 || '/%'",
+    )
+    .bind(crate::library::naming::SINGLES_DIR)
+    .bind(crate::library::naming::UNSORTED_DIR)
+    .fetch_all(pool)
+    .await?;
+
+    let mut moved = 0;
+    for (track_id, relative_path) in orphans {
+        let Ok(path) = importer::absolute_path(paths, &relative_path) else {
+            continue;
+        };
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(destination) = importer::refile_without_album(paths, &path) else {
+            continue;
+        };
+
+        sqlx::query("UPDATE tracks SET relative_path = ? WHERE id = ?")
+            .bind(&destination)
+            .bind(track_id)
+            .execute(pool)
+            .await?;
+
+        moved += 1;
+    }
+
+    Ok(moved)
 }
 
 /// Retrouve les tags d'origine dans les exemplaires écartés.

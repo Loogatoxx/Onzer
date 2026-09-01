@@ -189,6 +189,31 @@ impl DiversityGuard {
         }
     }
 
+    /// Une copie du garde, aux règles de confort levées.
+    ///
+    /// # À quoi ça sert
+    ///
+    /// Les règles de diversité peuvent, en fin de playlist, ne plus laisser
+    /// **aucun** candidat admissible : la sélection s'arrête alors une ou deux
+    /// places avant la longueur demandée. L'utilisateur voit une playlist
+    /// courte sans que rien ne l'explique — le même symptôme que celui traité
+    /// par l'ADR-016, par une autre cause.
+    ///
+    /// Un titre de plus, moins bien espacé, vaut mieux qu'un titre manquant.
+    /// Ce qui est levé, ce sont les règles de **confort** : le délai de carence
+    /// et le quota. La règle dure — jamais deux fois le même morceau — reste
+    /// entière, car elle, sa violation se voit.
+    pub fn relaxed(&self) -> Self {
+        Self {
+            chosen: self.chosen.clone(),
+            rules: DiversityRules {
+                artist_cooldown: 0,
+                max_per_artist: usize::MAX,
+                ..self.rules
+            },
+        }
+    }
+
     /// Retient définitivement un candidat.
     pub fn push(&mut self, candidate: Candidate) {
         self.chosen.push(candidate);

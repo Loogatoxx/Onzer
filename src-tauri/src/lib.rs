@@ -144,6 +144,7 @@ pub fn run() {
                             fusionnes = rapport.merged,
                             fichiers_ecartes = rapport.files_set_aside,
                             tags_origine = rapport.originals_recovered,
+                            ranges = rapport.refiled,
                             "bibliothèque remise en état"
                         ),
                         Ok(_) => tracing::debug!("bibliothèque saine, rien à réparer"),
@@ -177,6 +178,16 @@ pub fn run() {
             // dépend du réseau et d'une clé d'API. Les mélanger empêcherait la
             // recommandation de fonctionner sans connexion.
             identify::worker::spawn(pool.clone(), Arc::clone(&shared_paths));
+
+            // Révision des albums écrits par une identification antérieure.
+            //
+            // `pick_release` retenait la parution la plus ancienne, ce qui
+            // attribuait une compilation — et sa pochette — aux morceaux que
+            // MusicBrainz ne connaît que par ce biais. La règle est corrigée,
+            // mais elle ne défait pas ce qu'elle a déjà écrit. Cette passe s'en
+            // charge, une seule fois, et en tâche de fond : elle interroge
+            // MusicBrainz une fois par album.
+            spawn_album_revision(pool.clone(), Arc::clone(&shared_paths));
 
             app.manage(AppState {
                 pool,
@@ -264,6 +275,50 @@ impl Drop for LeveAuRetour {
     fn drop(&mut self) {
         self.0.store(true, std::sync::atomic::Ordering::Release);
     }
+}
+
+/// Lance la révision des albums, si elle n'a pas déjà été appliquée.
+fn spawn_album_revision(pool: SqlitePool, paths: Arc<RwLock<PathResolver>>) {
+    tauri::async_runtime::spawn(async move {
+        let applied: Option<i64> = db::settings::get(&pool, db::settings::ALBUMS_REVISION)
+            .await
+            .ok()
+            .flatten();
+
+        if applied.unwrap_or(0) >= identify::revise::VERSION {
+            return;
+        }
+
+        let resolver = paths.read().await.clone();
+        if !resolver.is_library_online() {
+            return; // on réessaiera au prochain démarrage
+        }
+
+        let Ok(musicbrainz) = identify::musicbrainz::MusicBrainzClient::new() else {
+            return;
+        };
+
+        match identify::revise::run(&pool, &resolver, &musicbrainz).await {
+            Ok(report) => {
+                tracing::info!(
+                    examines = report.examined,
+                    effaces = report.cleared,
+                    morceaux = report.tracks_touched,
+                    "albums révisés"
+                );
+
+                // Marquée seulement en cas de succès : une révision
+                // interrompue par une coupure réseau doit être rejouée.
+                let _ = db::settings::set(
+                    &pool,
+                    db::settings::ALBUMS_REVISION,
+                    &identify::revise::VERSION,
+                )
+                .await;
+            }
+            Err(error) => tracing::warn!(%error, "révision des albums impossible"),
+        }
+    });
 }
 
 fn spawn_playback_loop(handle: tauri::AppHandle) {

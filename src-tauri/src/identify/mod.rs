@@ -43,6 +43,7 @@ pub mod lrclib;
 pub mod coverart;
 pub mod musicbrainz;
 pub mod ratelimit;
+pub mod revise;
 pub mod tagger;
 pub mod verdict;
 pub mod worker;

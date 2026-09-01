@@ -57,6 +57,21 @@ pub async fn play_tracks(
     Ok(state.player()?.snapshot().await)
 }
 
+/// Ajoute des morceaux à la fin de la file, sans interrompre l'écoute.
+#[tauri::command]
+pub async fn enqueue_tracks(
+    state: State<'_, AppState>,
+    track_ids: Vec<i64>,
+) -> Result<PlaybackSnapshot> {
+    let tracks = repository::tracks_by_ids(&state.pool, &track_ids).await?;
+    let items: Vec<QueueItem> = tracks.into_iter().map(QueueItem::from).collect();
+
+    let paths = state.paths.read().await.clone();
+    state.player()?.enqueue(&state.pool, &paths, items).await?;
+
+    Ok(state.player()?.snapshot().await)
+}
+
 #[tauri::command]
 pub async fn toggle_playback(state: State<'_, AppState>) -> Result<PlaybackSnapshot> {
     state.player()?.toggle().await?;

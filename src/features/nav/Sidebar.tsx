@@ -8,6 +8,8 @@ import type { PlaylistSummary } from "@/lib/ipc";
 export type Route =
   | { kind: "home" }
   | { kind: "library" }
+  | { kind: "artists" }
+  | { kind: "artist"; id: number; name: string; coverHash: string | null }
   | { kind: "loved" }
   | { kind: "stats" }
   /** Une playlist produite par le moteur. Absente de la barre latérale. */
@@ -19,6 +21,7 @@ export type Route =
 export function routeKey(route: Route): string {
   if (route.kind === "playlist") return `playlist:${route.id}`;
   if (route.kind === "category") return `category:${route.key}`;
+  if (route.kind === "artist") return `artist:${route.id}`;
   return route.kind;
 }
 
@@ -75,6 +78,12 @@ export function Sidebar({
           label="Bibliothèque"
           active={active === "library" || active === "generated"}
           onClick={() => onNavigate({ kind: "library" })}
+        />
+        <NavItem
+          icon="library"
+          label="Artistes"
+          active={active === "artists" || active.startsWith("artist:")}
+          onClick={() => onNavigate({ kind: "artists" })}
         />
         <NavItem
           icon="stats"

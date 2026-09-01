@@ -182,7 +182,8 @@ pub async fn tracks(pool: &SqlitePool, playlist_id: i64) -> Result<Vec<TrackSumm
                   WHERE ta.track_id = t.id AND ta.role = 'main'
                   ORDER BY ta.position LIMIT 1) AS artist,
                 al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-                t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at
+                t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
+                (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
            FROM playlist_tracks pt
            JOIN tracks t ON t.id = pt.track_id
       LEFT JOIN albums al ON al.id = t.album_id
@@ -219,7 +220,8 @@ pub async fn loved(pool: &SqlitePool) -> Result<Vec<TrackSummary>> {
                   WHERE ta.track_id = t.id AND ta.role = 'main'
                   ORDER BY ta.position LIMIT 1) AS artist,
                 al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-                t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at
+                t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
+                (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
            FROM tracks t
       LEFT JOIN albums al ON al.id = t.album_id
           WHERE t.is_loved = 1 AND t.deleted_at IS NULL

@@ -42,6 +42,21 @@ export interface TrackSummary {
   isLoved: boolean;
   /** Date d'ajout à la bibliothèque, en millisecondes Unix. */
   addedAt: number;
+  /**
+   * Le morceau porte-t-il des paroles ?
+   *
+   * Le contenu n'est pas renvoyé : sur une liste de trois cents lignes, cela
+   * ferait des centaines de kilo-octets pour afficher une pastille.
+   */
+  hasLyrics: boolean;
+}
+
+/** Miroir de `commands::artists::ArtistSummary`. */
+export interface ArtistSummary {
+  id: number;
+  name: string;
+  trackCount: number;
+  coverHash: string | null;
 }
 
 /** Miroir de `commands::collection::LyricsProgress`. */
@@ -391,6 +406,10 @@ export const ipc = {
   stopPlayback: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("stop_playback"),
   playbackState: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("playback_state"),
 
+  /** Ajoute à la fin de la file, sans interrompre l'écoute en cours. */
+  enqueueTracks: (trackIds: number[]): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("enqueue_tracks", { trackIds }),
+
   jumpInQueue: (index: number): Promise<PlaybackSnapshot> =>
     invoke<PlaybackSnapshot>("jump_in_queue", { index }),
   seekTo: (positionMs: number): Promise<PlaybackSnapshot> =>
@@ -449,6 +468,16 @@ export const ipc = {
    */
   discoverArtists: (): Promise<Suggestion[]> =>
     invoke<Suggestion[]>("discover_artists"),
+
+  listArtists: (): Promise<ArtistSummary[]> =>
+    invoke<ArtistSummary[]>("list_artists"),
+
+  artistTracks: (artistId: number): Promise<TrackSummary[]> =>
+    invoke<TrackSummary[]>("artist_tracks", { artistId }),
+
+  /** Retire de la bibliothèque. Le fichier sur le disque n'est pas touché. */
+  removeTrack: (trackId: number): Promise<void> =>
+    invoke<void>("remove_track", { trackId }),
 
   analysisProgress: (): Promise<AnalysisProgress> =>
     invoke<AnalysisProgress>("analysis_progress"),

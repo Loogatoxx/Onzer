@@ -629,6 +629,11 @@ pub struct TrackSummary {
     pub is_loved: bool,
     /// Date d'ajout à la bibliothèque, en secondes Unix. Affichée en colonne.
     pub added_at: i64,
+    /// Le morceau porte-t-il des paroles ?
+    ///
+    /// Le contenu n'est pas renvoyé — sur une liste de trois cents lignes, cela
+    /// représenterait des centaines de kilo-octets pour afficher une pastille.
+    pub has_lyrics: bool,
 }
 
 /// Liste les morceaux, du plus récemment ajouté au plus ancien.
@@ -651,7 +656,8 @@ pub async fn list_tracks(pool: &SqlitePool, limit: i64, offset: i64) -> Result<V
              t.is_available,
              al.artwork_hash,
              t.is_loved,
-             t.added_at
+             t.added_at,
+             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
          FROM tracks t
          LEFT JOIN albums al ON al.id = t.album_id
          WHERE t.deleted_at IS NULL
@@ -684,7 +690,8 @@ pub async fn tracks_by_ids(pool: &SqlitePool, ids: &[i64]) -> Result<Vec<TrackSu
                WHERE ta.track_id = t.id AND ta.role = 'main'
                ORDER BY ta.position LIMIT 1)          AS artist,
              al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-             t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at
+             t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
+             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
          FROM tracks t
          LEFT JOIN albums al ON al.id = t.album_id
          WHERE t.id IN ({placeholders}) AND t.deleted_at IS NULL"
@@ -725,7 +732,8 @@ pub async fn search_tracks(pool: &SqlitePool, query: &str, limit: i64) -> Result
                WHERE ta.track_id = t.id AND ta.role = 'main'
                ORDER BY ta.position LIMIT 1)          AS artist,
              al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-             t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at
+             t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
+             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
          FROM tracks_fts f
          JOIN tracks t ON t.id = f.track_id
          LEFT JOIN albums al ON al.id = t.album_id

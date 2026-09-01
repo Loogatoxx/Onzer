@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { CoverTile, HeaderAction, PageHeader } from "@/components/PageHeader";
 import { Icon } from "@/components/Icon";
 import { DiscoverBar } from "@/features/discover/DiscoverBar";
+import { ArtistsView } from "@/features/artists/ArtistsView";
 import { HomeView } from "@/features/home/HomeView";
 import { IdentifyPanel } from "@/features/identify/IdentifyPanel";
 import { SuspectPanel } from "@/features/identify/SuspectPanel";
@@ -118,7 +119,12 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   // Contenu de la page courante. Une playlist générée fait exception : son
   // ordre vient du moteur et ne se recharge pas depuis la base.
   useEffect(() => {
-    if (route.kind === "stats" || route.kind === "generated" || route.kind === "home") {
+    if (
+      route.kind === "stats"
+      || route.kind === "generated"
+      || route.kind === "home"
+      || route.kind === "artists"
+    ) {
       return;
     }
 
@@ -131,6 +137,8 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           return ipc.playlistTracks(route.id);
         case "category":
           return ipc.categoryTracks(route.key);
+        case "artist":
+          return ipc.artistTracks(route.id);
         default:
           return ipc.listTracks(PAGE_SIZE);
       }
@@ -231,6 +239,34 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       shown.map((track) => track.id),
       0,
     );
+  }
+
+  /**
+   * Ouvre la page de l'artiste principal d'un morceau.
+   *
+   * La table n'a que le nom de l'artiste, pas son identifiant : le renvoyer sur
+   * chacune des trois cents lignes pour servir un clic occasionnel serait payer
+   * cher un cas rare. On le retrouve dans la liste des artistes au moment du
+   * clic.
+   */
+  async function openArtistOf(trackId: number) {
+    const track = shown.find((entry) => entry.id === trackId);
+    if (track?.artist == null) return;
+
+    try {
+      const all = await ipc.listArtists();
+      const found = all.find((artist) => artist.name === track.artist);
+      if (found === undefined) return;
+
+      navigate({
+        kind: "artist",
+        id: found.id,
+        name: found.name,
+        coverHash: found.coverHash,
+      });
+    } catch (cause) {
+      setError(String(cause));
+    }
   }
 
   async function toggleLoved(trackId: number) {
@@ -336,6 +372,20 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       onPlay={playFrom}
       onRadio={startRadio}
       onToggleLoved={(id) => void toggleLoved(id)}
+      onEnqueue={(id) => {
+        void ipc.enqueueTracks([id]).catch((cause: unknown) => setError(String(cause)));
+      }}
+      onOpenArtist={(id) => void openArtistOf(id)}
+      onRemove={(id) => {
+        void ipc
+          .removeTrack(id)
+          .then(() => {
+            setCounts(null);
+            void ipc.libraryCounts().then(setCounts).catch(() => undefined);
+            bump();
+          })
+          .catch((cause: unknown) => setError(String(cause)));
+      }}
       loved={loved}
       playlists={playlists}
       onAddToPlaylist={addToPlaylist}
@@ -429,6 +479,14 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               onOpenCategory={(key, title) =>
                 navigate({ kind: "category", key, name: title })
               }
+              onOpenArtist={(artist) =>
+                navigate({
+                  kind: "artist",
+                  id: artist.id,
+                  name: artist.name,
+                  coverHash: artist.coverHash,
+                })
+              }
               onReload={bump}
               onGenerated={showGenerated}
               onError={setError}
@@ -519,6 +577,11 @@ interface PageProps {
   /** Lance une liste arbitraire — la rangée de reprise de l'accueil. */
   onPlayTracks: (tracks: TrackSummary[], index: number) => void;
   onOpenCategory: (key: string, title: string) => void;
+  onOpenArtist: (artist: {
+    id: number;
+    name: string;
+    coverHash: string | null;
+  }) => void;
   /** Recharge la liste affichée après une correction de tags. */
   onReload: () => void;
   onGenerated: (playlist: GeneratedPlaylist) => void;
@@ -587,6 +650,32 @@ function Page(props: PageProps) {
             <div className="flex h-52 w-52 items-center justify-center bg-gradient-to-br from-accent to-accent-soft">
               <Icon name="heartFilled" size={72} className="text-base" />
             </div>
+          }
+          onPlay={play}
+          {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+        />
+        {props.children}
+      </>
+    );
+  }
+
+  if (route.kind === "artists") {
+    return <ArtistsView onOpen={props.onOpenArtist} />;
+  }
+
+  if (route.kind === "artist") {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Artiste"
+          title={route.name}
+          meta={meta}
+          cover={
+            route.coverHash === null ? (
+              <CoverTile name="library" />
+            ) : (
+              <Artwork hash={route.coverHash} className="h-52 w-52 rounded-full" />
+            )
           }
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}

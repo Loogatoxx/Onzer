@@ -228,3 +228,32 @@ mod tests {
         assert_eq!(encode_base64(b"foobar"), "Zm9vYmFy");
     }
 }
+
+/// Retire un morceau de la bibliothèque.
+///
+/// # Retirer n'est pas détruire
+///
+/// La ligne est **marquée** supprimée, jamais effacée : `play_events` la
+/// référence en `ON DELETE RESTRICT`, et perdre l'historique d'écoute d'un
+/// morceau parce qu'on ne veut plus le voir serait absurde — les statistiques
+/// et le moteur de recommandation s'appuient dessus.
+///
+/// Le fichier, lui, n'est pas touché. Onzer ne détruit rien sur le disque :
+/// s'il fallait aussi supprimer les octets, il faudrait pouvoir revenir en
+/// arrière, et ce n'est pas le rôle d'un lecteur.
+#[tauri::command]
+pub async fn remove_track(state: State<'_, AppState>, track_id: i64) -> Result<()> {
+    sqlx::query("UPDATE tracks SET deleted_at = ? WHERE id = ?")
+        .bind(crate::core::now_ms())
+        .bind(track_id)
+        .execute(&state.pool)
+        .await?;
+
+    // Retiré de l'index de recherche, sans quoi il continuerait de ressortir.
+    sqlx::query("DELETE FROM tracks_fts WHERE track_id = ?")
+        .bind(track_id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(())
+}

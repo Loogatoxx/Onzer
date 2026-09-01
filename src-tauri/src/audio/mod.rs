@@ -117,6 +117,43 @@ impl PlayerService {
         self.start_current(pool, paths, &mut state, true).await
     }
 
+    /// Ajoute des morceaux à la fin de la file, sans rien interrompre.
+    ///
+    /// # Pourquoi cela ne relance pas la lecture
+    ///
+    /// « Ajouter à la file » et « écouter maintenant » sont deux gestes
+    /// différents, et les confondre est une des façons les plus sûres d'agacer :
+    /// on empile trois titres pour plus tard, et le troisième coupe celui qu'on
+    /// écoutait.
+    ///
+    /// Quand rien ne joue, en revanche, la file vide n'a pas de « plus tard » :
+    /// on démarre.
+    pub async fn enqueue(
+        &self,
+        pool: &SqlitePool,
+        paths: &PathResolver,
+        items: Vec<QueueItem>,
+    ) -> Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let mut state = self.state.lock().await;
+        let was_empty = state.queue.is_empty();
+
+        for item in items {
+            state.queue.enqueue(item);
+        }
+
+        if was_empty {
+            state.queue.jump_to(0);
+            state.source = PlaySource::Queue;
+            return self.start_current(pool, paths, &mut state, true).await;
+        }
+
+        Ok(())
+    }
+
     /// Bascule lecture / pause.
     pub async fn toggle(&self) -> Result<()> {
         let mut state = self.state.lock().await;

@@ -891,6 +891,34 @@ moyen de se tromper de colonnes.
 
 ---
 
+## ADR-029 — Retirer n'est pas détruire
+
+**Contexte.** Le menu d'une ligne doit pouvoir retirer un morceau de la bibliothèque.
+
+**Décision.** La ligne est **marquée** supprimée, jamais effacée, et le fichier sur le disque
+n'est pas touché.
+
+**Pourquoi.** `play_events` référence `tracks` en `ON DELETE RESTRICT` : effacer la ligne
+emporterait l'historique d'écoute, dont vivent les statistiques et le moteur de
+recommandation. Perdre des mois d'historique parce qu'on ne veut plus voir un titre dans une
+liste serait un marché absurde. Quant aux octets, les supprimer supposerait de pouvoir
+revenir en arrière — ce n'est pas le rôle d'un lecteur.
+
+L'action est en **deux temps** dans le menu, isolée sous un séparateur, et accompagnée de la
+phrase qui dit ce qui survit. Un geste irréversible doit annoncer sa portée avant d'être
+exécuté, pas après.
+
+**La colonne de paroles.** `TrackSummary` porte un booléen, jamais le texte : renvoyer les
+paroles de trois cents lignes pour afficher une pastille représenterait des centaines de
+kilo-octets à chaque affichage de liste.
+
+**La page d'un artiste** compte ses featurings, sa fiche dans la liste ne compte que ses
+titres principaux. On ouvre un artiste pour tout ce qu'il a fait ; on ne veut pas voir dans
+la liste cent noms dont on ne possède qu'une apparition. Vignettes rondes, par la convention
+qui distingue une personne d'un objet — un carré, c'est un disque.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

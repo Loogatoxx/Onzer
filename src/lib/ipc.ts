@@ -51,6 +51,19 @@ export interface TrackSummary {
   hasLyrics: boolean;
 }
 
+/** Miroir de `commands::library::NearDuplicate`. */
+export interface NearDuplicate {
+  id: number;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  durationMs: number;
+  /** Clé de regroupement : les lignes d'un même groupe la partagent. */
+  groupKey: string;
+  relativePath: string;
+  playCount: number;
+}
+
 /** Miroir de `commands::artists::ArtistSummary`. */
 export interface ArtistSummary {
   id: number;
@@ -478,6 +491,10 @@ export const ipc = {
   /** Retire de la bibliothèque. Le fichier sur le disque n'est pas touché. */
   removeTrack: (trackId: number): Promise<void> =>
     invoke<void>("remove_track", { trackId }),
+
+  /** Morceaux homonymes de durée voisine — deux versions, sans doute. */
+  nearDuplicates: (): Promise<NearDuplicate[]> =>
+    invoke<NearDuplicate[]>("near_duplicates"),
 
   analysisProgress: (): Promise<AnalysisProgress> =>
     invoke<AnalysisProgress>("analysis_progress"),

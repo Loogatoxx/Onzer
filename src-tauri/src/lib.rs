@@ -233,6 +233,7 @@ pub fn run() {
             commands::artists::artist_tracks,
             commands::playback::enqueue_tracks,
             commands::library::remove_track,
+            commands::library::near_duplicates,
             commands::reco::analysis_progress,
             commands::reco::reanalyze_library,
             commands::reco::reco_diagnostics,

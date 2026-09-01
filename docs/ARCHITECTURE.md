@@ -919,6 +919,65 @@ qui distingue une personne d'un objet — un carré, c'est un disque.
 
 ---
 
+## ADR-030 — Le décodeur doit être construit *seekable*
+
+**Contexte.** Cliquer en arrière dans la barre de progression ne faisait rien. En avant,
+cela semblait fonctionner.
+
+**La cause, lue dans les journaux.** Chaque saut échouait — `saut impossible sur ce format :
+Symphonia decoder returned an error` — dans les deux sens. L'illusion que l'avant marchait
+venait de la lecture qui continuait d'avancer toute seule.
+
+`open_decoder` appelait `rodio::Decoder::new(BufReader::new(file))`. Ce constructeur ne
+déclare **ni la source comme seekable, ni sa taille en octets**. La documentation de rodio
+est explicite : pour un fichier, il faut préférer `TryFrom<File>`, qui renseigne les deux.
+
+**Décision.** `rodio::Decoder::try_from(file)`. Le décodage reste en flux depuis le disque.
+
+**La leçon.** Un avertissement journalisé sans être remonté à l'interface est un défaut qui
+attend. Celui-ci était écrit à chaque clic depuis des semaines ; il a fallu qu'un utilisateur
+décrive le symptôme pour qu'on aille lire.
+
+---
+
+## ADR-031 — Les doublons probables se montrent, ils ne se fusionnent pas
+
+**Contexte.** Deux entrées d'un même titre subsistent quand leur audio diffère — un clip et
+sa version album, séparés de dix secondes. Le dédoublonnage automatique s'arrête à deux
+secondes, à raison : au-delà, ce sont deux enregistrements différents.
+
+**Décision.** Onzer les **rapproche** sans trancher, avec ce qu'il faut pour décider : durée,
+album, chemin, et nombre d'écoutes — c'est presque toujours celui qu'on a écouté qu'on garde.
+Tolérance de vingt secondes, assez pour couvrir les versions courtes sans rapprocher deux
+homonymes sans rapport.
+
+**Pourquoi ne pas fusionner d'autorité.** Les deux fichiers sont réellement différents, et
+souvent tous deux légitimes. Une fusion automatique ferait disparaître une version que
+l'utilisateur voulait garder, sans qu'il l'ait demandé — et il n'aurait aucun moyen de savoir
+laquelle a disparu.
+
+---
+
+## ADR-032 — Les paroles ont deux tailles, une seule logique
+
+**Contexte.** Le panneau latéral fait 22 rem : de quoi suivre une ligne du coin de l'œil, pas
+de quoi lire.
+
+**Décision.** Une page pleine largeur, où le texte devient l'illustration — la ligne chantée
+pleinement lisible, les autres estompées. Ce contraste n'est pas un effet : c'est ce qui
+permet de retrouver l'endroit d'un coup d'œil après avoir regardé ailleurs.
+
+**Un seul `useLyrics`.** Chargement, ligne courante, recentrage automatique, recherche en
+ligne, saisie manuelle : tout vit dans le hook, partagé par les deux affichages. Ce qui
+change entre eux est la mise en page, jamais le comportement — dupliquer la logique
+garantirait qu'une correction n'atteigne qu'un des deux.
+
+**Les flèches du clavier** déplacent de 5 s, et le pas s'élargit au maintien (5 s, puis 15 s,
+puis 30 s). Un pas fixe imposerait une trentaine d'appuis pour traverser un morceau ; le
+compteur se remet à zéro au relâchement, sans quoi deux appuis distincts s'additionneraient.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

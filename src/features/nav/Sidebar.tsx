@@ -14,6 +14,8 @@ export type Route =
   | { kind: "stats" }
   /** Une playlist produite par le moteur. Absente de la barre latérale. */
   | { kind: "generated" }
+  /** Les paroles du morceau en cours, en pleine largeur. */
+  | { kind: "lyrics" }
   /** Une catégorie d'ambiance, ouverte depuis l'accueil. */
   | { kind: "category"; key: string; name: string }
   | { kind: "playlist"; id: number; name: string };

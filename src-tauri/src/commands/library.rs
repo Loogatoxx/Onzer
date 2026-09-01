@@ -257,3 +257,72 @@ pub async fn remove_track(state: State<'_, AppState>, track_id: i64) -> Result<(
 
     Ok(())
 }
+
+/// Écart de durée en deçà duquel deux morceaux homonymes sont *soupçonnés*
+/// d'être le même.
+///
+/// Le dédoublonnage automatique s'arrête à deux secondes — au-delà, l'audio est
+/// réellement différent et Onzer n'a pas à trancher. Mais un clip et sa version
+/// album diffèrent souvent de cinq à quinze secondes, et l'utilisateur, lui,
+/// voit bien deux fois le même morceau. Vingt secondes couvrent ces cas sans
+/// rapprocher deux titres homonymes sans rapport.
+const NEAR_DUPLICATE_TOLERANCE_MS: i64 = 20_000;
+
+/// Deux versions d'un même titre, à l'appréciation de l'utilisateur.
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct NearDuplicate {
+    pub id: i64,
+    pub title: String,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub duration_ms: i64,
+    /// Clé de regroupement : les lignes d'un même groupe la partagent.
+    pub group_key: String,
+    pub relative_path: String,
+    pub play_count: i64,
+}
+
+/// Morceaux qui se ressemblent assez pour mériter un coup d'œil.
+///
+/// # Pourquoi Onzer ne les fusionne pas lui-même
+///
+/// Leur audio diffère : ce sont bel et bien deux fichiers distincts, et souvent
+/// deux versions légitimes — le clip et la version album, un live et un studio.
+/// Les fusionner d'autorité ferait disparaître une version que l'utilisateur
+/// voulait garder, sans qu'il l'ait demandé.
+///
+/// Onzer se contente donc de les **rapprocher**, avec ce qu'il faut pour
+/// décider : la durée, l'album, et le nombre d'écoutes — c'est presque toujours
+/// celui qu'on a écouté qu'on garde.
+#[tauri::command]
+pub async fn near_duplicates(state: State<'_, AppState>) -> Result<Vec<NearDuplicate>> {
+    let rows = sqlx::query_as::<_, NearDuplicate>(
+        "SELECT t.id, t.title,
+                (SELECT a.name FROM track_artists ta
+                   JOIN artists a ON a.id = ta.artist_id
+                  WHERE ta.track_id = t.id AND ta.role = 'main'
+                  ORDER BY ta.position LIMIT 1) AS artist,
+                al.title AS album,
+                t.duration_ms,
+                t.normalized_title AS group_key,
+                t.relative_path,
+                (SELECT COUNT(*) FROM play_events e WHERE e.track_id = t.id) AS play_count
+           FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE t.deleted_at IS NULL
+            AND EXISTS (
+                SELECT 1 FROM tracks other
+                 WHERE other.id <> t.id
+                   AND other.deleted_at IS NULL
+                   AND other.normalized_title = t.normalized_title
+                   AND ABS(other.duration_ms - t.duration_ms) <= ?
+            )
+          ORDER BY t.normalized_title, t.duration_ms",
+    )
+    .bind(NEAR_DUPLICATE_TOLERANCE_MS)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(rows)
+}

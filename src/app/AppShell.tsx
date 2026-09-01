@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { CoverTile, HeaderAction, PageHeader } from "@/components/PageHeader";
@@ -10,10 +10,12 @@ import { IdentifyPanel } from "@/features/identify/IdentifyPanel";
 import { SuspectPanel } from "@/features/identify/SuspectPanel";
 import { LyricsBar } from "@/features/lyrics/LyricsBar";
 import { Artwork } from "@/features/library/Artwork";
+import { DuplicatePanel } from "@/features/library/DuplicatePanel";
 import { TrackTable } from "@/features/library/TrackTable";
 import { Sidebar, type Route } from "@/features/nav/Sidebar";
 import { TopBar } from "@/features/nav/TopBar";
 import { NowPlayingPanel, type PanelTab } from "@/features/player/NowPlayingPanel";
+import { LyricsView } from "@/features/player/LyricsView";
 import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
 import { WrappedView } from "@/features/stats/WrappedView";
@@ -23,10 +25,23 @@ import {
   type GeneratedPlaylist,
   type LibraryCounts,
   type PlaylistSummary,
+  type QueueItem,
   type ScanProgress,
   type ScanSummary,
   type TrackSummary,
 } from "@/lib/ipc";
+
+/**
+ * Pas de déplacement d'une flèche, selon le nombre de répétitions.
+ *
+ * Cinq secondes tant qu'on tapote — de quoi rattraper un passage manqué —
+ * puis des paliers de plus en plus larges quand la touche reste enfoncée.
+ */
+function seekStep(repeats: number): number {
+  if (repeats < 6) return 5_000;
+  if (repeats < 15) return 15_000;
+  return 30_000;
+}
 
 /** Délai avant de lancer une recherche, pour ne pas requêter à chaque frappe. */
 const SEARCH_DEBOUNCE_MS = 200;
@@ -91,6 +106,10 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   const bump = useCallback(() => setRevision((value) => value + 1), []);
 
   const playback = usePlayback();
+
+  /** Répétitions de la flèche en cours de maintien, pour l'accélération. */
+  const repeats = useRef(0);
+
   const importing = progress !== null;
   const searching = query.trim() !== "";
   const shown = searching ? (results ?? []) : tracks;
@@ -124,6 +143,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       || route.kind === "generated"
       || route.kind === "home"
       || route.kind === "artists"
+      || route.kind === "lyrics"
     ) {
       return;
     }
@@ -195,23 +215,67 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
     return () => stop?.();
   }, []);
 
-  // Barre d'espace : lecture/pause, sauf pendant une saisie.
+  /**
+   * Raccourcis clavier : espace pour lecture/pause, flèches pour se déplacer.
+   *
+   * # L'accélération au maintien
+   *
+   * Un saut fixe de 5 s par répétition impose une trentaine d'appuis pour
+   * traverser un morceau. Le pas grandit donc avec la durée du maintien, comme
+   * sur une télécommande : les premières répétitions restent fines pour viser
+   * un passage précis, les suivantes couvrent du terrain.
+   *
+   * Le compteur est remis à zéro au relâchement — sans quoi deux appuis
+   * successifs et distincts s'additionneraient, et la seconde flèche
+   * traverserait le morceau.
+   */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.code !== "Space") return;
-
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName ?? "";
       if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable === true) {
         return;
       }
 
+      if (event.code === "Space") {
+        event.preventDefault();
+        void playback.toggle();
+        return;
+      }
+
+      const direction =
+        event.code === "ArrowRight" ? 1 : event.code === "ArrowLeft" ? -1 : 0;
+      if (direction === 0) return;
+
       event.preventDefault();
-      void playback.toggle();
+
+      const state = playback.state;
+      if (state?.current == null) return;
+
+      const step = seekStep(repeats.current);
+      repeats.current += 1;
+
+      const duration = state.durationMs || state.current.durationMs;
+      const target_ms = Math.min(
+        Math.max(0, state.positionMs + direction * step),
+        Math.max(0, duration - 1000),
+      );
+
+      void playback.seek(target_ms);
+    };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "ArrowRight" || event.code === "ArrowLeft") {
+        repeats.current = 0;
+      }
     };
 
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, [playback]);
 
   // ── Actions ───────────────────────────────────────────────────────────
@@ -487,6 +551,9 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
                   coverHash: artist.coverHash,
                 })
               }
+              currentTrack={current}
+              positionMs={playback.state?.positionMs ?? 0}
+              onSeek={(position) => void playback.seek(position)}
               onReload={bump}
               onGenerated={showGenerated}
               onError={setError}
@@ -535,6 +602,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
             onSeek={(position) => void playback.seek(position)}
             onJump={(index) => void ipc.jumpInQueue(index).catch(() => undefined)}
             onRadio={startRadio}
+            onExpandLyrics={() => navigate({ kind: "lyrics" })}
           />
         )}
       </div>
@@ -554,7 +622,16 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           onToggleLoved={() => {
             if (current !== null) void toggleLoved(current.trackId);
           }}
-          onOpenPanel={(tab) => setPanel((value) => (value === tab ? "closed" : tab))}
+          onOpenPanel={(tab) => {
+            // Les paroles s'ouvrent en grand : c'est ce qu'on veut quand on
+            // clique dessus. Le panneau latéral reste accessible depuis
+            // l'onglet, pour les suivre du coin de l'œil.
+            if (tab === "lyrics") {
+              navigate({ kind: "lyrics" });
+              return;
+            }
+            setPanel((value) => (value === tab ? "closed" : tab));
+          }}
         />
       )}
     </div>
@@ -582,6 +659,10 @@ interface PageProps {
     name: string;
     coverHash: string | null;
   }) => void;
+  /** Morceau en cours, pour la page des paroles. */
+  currentTrack: QueueItem | null;
+  positionMs: number;
+  onSeek: (positionMs: number) => void;
   /** Recharge la liste affichée après une correction de tags. */
   onReload: () => void;
   onGenerated: (playlist: GeneratedPlaylist) => void;
@@ -656,6 +737,16 @@ function Page(props: PageProps) {
         />
         {props.children}
       </>
+    );
+  }
+
+  if (route.kind === "lyrics") {
+    return (
+      <LyricsView
+        track={props.currentTrack}
+        positionMs={props.positionMs}
+        onSeek={props.onSeek}
+      />
     );
   }
 
@@ -799,6 +890,7 @@ function Page(props: PageProps) {
         <div className="mt-3 space-y-2">
           <IdentifyPanel />
           <SuspectPanel onRestored={props.onReload} />
+          <DuplicatePanel onRemoved={props.onReload} />
           <LyricsBar />
         </div>
 

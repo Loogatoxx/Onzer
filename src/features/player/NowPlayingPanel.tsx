@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-
 import { Artwork } from "@/features/library/Artwork";
 import { Icon, IconButton } from "@/components/Icon";
-import { formatDuration, ipc, type Lyrics, type QueueItem } from "@/lib/ipc";
+import { formatDuration, type QueueItem } from "@/lib/ipc";
+import { useLyrics } from "./useLyrics";
 
 export type PanelTab = "lyrics" | "queue";
 
@@ -19,6 +18,8 @@ interface NowPlayingPanelProps {
   onSeek: (positionMs: number) => void;
   onJump: (index: number) => void;
   onRadio: (trackId: number) => void;
+  /** Ouvre les paroles en pleine largeur. */
+  onExpandLyrics: () => void;
 }
 
 /**
@@ -94,7 +95,12 @@ export function NowPlayingPanel(props: NowPlayingPanelProps) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2">
         {props.tab === "lyrics" ? (
-          <LyricsPane trackId={track.trackId} positionMs={props.positionMs} onSeek={props.onSeek} />
+          <LyricsPane
+            trackId={track.trackId}
+            positionMs={props.positionMs}
+            onSeek={props.onSeek}
+            onExpand={props.onExpandLyrics}
+          />
         ) : (
           <QueuePane
             queue={props.queue}
@@ -134,190 +140,90 @@ function Tab({
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Index de la ligne chantée à cet instant.
- *
- * C'est le pendant exact de `Lyrics::line_at` côté Rust. La logique est
- * dupliquée en connaissance de cause : l'alternative serait un aller-retour IPC
- * **quatre fois par seconde**, pour une recherche dichotomique de six lignes.
- */
-function lineAt(lyrics: Lyrics, positionMs: number): number | null {
-  const lines = lyrics.synced;
-  if (lines.length === 0) return null;
-
-  const first = lines[0];
-  if (first === undefined || positionMs < first.atMs) return null;
-
-  let low = 0;
-  let high = lines.length;
-  while (low < high) {
-    const middle = (low + high) >> 1;
-    const line = lines[middle];
-    if (line !== undefined && line.atMs <= positionMs) low = middle + 1;
-    else high = middle;
-  }
-
-  return low - 1;
-}
-
-/**
- * Paroles du morceau.
+ * Paroles du morceau, en colonne étroite.
  *
  * Synchronisées, elles défilent seules et chaque ligne est cliquable — c'est le
- * moyen le plus précis qui soit de retourner au deuxième couplet. Simples,
- * elles s'affichent en bloc. Absentes, on propose de les coller : les paroles
- * sont alors écrites **dans le fichier**, et suivront le morceau ailleurs.
+ * moyen le plus précis qui soit de retourner au deuxième couplet.
+ *
+ * Toute la logique vit dans `useLyrics`, partagée avec la vue en grand : ce qui
+ * change ici, c'est la mise en page, jamais le comportement.
  */
 function LyricsPane({
   trackId,
   positionMs,
   onSeek,
+  onExpand,
 }: {
   trackId: number;
   positionMs: number;
   onSeek: (positionMs: number) => void;
+  onExpand: () => void;
 }) {
-  const [lyrics, setLyrics] = useState<Lyrics | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
+  const state = useLyrics(trackId, positionMs);
 
-  const container = useRef<HTMLDivElement>(null);
-  const activeLine = useRef<HTMLParagraphElement>(null);
-
-  useEffect(() => {
-    setLyrics(null);
-    setEditing(false);
-    setDraft("");
-    setError(null);
-    setSearching(false);
-
-    let active = true;
-    void ipc
-      .trackLyrics(trackId)
-      .then((loaded) => {
-        if (active) setLyrics(loaded);
-      })
-      .catch(() => {
-        if (active) setLyrics({ synced: [], plain: [] });
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [trackId]);
-
-  const current = lyrics === null ? null : lineAt(lyrics, positionMs);
-
-  // La ligne courante se recentre d'elle-même. Sans cela, il faudrait faire
-  // défiler à la main pendant qu'on écoute — l'inverse de ce qu'on attend.
-  useEffect(() => {
-    activeLine.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [current]);
-
-  async function save() {
-    try {
-      setLyrics(await ipc.setTrackLyrics(trackId, draft));
-      setEditing(false);
-    } catch (cause) {
-      setError(String(cause));
-    }
-  }
-
-  /**
-   * Va chercher les paroles sur LRCLIB.
-   *
-   * Sur clic explicite : Onzer est un lecteur hors ligne, et rien ne part sur
-   * le réseau sans que l'utilisateur l'ait demandé.
-   */
-  async function search() {
-    setSearching(true);
-    setError(null);
-
-    try {
-      const found = await ipc.fetchLyrics(trackId);
-      if (found.synced.length === 0 && found.plain.length === 0) {
-        setError("Aucune parole trouvée pour ce morceau.");
-      } else {
-        setLyrics(found);
-      }
-    } catch (cause) {
-      setError(String(cause));
-    } finally {
-      setSearching(false);
-    }
-  }
-
-  if (lyrics === null) {
+  if (state.lyrics === null) {
     return <p className="py-8 text-center text-sm text-ink-faint">Lecture des paroles…</p>;
   }
 
-  if (editing) {
+  if (state.editing) {
     return (
       <div>
         <textarea
           autoFocus
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          value={state.draft}
+          onChange={(event) => state.setDraft(event.target.value)}
           placeholder={"Colle les paroles ici.\n\nFormat LRC accepté :\n[00:12.34]Première ligne"}
           className="h-64 w-full resize-none rounded-lg border border-line bg-base p-3 text-[13px] leading-relaxed text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
         />
 
-        {error !== null && <p className="mt-2 text-xs text-danger">{error}</p>}
+        {state.error !== null && <p className="mt-2 text-xs text-danger">{state.error}</p>}
 
         <div className="mt-3 flex gap-2">
           <button
             type="button"
-            onClick={() => void save()}
+            onClick={() => void state.save()}
             className="rounded-full bg-ink px-4 py-1.5 text-[13px] font-semibold text-base transition-opacity hover:opacity-90"
           >
             Enregistrer
           </button>
           <button
             type="button"
-            onClick={() => setEditing(false)}
+            onClick={() => state.setEditing(false)}
             className="rounded-full px-4 py-1.5 text-[13px] text-ink-muted transition-colors hover:text-ink"
           >
             Annuler
           </button>
         </div>
-
-        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-          Les paroles sont écrites dans le fichier lui-même : elles suivront le
-          morceau si tu l'ouvres ailleurs.
-        </p>
       </div>
     );
   }
 
-  if (lyrics.synced.length === 0 && lyrics.plain.length === 0) {
+  if (state.isEmpty) {
     return (
       <div className="py-10 text-center">
-        <p className="text-sm text-ink-muted">
-          Ce fichier ne contient pas de paroles.
-        </p>
+        <p className="text-sm text-ink-muted">Ce fichier ne contient pas de paroles.</p>
 
         <button
           type="button"
-          disabled={searching}
-          onClick={() => void search()}
+          disabled={state.searching}
+          onClick={() => void state.search()}
           className="mt-4 inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-base transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          <span className={searching ? "animate-spin" : ""}>
-            <Icon name={searching ? "repeat" : "search"} size={15} />
+          <span className={state.searching ? "animate-spin" : ""}>
+            <Icon name={state.searching ? "repeat" : "search"} size={15} />
           </span>
-          {searching ? "Recherche…" : "Chercher en ligne"}
+          {state.searching ? "Recherche…" : "Chercher en ligne"}
         </button>
 
         <button
           type="button"
-          onClick={() => setEditing(true)}
+          onClick={() => state.setEditing(true)}
           className="mt-2 block w-full text-[13px] text-ink-faint transition-colors hover:text-ink"
         >
           Les coller à la main
         </button>
 
-        {error !== null && <p className="mt-4 text-xs text-warn">{error}</p>}
+        {state.error !== null && <p className="mt-4 text-xs text-warn">{state.error}</p>}
 
         <p className="mt-6 text-[11px] leading-relaxed text-ink-faint">
           La recherche envoie l'artiste, le titre et la durée à LRCLIB. Rien
@@ -327,58 +233,57 @@ function LyricsPane({
     );
   }
 
-  if (lyrics.synced.length === 0) {
-    return (
-      <div>
-        {lyrics.plain.map((line, index) => (
-          <p key={`${index}-${line}`} className="py-1 text-[15px] leading-relaxed text-ink-muted">
-            {line}
-          </p>
-        ))}
-        <EditLink onClick={() => setEditing(true)} />
-      </div>
-    );
-  }
-
   return (
-    <div ref={container}>
-      {lyrics.synced.map((line, index) => {
-        const isCurrent = index === current;
-        // Une ligne horodatée sans texte marque un silence instrumental : on
-        // garde sa place dans le défilement sans afficher de vide béant.
-        if (line.text === "") {
-          return <div key={`${index}-gap`} className="h-4" />;
-        }
+    <div>
+      <button
+        type="button"
+        onClick={onExpand}
+        className="mb-3 flex w-full items-center justify-center gap-2 rounded-full bg-elevated py-1.5 text-[12px] font-semibold text-ink-muted transition-colors hover:text-ink"
+      >
+        <Icon name="lyrics" size={14} />
+        Afficher en grand
+      </button>
 
-        return (
-          <p
-            key={`${index}-${line.atMs}`}
-            ref={isCurrent ? activeLine : null}
-            onClick={() => onSeek(line.atMs)}
-            title={`Aller à ${formatDuration(line.atMs)}`}
-            className={`cursor-pointer py-[3px] text-[17px] font-semibold leading-snug transition-colors duration-300 ${
-              isCurrent ? "text-ink" : "text-ink-faint hover:text-ink-muted"
-            }`}
-          >
-            {line.text}
-          </p>
-        );
-      })}
-      <EditLink onClick={() => setEditing(true)} />
+      {state.lyrics.synced.length > 0
+        ? state.lyrics.synced.map((line, index) => {
+            if (line.text === "") {
+              return <div key={`${index}-gap`} className="h-4" />;
+            }
+
+            const isCurrent = index === state.current;
+
+            return (
+              <p
+                key={`${index}-${line.atMs}`}
+                ref={isCurrent ? state.activeLine : null}
+                onClick={() => onSeek(line.atMs)}
+                title={`Aller à ${formatDuration(line.atMs)}`}
+                className={`cursor-pointer py-[3px] text-[17px] font-semibold leading-snug transition-colors duration-300 ${
+                  isCurrent ? "text-ink" : "text-ink-faint hover:text-ink-muted"
+                }`}
+              >
+                {line.text}
+              </p>
+            );
+          })
+        : state.lyrics.plain.map((line, index) => (
+            <p
+              key={`${index}-${line}`}
+              className="py-1 text-[15px] leading-relaxed text-ink-muted"
+            >
+              {line}
+            </p>
+          ))}
+
+      <button
+        type="button"
+        onClick={() => state.setEditing(true)}
+        className="mt-6 flex items-center gap-1.5 text-[12px] text-ink-faint transition-colors hover:text-ink"
+      >
+        <Icon name="pencil" size={13} />
+        Modifier les paroles
+      </button>
     </div>
-  );
-}
-
-function EditLink({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="mt-6 flex items-center gap-1.5 text-[12px] text-ink-faint transition-colors hover:text-ink"
-    >
-      <Icon name="pencil" size={13} />
-      Modifier les paroles
-    </button>
   );
 }
 

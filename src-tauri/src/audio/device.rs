@@ -244,10 +244,22 @@ fn audio_thread(
     }
 }
 
+/// Ouvre un décodeur **capable de se déplacer**.
+///
+/// # Le défaut que ce choix corrige
+///
+/// `Decoder::new` construit un décodeur sans déclarer la source seekable ni sa
+/// taille. Le déplacement échouait alors sur chaque saut, avec un laconique
+/// « Symphonia decoder returned an error » dans les journaux : cliquer en
+/// arrière dans la barre de progression ne faisait rien.
+///
+/// `TryFrom<File>` renseigne les deux — c'est d'ailleurs ce que la
+/// documentation de rodio recommande explicitement pour un fichier. Le décodage
+/// reste en flux depuis le disque : un FLAC de 40 Mo n'est pas chargé en
+/// mémoire pour être lu.
 fn open_decoder(path: &PathBuf) -> Result<rodio::Decoder<std::io::BufReader<std::fs::File>>> {
     let file = std::fs::File::open(path)?;
-    // Le décodage se fait en flux depuis le disque : un FLAC de 40 Mo ne doit
-    // pas être chargé en mémoire pour être lu.
-    rodio::Decoder::new(std::io::BufReader::new(file))
+
+    rodio::Decoder::try_from(file)
         .map_err(|error| OnzerError::Invalid(format!("format non géré : {error}")))
 }

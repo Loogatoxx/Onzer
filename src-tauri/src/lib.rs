@@ -238,6 +238,8 @@ pub fn run() {
             commands::library::ignore_duplicate_group,
             commands::sync::compare_playlist_file,
             commands::sync::playlist_save_command,
+            commands::sync::spotify_status,
+            commands::sync::set_spotify_credentials,
             commands::reco::analysis_progress,
             commands::reco::reanalyze_library,
             commands::reco::reco_diagnostics,

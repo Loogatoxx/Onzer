@@ -31,7 +31,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::core::{OnzerError, Result};
-use crate::db::repository;
+use crate::db::{repository, settings};
 use crate::identify::spotdl::{self, PlaylistTrack};
 use crate::library::naming::normalize_key;
 use crate::AppState;
@@ -147,12 +147,14 @@ async fn download_command(
     }
 
     format!(
-        "xargs -a {} -d '\\n' spotdl download --output {}",
+        "xargs -a {} -d '\\n' {} download --output {}{}",
         shell_quote(&list_path.display().to_string()),
+        shell_quote(&spotdl_binary()),
         shell_quote(&format!(
             "{}/{{artists}} - {{title}}.{{output-ext}}",
             inbox.display()
-        ))
+        )),
+        credential_flags(&state.pool).await
     )
 }
 
@@ -175,10 +177,130 @@ pub async fn playlist_save_command(state: State<'_, AppState>, url: String) -> R
     };
 
     Ok(format!(
-        "spotdl save {} --save-file {}",
+        "{} save {} --save-file {}{}",
+        shell_quote(&spotdl_binary()),
         shell_quote(url),
-        shell_quote(&destination.display().to_string())
+        shell_quote(&destination.display().to_string()),
+        credential_flags(&state.pool).await
     ))
+}
+
+/// Chemin de l'exécutable `spotdl`.
+///
+/// # Pourquoi un chemin absolu
+///
+/// `spotdl` s'installe le plus souvent via `pipx`, dans un dossier que le
+/// `PATH` d'un shell non interactif ne contient pas toujours. Une commande qui
+/// échoue sur « command not found » alors que l'outil est installé est la
+/// pire des réponses : elle envoie chercher un problème qui n'existe pas.
+///
+/// On teste donc les emplacements habituels, du plus spécifique au plus
+/// général, et l'on retombe sur le nom nu si aucun ne répond — auquel cas le
+/// `PATH` de l'utilisateur fera son office.
+fn spotdl_binary() -> String {
+    let candidates = [
+        dirs_home().map(|home| home.join(".local/bin/spotdl")),
+        Some(std::path::PathBuf::from("/opt/homebrew/bin/spotdl")),
+        Some(std::path::PathBuf::from("/usr/local/bin/spotdl")),
+    ];
+
+    for candidate in candidates.into_iter().flatten() {
+        if candidate.is_file() {
+            return candidate.display().to_string();
+        }
+    }
+
+    "spotdl".to_string()
+}
+
+fn dirs_home() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME").map(std::path::PathBuf::from)
+}
+
+/// Les identifiants Spotify, en options de ligne de commande.
+///
+/// # Pourquoi ils sont nécessaires ici
+///
+/// Sans eux, `spotdl` interroge Spotify anonymement et se fait éconduire sur
+/// les grandes playlists — l'erreur remontée est un obscur
+/// `'NoneType' object is not subscriptable` au fond de sa couche réseau.
+/// Renseigner ses propres identifiants d'application lève la limite.
+///
+/// C'est la même paire que celle saisie dans Onzer. Elle ne sert plus à
+/// interroger l'API nous-mêmes — Spotify nous l'interdit désormais — mais elle
+/// reste exactement ce dont l'outil de l'utilisateur a besoin.
+///
+/// La chaîne est vide quand rien n'est renseigné : mieux vaut une commande
+/// incomplète qu'une commande portant des guillemets vides, qui échouerait
+/// avec un message encore moins clair.
+async fn credential_flags(pool: &sqlx::SqlitePool) -> String {
+    let id: Option<String> = settings::get(pool, SPOTIFY_ID).await.ok().flatten();
+    let secret: Option<String> = settings::get(pool, SPOTIFY_SECRET).await.ok().flatten();
+
+    match (id, secret) {
+        (Some(id), Some(secret)) if !id.trim().is_empty() && !secret.trim().is_empty() => {
+            format!(
+                " --client-id {} --client-secret {}",
+                shell_quote(id.trim()),
+                shell_quote(secret.trim())
+            )
+        }
+        _ => String::new(),
+    }
+}
+
+/// Réglages : identifiants d'application Spotify.
+pub const SPOTIFY_ID: &str = "spotify_client_id";
+pub const SPOTIFY_SECRET: &str = "spotify_client_secret";
+
+/// État des identifiants, sans jamais révéler le secret.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotifyStatus {
+    pub configured: bool,
+    /// Aperçu masqué de l'identifiant client, pour repérer un collage tronqué.
+    pub id_hint: Option<String>,
+}
+
+#[tauri::command]
+pub async fn spotify_status(state: State<'_, AppState>) -> Result<SpotifyStatus> {
+    let id: Option<String> = settings::get(&state.pool, SPOTIFY_ID).await?;
+    let secret: Option<String> = settings::get(&state.pool, SPOTIFY_SECRET).await?;
+
+    let configured = id.as_deref().is_some_and(|value| !value.trim().is_empty())
+        && secret.as_deref().is_some_and(|value| !value.trim().is_empty());
+
+    Ok(SpotifyStatus {
+        id_hint: id.as_deref().filter(|v| !v.is_empty()).map(mask),
+        configured,
+    })
+}
+
+/// `6847••••••` : de quoi reconnaître une clé, jamais de quoi la réutiliser.
+fn mask(value: &str) -> String {
+    let visible: String = value.chars().take(4).collect();
+    format!("{visible}{}", "•".repeat(6))
+}
+
+#[tauri::command]
+pub async fn set_spotify_credentials(
+    state: State<'_, AppState>,
+    client_id: String,
+    client_secret: String,
+) -> Result<()> {
+    let client_id = client_id.trim().to_string();
+    let client_secret = client_secret.trim().to_string();
+
+    if client_id.is_empty() != client_secret.is_empty() {
+        return Err(OnzerError::Invalid(
+            "les deux identifiants sont nécessaires".to_string(),
+        ));
+    }
+
+    settings::set(&state.pool, SPOTIFY_ID, &client_id).await?;
+    settings::set(&state.pool, SPOTIFY_SECRET, &client_secret).await?;
+
+    Ok(())
 }
 
 /// Protège une valeur pour un shell POSIX.

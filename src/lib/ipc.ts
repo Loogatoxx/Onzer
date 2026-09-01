@@ -72,6 +72,13 @@ export interface PlaylistComparison {
   command: string;
 }
 
+/** Miroir de `commands::sync::SpotifyStatus`. */
+export interface SpotifyStatus {
+  configured: boolean;
+  /** Aperçu masqué, du genre `6847••••••`. Le secret ne revient jamais. */
+  idHint: string | null;
+}
+
 /** Miroir de `commands::library::NearDuplicate`. */
 export interface NearDuplicate {
   id: number;
@@ -545,6 +552,11 @@ export const ipc = {
   /** La commande qui produit le fichier à comparer. */
   playlistSaveCommand: (url: string): Promise<string> =>
     invoke<string>("playlist_save_command", { url }),
+
+  spotifyStatus: (): Promise<SpotifyStatus> => invoke<SpotifyStatus>("spotify_status"),
+
+  setSpotifyCredentials: (clientId: string, clientSecret: string): Promise<void> =>
+    invoke<void>("set_spotify_credentials", { clientId, clientSecret }),
 
   analysisProgress: (): Promise<AnalysisProgress> =>
     invoke<AnalysisProgress>("analysis_progress"),

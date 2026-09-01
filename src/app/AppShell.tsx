@@ -282,6 +282,19 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
 
   // ── Actions ───────────────────────────────────────────────────────────
 
+  /**
+   * Ouvre les paroles en pleine largeur.
+   *
+   * Le panneau latéral bascule sur la file : afficher les mêmes paroles à deux
+   * tailles côte à côte ne dit rien de plus, et gaspille la seule colonne qui
+   * pouvait montrer autre chose. « À suivre » y est plus utile — on lit en
+   * écoutant, et la question qui vient ensuite est celle du morceau suivant.
+   */
+  function openLyrics() {
+    setPanel("queue");
+    navigate({ kind: "lyrics" });
+  }
+
   function playFrom(index: number) {
     void playback.play(
       shown.map((track) => track.id),
@@ -606,7 +619,8 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
             onSeek={(position) => void playback.seek(position)}
             onJump={(index) => void ipc.jumpInQueue(index).catch(() => undefined)}
             onRadio={startRadio}
-            onExpandLyrics={() => navigate({ kind: "lyrics" })}
+            onExpandLyrics={() => openLyrics()}
+            lyricsExpanded={route.kind === "lyrics"}
           />
         )}
       </div>
@@ -631,7 +645,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
             // clique dessus. Le panneau latéral reste accessible depuis
             // l'onglet, pour les suivre du coin de l'œil.
             if (tab === "lyrics") {
-              navigate({ kind: "lyrics" });
+              openLyrics();
               return;
             }
             setPanel((value) => (value === tab ? "closed" : tab));
@@ -774,7 +788,7 @@ function Page(props: PageProps) {
           meta={meta}
           cover={
             route.coverHash === null ? (
-              <CoverTile name="library" />
+              <CoverTile name="artist" />
             ) : (
               <Artwork hash={route.coverHash} className="h-52 w-52 rounded-full" />
             )

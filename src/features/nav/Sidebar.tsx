@@ -84,7 +84,7 @@ export function Sidebar({
           onClick={() => onNavigate({ kind: "library" })}
         />
         <NavItem
-          icon="library"
+          icon="artist"
           label="Artistes"
           active={active === "artists" || active.startsWith("artist:")}
           onClick={() => onNavigate({ kind: "artists" })}
@@ -171,7 +171,7 @@ function NavItem({
   active,
   onClick,
 }: {
-  icon: "home" | "library" | "sparkle" | "stats";
+  icon: "home" | "library" | "artist" | "sparkle" | "stats";
   label: string;
   active: boolean;
   onClick: () => void;

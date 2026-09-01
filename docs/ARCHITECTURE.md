@@ -1071,6 +1071,47 @@ suppression ne serait pas.
 
 ---
 
+## ADR-036 — Les identifiants Spotify servent à l'outil, plus à Onzer
+
+**Contexte.** Après la bascule vers `spotdl save`, l'utilisateur a rencontré, sur une
+playlist de 550 titres, un `TypeError: 'NoneType' object is not subscriptable` au fond de la
+couche réseau de `spotdl`. Interrogé anonymement, Spotify éconduit les grandes requêtes.
+
+**Décision.** Onzer conserve les identifiants d'application saisis par l'utilisateur — ils
+étaient devenus inutiles quand l'API nous a été fermée — et les **glisse dans les commandes
+qu'il propose** (`--client-id`, `--client-secret`). Il ne s'en sert lui-même pour aucun
+appel.
+
+Le chemin de l'exécutable est résolu, pas supposé : `spotdl` s'installe le plus souvent via
+`pipx`, dans un dossier absent du `PATH` d'un shell non interactif. Une commande qui échoue
+sur « command not found » alors que l'outil est installé envoie chercher un problème qui
+n'existe pas. Les emplacements habituels sont testés, avec repli sur le nom nu.
+
+**Le secret est affiché en clair**, puisque c'est ce que la ligne de commande exige. Un
+avertissement l'accompagne : cette ligne ne se colle nulle part ailleurs que dans un
+terminal.
+
+---
+
+## ADR-037 — Deux fois le même texte n'apprend rien
+
+**Contexte.** Les paroles en pleine page laissaient le panneau latéral afficher… les mêmes
+paroles, en petit.
+
+**Décision.** Quand la page des paroles est ouverte, l'onglet « Paroles » du panneau
+disparaît et celui-ci bascule sur **« À suivre »**. La colonne de droite est la seule qui
+pouvait montrer autre chose ; la remplir d'un doublon la gaspille, et laisse croire à un
+défaut d'affichage.
+
+« À suivre » plutôt qu'autre chose parce que c'est la question qui vient naturellement quand
+on lit en écoutant : quel morceau ensuite.
+
+**L'icône des artistes** suit la même logique de cohérence : une tête et des épaules sur la
+grille de 24, au trait de 1,75 comme tout le reste. Un rond plein aurait juré — toutes les
+formes de navigation sont en filaire, et l'œil repère immédiatement l'intruse.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

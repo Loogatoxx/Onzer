@@ -19,6 +19,7 @@ export type IconName =
   | "home"
   | "search"
   | "library"
+  | "artist"
   | "stats"
   | "plus"
   | "heart"
@@ -64,6 +65,15 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   library: <path d="M4 4v16M9.5 4v16M15 5l4.5 14" />,
+  // Tête et épaules, sur la même grille de 24 et le même trait que le reste.
+  // Un rond plein aurait juré : toutes les autres formes de navigation sont
+  // en filaire, et l'œil repère immédiatement l'intruse.
+  artist: (
+    <>
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </>
+  ),
   stats: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
   plus: <path d="M12 5v14M5 12h14" />,
   heart: (

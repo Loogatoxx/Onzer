@@ -380,7 +380,7 @@ function RowMenu({
           </MenuItem>
 
           {track.artist !== null && (
-            <MenuItem icon="library" onClick={() => choose(onOpenArtist)}>
+            <MenuItem icon="artist" onClick={() => choose(onOpenArtist)}>
               Accéder à l'artiste
             </MenuItem>
           )}

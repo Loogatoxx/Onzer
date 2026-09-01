@@ -20,6 +20,13 @@ interface NowPlayingPanelProps {
   onRadio: (trackId: number) => void;
   /** Ouvre les paroles en pleine largeur. */
   onExpandLyrics: () => void;
+  /**
+   * Vrai quand les paroles occupent déjà la page.
+   *
+   * L'onglet disparaît alors : proposer le même texte à deux tailles côte à
+   * côte n'apporte rien, et laisse croire à un défaut d'affichage.
+   */
+  lyricsExpanded: boolean;
 }
 
 /**
@@ -85,16 +92,18 @@ export function NowPlayingPanel(props: NowPlayingPanelProps) {
       </div>
 
       <div className="mt-4 flex shrink-0 gap-1 px-4">
-        <Tab active={props.tab === "lyrics"} onClick={() => props.onTab("lyrics")}>
-          Paroles
-        </Tab>
+        {!props.lyricsExpanded && (
+          <Tab active={props.tab === "lyrics"} onClick={() => props.onTab("lyrics")}>
+            Paroles
+          </Tab>
+        )}
         <Tab active={props.tab === "queue"} onClick={() => props.onTab("queue")}>
           À suivre
         </Tab>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2">
-        {props.tab === "lyrics" ? (
+        {props.tab === "lyrics" && !props.lyricsExpanded ? (
           <LyricsPane
             trackId={track.trackId}
             positionMs={props.positionMs}

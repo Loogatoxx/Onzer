@@ -991,25 +991,83 @@ confronter à ce qu'il possède, nommer les absents. La formule proposée pour l
 assemble ce que l'utilisateur taperait autrement à la main, pour son propre outil ; il la
 copie, ou non.
 
-**Décision — l'API officielle.** La page publique d'une playlist contient bien la liste,
-noyée dans un bloc JSON. La lire reviendrait à écrire un analyseur qui casserait au premier
-changement de leur front-end, et à passer par la fenêtre quand une porte documentée existe.
-L'API demande des identifiants d'application, gratuits — même schéma qu'AcoustID :
-l'utilisateur fournit les siens, Onzer n'en distribue aucun.
+**Décision, révisée — un fichier plutôt que l'API.** Le premier jet interrogeait l'API
+officielle avec des identifiants d'application créés par l'utilisateur. Spotify a répondu :
 
-Le flux « client credentials » ne donne accès qu'aux playlists **publiques**. Onzer ne
-demande jamais de mot de passe et ne lit aucune donnée de compte.
+> 403 Forbidden — *Active premium subscription required for the owner of the app.*
+
+Lire la liste d'une playlist **publique** exige désormais un abonnement payant sur le compte
+propriétaire de l'application. La porte est fermée, et aucune astuce ne la rouvrirait
+honnêtement — scraper la page reviendrait à passer par la fenêtre, avec un analyseur qui
+casserait au premier changement de leur front-end.
+
+`spotdl`, que l'utilisateur a déjà installé, produit la liste avec sa sous-commande `save` :
+**sans rien télécharger**, et sans aucun identifiant. Onzer lit ce fichier. Le partage des
+rôles ne change pas, et c'est ce qui compte : son outil va chercher la liste, Onzer la
+compare.
+
+Le format est lu **avec indulgence** — noms de champs alternatifs, durée en secondes ou en
+millisecondes, entrées non résolues ignorées. `spotdl` évolue, et une clé renommée ne doit
+pas rendre tout le fichier illisible. Vérifié sur une vraie playlist : 548 titres lus,
+64 déjà en bibliothèque, 484 manquants.
 
 **Le rapprochement réutilise `find_by_tags`** — titre normalisé, artiste normalisé, durée à
 deux secondes près. C'est **la même** règle que le second filet du dédoublonnage à l'import :
 un morceau déclaré présent ici doit être exactement celui que l'import refuserait comme
 doublon. Deux règles distinctes finiraient par se contredire sous les yeux de l'utilisateur.
 
-**La boucle presque automatique.** Les liens manquants sont écrits dans un fichier, et la
-commande vise le **dossier de dépôt**. Ce qui est récupéré y atterrit ; dédoublonnage,
-identification et rangement se font ensuite tout seuls. `xargs` passe les liens en arguments
-et découpe lui-même : une commande écrite d'un bloc atteindrait la limite de longueur du
-shell sur une playlist un peu fournie.
+**La boucle presque automatique.** Les requêtes manquantes sont écrites dans un fichier, et
+la commande vise le **dossier de dépôt**. Ce qui est récupéré y atterrit ; dédoublonnage,
+identification et rangement se font ensuite tout seuls. `xargs` découpe lui-même : sur la
+playlist de test, 484 titres manquaient — écrite d'un bloc, la commande aurait fait une
+vingtaine de kilo-octets.
+
+---
+
+## ADR-034 — Découvrir des titres : la discographie, pas la similarité
+
+**Contexte.** La section « à découvrir » ne proposait que des artistes. L'utilisateur voulait
+aussi des **titres** qu'il pourrait aimer et qu'il ne possède pas.
+
+**La piste évidente, et pourquoi elle échoue.** ListenBrainz expose des enregistrements
+similaires. Interrogé sur les enregistrements de cette bibliothèque, il répond
+**systématiquement une liste vide** : le rap francophone y est trop peu représenté pour que
+la similarité par sessions d'écoute produise quoi que ce soit. Livrer une section
+structurellement vide aurait été pire que de ne rien livrer.
+
+**Décision.** La **discographie** des artistes déjà aimés, via MusicBrainz — complète et
+fiable là où la similarité est muette : 194 enregistrements connus pour Damso. On la compare
+au catalogue possédé et l'on nomme la différence. Cela répond exactement à la question posée
+— « des titres que je pourrais aimer et que je n'ai pas » — sans rien inventer.
+
+**Deux précautions.** Les enregistrements homonymes d'un même artiste — live, remix,
+réédition — sont réduits à un seul : sous le même nom, ils n'apprennent rien de plus. Et la
+liste est **entrelacée** entre artistes : trente titres du même artiste ressembleraient à une
+discographie, pas à une découverte.
+
+**Où elle se trouve.** Le premier jet plaçait cette section tout en bas de l'accueil, sous
+les mix et les catégories. L'utilisateur ne l'a jamais vue et a demandé si elle existait.
+Elle vit désormais dans « Ce qui me manque », dont c'est exactement le sujet, et en tête de
+page — elle fonctionne d'un clic, sans rien installer.
+
+---
+
+## ADR-035 — Un doublon probable s'écoute avant de se trancher
+
+**Contexte.** Le panneau des doublons montrait durée, album et nombre d'écoutes. Cela ne
+suffit pas : entre un clip et sa version album, seule l'oreille tranche.
+
+**Décisions.**
+
+1. Un bouton de lecture par ligne, qui joue le morceau **seul** sans toucher à la file
+   affichée. Comparer suppose d'écouter l'un puis l'autre, pas de perdre sa file en route.
+2. Un bouton « Ce ne sont pas des doublons » par groupe. Deux morceaux peuvent porter le
+   même titre et durer presque pareil sans avoir de rapport — une reprise, deux interludes
+   homonymes. Sans ce bouton, le panneau redemanderait éternellement.
+
+La décision est stockée dans les réglages, pas dans une table : c'est une poignée de clés,
+et son cycle de vie est celui d'une préférence. Elle reste donc **réversible**, ce qu'une
+suppression ne serait pas.
 
 ---
 

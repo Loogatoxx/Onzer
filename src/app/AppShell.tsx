@@ -9,9 +9,11 @@ import { HomeView } from "@/features/home/HomeView";
 import { IdentifyPanel } from "@/features/identify/IdentifyPanel";
 import { SuspectPanel } from "@/features/identify/SuspectPanel";
 import { ArtworkBar } from "@/features/lyrics/ArtworkBar";
+import { AlbumBar } from "@/features/library/AlbumBar";
 import { LyricsBar } from "@/features/lyrics/LyricsBar";
 import { Artwork } from "@/features/library/Artwork";
 import { CorrectDialog } from "@/features/library/CorrectDialog";
+import { MatchDialog } from "@/features/library/MatchDialog";
 import { DuplicatePanel } from "@/features/library/DuplicatePanel";
 import { TrackTable } from "@/features/library/TrackTable";
 import { Sidebar, type Route } from "@/features/nav/Sidebar";
@@ -111,6 +113,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   const [panel, setPanel] = useState<PanelTab | "closed">("lyrics");
   /** Morceau en cours de correction manuelle. */
   const [correcting, setCorrecting] = useState<TrackSummary | null>(null);
+  const [matching, setMatching] = useState<TrackSummary | null>(null);
 
   /** Incrémenté pour forcer un rechargement après une écriture. */
   const [revision, setRevision] = useState(0);
@@ -533,6 +536,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       }}
       onOpenArtist={(id) => void openArtistOf(id)}
       onCorrect={setCorrecting}
+      onMatch={setMatching}
       onRemove={(id) => {
         void ipc
           .removeTrack(id)
@@ -728,6 +732,18 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           track={correcting}
           onClose={() => setCorrecting(null)}
           onCorrected={bump}
+          onSearchElsewhere={() => {
+            setMatching(correcting);
+            setCorrecting(null);
+          }}
+        />
+      )}
+
+      {matching !== null && (
+        <MatchDialog
+          track={matching}
+          onClose={() => setMatching(null)}
+          onApplied={bump}
         />
       )}
 
@@ -1038,6 +1054,7 @@ function Page(props: PageProps) {
           />
           <LyricsBar />
           <ArtworkBar />
+          <AlbumBar />
         </div>
 
         <p className="mt-3 truncate font-mono text-[11px] text-ink-faint">

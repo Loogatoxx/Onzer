@@ -1314,6 +1314,119 @@ pour la machine. Elle reste dans la base, à l'utilisateur seul.
 
 ---
 
+## ADR-047 — Un catalogue n'est pas une archive, et deux valent mieux qu'un
+
+**Contexte.** L'empreinte acoustique laisse deux restes : 256 morceaux introuvables et
+93 sans album — un **tiret** dans l'interface, et une absence dans la vue par albums.
+
+**La mesure.** Sur quatorze de ces morceaux, chaque service pris seul en retrouve six.
+Ensemble, sept — les trous ne sont pas aux mêmes endroits. Un exemple de chaque côté :
+Deezer trouve « Macarena » que MusicBrainz ne rattachait qu'à des compilations ; iTunes
+trouve « Drapeau noir » que Deezer manquait.
+
+**Décision.** Trois catalogues, une seule règle de notation (`identify::catalog`), et deux
+portes distinctes :
+
+| Porte | Qui décide | Seuils |
+|---|---|---|
+| Automatique | La machine | Titre ≥ 0,85 **et** artiste ≥ 0,8 **et** durée à ±30 s |
+| Manuelle | L'utilisateur | Aucun — la liste montre tout, triée |
+
+Le reproche fait à iTunes en ADR-044 — il rendait « Polokus » pour « Macarena » — visait une
+décision **prise sans témoin**. Il ne vaut plus quand un humain regarde la liste : une
+proposition de trop ne coûte qu'un coup d'œil. iTunes revient donc, mais **par la porte
+manuelle uniquement**.
+
+**Résultat mesuré** : 56 albums sur 91 complétés automatiquement. Les 35 restants sont
+presque tous des fichiers qui contiennent un projet entier — quatorze, vingt, quarante-sept
+minutes — qu'aucun catalogue ne peut reconnaître comme un morceau de trois minutes.
+
+---
+
+## ADR-048 — Le titre identifie, la durée corrobore
+
+**Contexte.** La recherche par champs `artist:"…" track:"…"` paraissait la plus sûre.
+
+**Les deux mesures qui l'ont défaite.**
+
+| Ce qu'on croyait | Ce qu'on a mesuré |
+|---|---|
+| La requête par champs est plus précise | Elle manque « Υ. 2 DIAMANTS » (Deezer l'écrit avec un upsilon grec) et « L'étrangère » — le texte libre les trouve, durée exacte à l'appui |
+| La durée suffit à écarter les erreurs | Sur « Drapeau noir », le texte libre remonte trois autres titres du **même album**, dont deux passent le filtre de durée — et le bon, lui, dure 19 s de moins |
+
+**Décision.** On interroge en texte libre et on trie soi-même, par **ressemblance des titres
+d'abord** (coefficient de Dice sur les mots, après retrait des « (feat. …) » et autres
+mentions de production), la durée ne servant qu'à départager des fiches déjà plausibles. La
+tolérance passe à trente secondes : un fichier téléchargé porte souvent une intro que la
+version commerciale n'a pas.
+
+Filtrer sur la seule durée aurait attaché « L'insolence des élus » à « Drapeau noir ». C'est
+le sens de la règle : **le titre identifie, la durée corrobore — jamais l'inverse.**
+
+---
+
+## ADR-049 — Une commande qui s'arrête au premier échec n'est pas une commande
+
+**Contexte.** `spotdl` sait lire un fichier de requêtes. Sur trente recommandations, une
+seule était introuvable — « Bush — Machinehead ». `LookupError`, processus terminé,
+**vingt-neuf morceaux jamais tentés**.
+
+**Le piège suivant.** Le réflexe serait `commande || consigner_l_echec`. Mesuré : `spotdl`
+sort avec le **code 0 même quand il échoue** — une requête finissant sur `AudioProviderError`
+rend exactement le même code qu'un téléchargement réussi. Le `||` ne se déclencherait jamais.
+
+**Décision.** Une invocation **par requête**, pour qu'un échec ne fasse tomber que sa propre
+ligne ; et un constat d'échec fondé sur le seul témoin fiable — **un fichier est apparu dans
+le dossier, ou il n'est pas apparu**. Les requêtes sans fichier sont consignées dans
+`_echecs.txt`, que la commande `yt-dlp` reprend d'elle-même si elle le trouve, et ignore
+sinon. Les deux passes s'enchaînent sans rien redemander à l'utilisateur.
+
+Vérifié de bout en bout sur le cas exact rencontré : un faux `spotdl` qui échoue sur la
+première ligne, les deux suivantes récupérées, `_echecs.txt` contenant la seule ligne perdue,
+et la passe `yt-dlp` la reprenant.
+
+---
+
+## ADR-050 — Le webview ne parle à personne, pas même pour une vignette
+
+**Contexte.** Le choix manuel affiche les pochettes proposées. Les adresses sont chez Deezer
+et Apple ; la politique de sécurité du contenu (ADR-005) n'autorise que `self`, `asset:` et
+`data:`.
+
+**Le choix.** Élargir la politique à ces deux domaines aurait suffi, en une ligne.
+
+**Décision.** Non : les octets passent par le cœur Rust et arrivent en `data:` URI. La
+politique reste telle quelle. Ce n'est pas une précaution abstraite — c'est ce qui garantit
+que l'interface d'un lecteur hors ligne **ne peut pas** émettre de requête, quoi qu'y injecte
+un jour un titre de morceau ou une réponse de service. La commande n'accepte d'ailleurs que
+les domaines d'images des catalogues connus : elle ne doit pas devenir un passe-partout.
+
+Les images ont leur propre file d'attente (`identify::images`), séparée de celle des API :
+la cadence de trois secondes et demie d'iTunes protège son API, pas son serveur d'images.
+
+---
+
+## ADR-051 — Une fiche retenue s'écrit d'un bloc
+
+**Contexte.** Appliquer une fiche choisie pourrait n'écrire que ce qui manquait — l'album,
+par exemple, en laissant le titre du fichier.
+
+**Décision.** Non. Choisir une fiche, c'est dire « ce morceau est celui-là » : titre, artiste,
+album, année et pochette sont écrits ensemble. Un état mixte, moitié fichier moitié catalogue,
+serait impossible à expliquer trois mois plus tard.
+
+Deux conséquences en découlent, toutes deux volontaires :
+
+- les **paroles sont effacées** si le titre change, comme pour la correction manuelle
+  (ADR-046) : elles appartenaient à l'ancien titre ;
+- l'état d'identification passe à `rejected` avec une note qui dit la vérité — « fiche Deezer
+  retenue à la main » — pour que l'ouvrier ne repasse jamais par-dessus un choix humain.
+
+La complétion automatique des albums, elle, n'écrit **que** l'album, l'année et la pochette :
+elle ne choisit pas une identité, elle comble un vide.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

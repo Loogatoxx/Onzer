@@ -39,6 +39,8 @@ interface TrackTableProps {
   onRemove: (trackId: number) => void;
   /** Ouvre la correction manuelle du titre, de l'artiste et de l'album. */
   onCorrect: (track: TrackSummary) => void;
+  /** Ouvre la recherche dans les catalogues, quand l'empreinte a échoué. */
+  onMatch: (track: TrackSummary) => void;
   /**
    * Favoris, tenus par la coquille.
    *
@@ -72,6 +74,7 @@ export function TrackTable({
   onOpenArtist,
   onRemove,
   onCorrect,
+  onMatch,
   loved,
   playlists,
   onAddToPlaylist,
@@ -119,6 +122,7 @@ export function TrackTable({
             onOpenArtist={() => onOpenArtist(track.id)}
             onRemove={() => onRemove(track.id)}
             onCorrect={() => onCorrect(track)}
+            onMatch={() => onMatch(track)}
             playlists={playlists}
             onAddToPlaylist={(playlistId) => onAddToPlaylist(playlistId, track.id)}
             {...(onRemoveAt === undefined
@@ -147,6 +151,7 @@ interface TrackRowProps {
   onOpenArtist: () => void;
   onRemove: () => void;
   onCorrect: () => void;
+  onMatch: () => void;
   playlists: PlaylistSummary[];
   onAddToPlaylist: (playlistId: number) => void;
   /** Fourni uniquement dans une playlist : retirer la ligne à cette position. */
@@ -174,6 +179,7 @@ function TrackRow({
   onOpenArtist,
   onRemove,
   onCorrect,
+  onMatch,
   playlists,
   onAddToPlaylist,
   onRemoveFromPlaylist,
@@ -288,6 +294,7 @@ function TrackRow({
           onOpenArtist={onOpenArtist}
           onRemove={onRemove}
           onCorrect={onCorrect}
+          onMatch={onMatch}
           {...(onRemoveFromPlaylist === undefined ? {} : { onRemoveFromPlaylist })}
         />
       </div>
@@ -312,6 +319,7 @@ function RowMenu({
   onOpenArtist,
   onRemove,
   onCorrect,
+  onMatch,
   onRemoveFromPlaylist,
 }: {
   track: TrackSummary;
@@ -324,6 +332,7 @@ function RowMenu({
   onOpenArtist: () => void;
   onRemove: () => void;
   onCorrect: () => void;
+  onMatch: () => void;
   onRemoveFromPlaylist?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -396,6 +405,10 @@ function RowMenu({
 
           <MenuItem icon="pencil" onClick={() => choose(onCorrect)}>
             Corriger le titre
+          </MenuItem>
+
+          <MenuItem icon="search" onClick={() => choose(onMatch)}>
+            Chercher ailleurs
           </MenuItem>
 
           {onRemoveFromPlaylist !== undefined && (

@@ -66,9 +66,53 @@ pub fn thumbnail_path(artwork_dir: &Path, digest: &str) -> PathBuf {
     artwork_dir.join(format!("{digest}.jpg"))
 }
 
+/// Encodage base64 standard, sans dépendance supplémentaire.
+///
+/// Partagé par tout ce qui doit faire traverser une image à la frontière IPC :
+/// les pochettes rangées sur le disque comme celles qu'un catalogue vient de
+/// proposer. Deux implémentations d'un même encodage finiraient par diverger.
+pub fn encode_base64(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    let mut output = String::with_capacity(input.len().div_ceil(3) * 4);
+
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+
+        output.push(ALPHABET[(triple >> 18 & 0x3F) as usize] as char);
+        output.push(ALPHABET[(triple >> 12 & 0x3F) as usize] as char);
+        output.push(if chunk.len() > 1 {
+            ALPHABET[(triple >> 6 & 0x3F) as usize] as char
+        } else {
+            '='
+        });
+        output.push(if chunk.len() > 2 {
+            ALPHABET[(triple & 0x3F) as usize] as char
+        } else {
+            '='
+        });
+    }
+
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn encode_en_base64_standard() {
+        // Vecteurs de la RFC 4648.
+        assert_eq!(encode_base64(b""), "");
+        assert_eq!(encode_base64(b"f"), "Zg==");
+        assert_eq!(encode_base64(b"fo"), "Zm8=");
+        assert_eq!(encode_base64(b"foo"), "Zm9v");
+        assert_eq!(encode_base64(b"foobar"), "Zm9vYmFy");
+    }
     use image::{ImageFormat, RgbImage};
 
     /// Fabrique une image PNG de test, en mémoire.

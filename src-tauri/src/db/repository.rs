@@ -673,6 +673,59 @@ pub async fn attach_artwork(
     Ok(())
 }
 
+/// Rattache un album à un morceau qui n'en avait pas, sans pochette.
+///
+/// # Pourquoi ce jumeau de [`attach_artwork`]
+///
+/// Un catalogue peut connaître l'album sans en servir l'image, ou l'image peut
+/// échouer à se télécharger. Refuser d'écrire l'album dans ces cas-là
+/// laisserait un **tiret** dans l'interface alors que l'information est là :
+/// un nom d'album sans pochette reste très supérieur à rien du tout.
+///
+/// Un morceau qui a déjà un album n'est pas touché : cette fonction ne sert
+/// qu'à combler un vide, jamais à corriger un choix antérieur.
+pub async fn attach_album_only(
+    pool: &SqlitePool,
+    track_id: i64,
+    album: &str,
+    artist: Option<&str>,
+    year: Option<u32>,
+) -> Result<()> {
+    let title = album.trim();
+    if title.is_empty() {
+        return Ok(());
+    }
+
+    let mut tx = pool.begin().await?;
+    let now = now_ms();
+
+    let existing: Option<i64> = sqlx::query_scalar("SELECT album_id FROM tracks WHERE id = ?")
+        .bind(track_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .flatten();
+
+    if existing.is_some() {
+        return Ok(());
+    }
+
+    let artist_id = match artist.map(str::trim).filter(|name| !name.is_empty()) {
+        Some(name) => Some(upsert_artist(&mut tx, name, now).await?),
+        None => None,
+    };
+
+    let album_id = upsert_album(&mut tx, title, artist_id, year, None, now).await?;
+
+    sqlx::query("UPDATE tracks SET album_id = ? WHERE id = ?")
+        .bind(album_id)
+        .bind(track_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  Lecture
 // ════════════════════════════════════════════════════════════════════════════

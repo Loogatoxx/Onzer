@@ -39,7 +39,10 @@
 pub mod acoustid;
 pub mod fingerprint;
 pub mod http;
+pub mod images;
+pub mod itunes;
 pub mod lrclib;
+pub mod catalog;
 pub mod coverart;
 pub mod deezer;
 pub mod discover;

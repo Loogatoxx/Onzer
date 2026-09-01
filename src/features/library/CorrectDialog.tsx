@@ -14,6 +14,12 @@ import { ipc, type TrackSummary } from "@/lib/ipc";
  * aussi. Sans moyen de corriger, il faudrait sortir le fichier de la
  * bibliothèque et le réimporter.
  *
+ * # Quand on ne connaît pas le bon nom
+ *
+ * Taper soi-même suppose de savoir quoi taper. « Chercher ailleurs » passe la
+ * main aux catalogues : Deezer, iTunes et MusicBrainz proposent, l'utilisateur
+ * reconnaît. Les deux portes mènent au même endroit.
+ *
  * # Ce que la correction emporte
  *
  * Les paroles sont effacées : elles appartenaient à l'ancien titre. Les garder
@@ -24,10 +30,13 @@ export function CorrectDialog({
   track,
   onClose,
   onCorrected,
+  onSearchElsewhere,
 }: {
   track: TrackSummary;
   onClose: () => void;
   onCorrected: () => void;
+  /** Passe la main aux catalogues, pour qui ne connaît pas le bon nom. */
+  onSearchElsewhere: () => void;
 }) {
   const [title, setTitle] = useState(track.title);
   const [artist, setArtist] = useState(track.artist ?? "");
@@ -103,6 +112,14 @@ export function CorrectDialog({
             className="rounded-full bg-ink px-5 py-2 text-[13px] font-semibold text-base transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {saving ? "Enregistrement…" : "Corriger"}
+          </button>
+
+          <button
+            type="button"
+            onClick={onSearchElsewhere}
+            className="rounded-full px-5 py-2 text-[13px] text-ink-muted transition-colors hover:text-ink"
+          >
+            Chercher ailleurs
           </button>
 
           <button

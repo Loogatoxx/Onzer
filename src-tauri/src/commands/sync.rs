@@ -194,20 +194,56 @@ async fn download_commands(
     )
 }
 
-/// `spotdl` lit lui-même un fichier de requêtes, une par ligne.
+/// Nom du fichier où la passe `spotdl` consigne ce qu'elle n'a pas pu prendre.
+const FAILURES: &str = "_echecs.txt";
+
+/// Boucle `spotdl`, **une requête à la fois**.
+///
+/// # Pourquoi ne pas lui donner le fichier
+///
+/// `spotdl` sait lire une liste. Mesuré sur trente recommandations : à la
+/// première requête sans résultat, il lève `LookupError` et **le processus
+/// s'arrête**. Vingt-neuf morceaux n'ont jamais été tentés à cause d'un seul
+/// qui manquait. Un échec isolé ne doit pas décider pour tout le reste.
+///
+/// Une invocation par requête isole la panne : ce qui tombe ne fait tomber que
+/// sa propre ligne.
+///
+/// # Pourquoi compter les fichiers plutôt que lire le code de sortie
+///
+/// `spotdl` rend **0 même quand il échoue** — mesuré : une requête qui finit
+/// sur `AudioProviderError` sort avec le même code qu'un téléchargement réussi.
+/// Un `||` ne se déclencherait jamais. Le seul témoin fiable est le dossier
+/// lui-même : un fichier est apparu, ou il n'est pas apparu. Les requêtes sans
+/// fichier sont consignées dans `_echecs.txt`, que la passe `yt-dlp` reprend.
 fn spotdl_command(list_path: &std::path::Path, inbox: &std::path::Path) -> String {
+    let failures = shell_quote(&inbox.join(FAILURES).display().to_string());
+    let inbox_quoted = shell_quote(&inbox.display().to_string());
+
     format!(
-        "{} download {} --output {}",
+        ": > {failures}; while IFS= read -r q; do [ -n \"$q\" ] || continue; \
+n=$(ls -1 {inbox_quoted} | wc -l); {} download \"$q\" --output {}; \
+[ \"$(ls -1 {inbox_quoted} | wc -l)\" -gt \"$n\" ] || printf '%s\\n' \"$q\" >> {failures}; \
+done < {}",
         shell_quote(&spotdl_binary()),
-        shell_quote(&list_path.display().to_string()),
         shell_quote(&format!(
             "{}/{{artists}} - {{title}}.{{output-ext}}",
             inbox.display()
-        ))
+        )),
+        shell_quote(&list_path.display().to_string())
     )
 }
 
 /// Boucle `yt-dlp`, qui ne dépend d'aucun accès à Spotify.
+///
+/// # Ce qu'elle reprend
+///
+/// Si la passe `spotdl` a laissé un `_echecs.txt`, c'est **lui** que l'on
+/// relit : refaire les morceaux déjà pris coûterait du temps et créerait des
+/// doublons. Sinon on reprend la liste entière — la commande reste utilisable
+/// seule, pour qui ne veut pas de `spotdl` du tout.
+///
+/// # Ce qu'elle écrit
 ///
 /// Le nom du fichier vient de la **requête**, pas du titre de la vidéo : les
 /// titres YouTube sont bruités (« [Clip Officiel] », « prod. by … ») alors que
@@ -217,12 +253,15 @@ fn spotdl_command(list_path: &std::path::Path, inbox: &std::path::Path) -> Strin
 /// Les barres obliques sont remplacées : un titre contenant « AC/DC » créerait
 /// sinon un dossier au milieu du chemin.
 fn ytdlp_command(list_path: &std::path::Path, inbox: &std::path::Path) -> String {
+    let failures = shell_quote(&inbox.join(FAILURES).display().to_string());
+
     format!(
-        "while IFS= read -r q; do [ -n \"$q\" ] && {} -x --audio-format mp3 \
---embed-thumbnail --add-metadata -o \"{}/${{q//\\//-}}.%(ext)s\" \"ytsearch1:$q\"; done < {}",
+        "L={failures}; [ -s \"$L\" ] || L={}; while IFS= read -r q; do [ -n \"$q\" ] && {} \
+-x --audio-format mp3 --embed-thumbnail --add-metadata -o \"{}/${{q//\\//-}}.%(ext)s\" \
+\"ytsearch1:$q\"; done < \"$L\"",
+        shell_quote(&list_path.display().to_string()),
         ytdlp_binary(),
-        inbox.display(),
-        shell_quote(&list_path.display().to_string())
+        inbox.display()
     )
 }
 
@@ -449,6 +488,12 @@ mod tests_commandes {
     use std::path::Path;
 
     #[test]
+    fn dump_temporaire() {
+        println!("SPOTDL>>>{}", spotdl_command(Path::new("/tmp/onzerbac/liste.txt"), Path::new("/tmp/onzerbac")));
+        println!("YTDLP>>>{}", ytdlp_command(Path::new("/tmp/onzerbac/liste.txt"), Path::new("/tmp/onzerbac")));
+    }
+
+    #[test]
     fn la_commande_spotdl_ne_passe_plus_par_xargs() {
         // `xargs -a` est une extension GNU : la version BSD de macOS répond
         // « invalid option -- a ». `spotdl` lit lui-même un fichier de
@@ -456,7 +501,38 @@ mod tests_commandes {
         let commande = spotdl_command(Path::new("/M/_Inbox/liste.txt"), Path::new("/M/_Inbox"));
 
         assert!(!commande.contains("xargs"), "{commande}");
-        assert!(commande.contains("download '/M/_Inbox/liste.txt'"), "{commande}");
+        assert!(commande.contains("< '/M/_Inbox/liste.txt'"), "{commande}");
+    }
+
+    #[test]
+    fn la_commande_spotdl_traite_une_requete_a_la_fois() {
+        // Mesuré : donné le fichier entier, `spotdl` s'arrête à la première
+        // requête sans résultat et abandonne toutes les suivantes. Une
+        // invocation par ligne isole la panne.
+        let commande = spotdl_command(Path::new("/M/_Inbox/liste.txt"), Path::new("/M/_Inbox"));
+
+        assert!(commande.contains("while IFS= read -r q"), "{commande}");
+        assert!(commande.contains("download \"$q\""), "{commande}");
+    }
+
+    #[test]
+    fn les_echecs_de_spotdl_sont_consignes() {
+        // `spotdl` sort avec le code 0 même quand il échoue — mesuré. Le seul
+        // témoin fiable est l'apparition d'un fichier dans le dossier.
+        let commande = spotdl_command(Path::new("/M/_Inbox/liste.txt"), Path::new("/M/_Inbox"));
+
+        assert!(commande.contains("wc -l"), "l'échec se constate au dossier, pas au code de sortie");
+        assert!(commande.contains(">> '/M/_Inbox/_echecs.txt'"), "{commande}");
+    }
+
+    #[test]
+    fn la_boucle_ytdlp_reprend_les_echecs_de_spotdl() {
+        // Refaire les morceaux déjà pris coûterait du temps et créerait des
+        // doublons ; mais la commande doit rester utilisable seule.
+        let commande = ytdlp_command(Path::new("/M/_Inbox/liste.txt"), Path::new("/M/_Inbox"));
+
+        assert!(commande.starts_with("L='/M/_Inbox/_echecs.txt'"), "{commande}");
+        assert!(commande.contains("[ -s \"$L\" ] || L='/M/_Inbox/liste.txt'"), "{commande}");
     }
 
     #[test]
@@ -467,7 +543,6 @@ mod tests_commandes {
 
         assert!(commande.contains("ytsearch1:$q"), "{commande}");
         assert!(commande.contains("${q//\\//-}"), "les barres obliques doivent être neutralisées");
-        assert!(commande.contains("< '/M/_Inbox/liste.txt'"), "{commande}");
     }
 
     #[test]

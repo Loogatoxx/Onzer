@@ -120,6 +120,31 @@ export interface ArtistSummary {
 }
 
 /** Miroir de `commands::collection::ArtworkProgress`. */
+/**
+ * Une fiche proposée par un catalogue, avant décision.
+ *
+ * `score` vient du tri fait côté Rust : la même règle pour les trois services,
+ * sans quoi comparer leurs confiances n'aurait aucun sens.
+ */
+export interface MetadataCandidate {
+  source: string;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  year: number | null;
+  /** Durée annoncée par le service. `0` quand elle manque. */
+  durationMs: number;
+  coverUrl: string | null;
+  previewUrl: string | null;
+  albumRef: string | null;
+  score: number;
+}
+
+export interface AlbumProgress {
+  missing: number;
+  running: boolean;
+}
+
 export interface ArtworkProgress {
   withArtwork: number;
   total: number;
@@ -682,6 +707,35 @@ export const ipc = {
 
   artworkProgress: (): Promise<ArtworkProgress> =>
     invoke<ArtworkProgress>("artwork_progress"),
+
+  /**
+   * Cherche l'identité d'un morceau dans plusieurs catalogues à la fois.
+   *
+   * Rien n'est écrit : c'est une proposition. Le réseau n'est sollicité qu'à
+   * cet appel, déclenché par un clic.
+   */
+  metadataCandidates: (trackId: number): Promise<MetadataCandidate[]> =>
+    invoke<MetadataCandidate[]>("metadata_candidates", { trackId }),
+
+  /** Applique la fiche retenue : tags du fichier, base et pochette. */
+  applyCandidate: (trackId: number, candidate: MetadataCandidate): Promise<void> =>
+    invoke<void>("apply_candidate", { trackId, candidate }),
+
+  /**
+   * Rapatrie la vignette d'une fiche sous forme de `data:` URI.
+   *
+   * La politique de sécurité du contenu interdit au webview d'aller chercher
+   * une image au-dehors — et c'est très bien ainsi. Les octets passent par le
+   * cœur Rust.
+   */
+  candidatePreview: (url: string): Promise<string | null> =>
+    invoke<string | null>("candidate_preview", { url }),
+
+  /** Combien de morceaux affichent encore un tiret à la place de leur album. */
+  missingAlbums: (): Promise<AlbumProgress> => invoke<AlbumProgress>("missing_albums"),
+
+  /** Complète les albums manquants. Retourne le nombre de morceaux à traiter. */
+  fillMissingAlbums: (): Promise<number> => invoke<number>("fill_missing_albums"),
 
   /** Va chercher les pochettes manquantes. Retourne le nombre à traiter. */
   fetchMissingArtwork: (): Promise<number> => invoke<number>("fetch_missing_artwork"),

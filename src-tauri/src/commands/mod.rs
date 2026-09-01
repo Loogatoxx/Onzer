@@ -11,6 +11,7 @@ pub mod collection;
 pub mod home;
 pub mod identify;
 pub mod library;
+pub mod metadata;
 pub mod playback;
 pub mod reco;
 pub mod stats;

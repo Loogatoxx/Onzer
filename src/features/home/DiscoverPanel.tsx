@@ -45,7 +45,7 @@ export function DiscoverPanel() {
   const [artists, setArtists] = useState<Suggestion[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   const [exported, setExported] = useState<ExportedList | null>(null);
 
   async function search() {
@@ -83,6 +83,12 @@ export function DiscoverPanel() {
    * même, et deux réponses différentes obligeraient à réapprendre deux fois la
    * même chose.
    */
+  function copy(text: string, key: string) {
+    void navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
   async function exportList() {
     if (tracks === null || tracks.length === 0) return;
 
@@ -153,16 +159,24 @@ export function DiscoverPanel() {
                 <span className="font-mono text-ink-faint">{exported.path}</span>
               </p>
 
+              {/* spotdl d'abord : quand son accès fonctionne, il apporte les
+                  métadonnées et la pochette d'un coup — il n'y a plus rien à
+                  rattraper derrière. */}
               <CommandBox
-                title="Tout récupérer d'un coup"
+                title="Tout récupérer, métadonnées comprises"
+                command={exported.spotdlCommand}
+                copied={copied === "spotdl"}
+                onCopy={() => copy(exported.spotdlCommand, "spotdl")}
+                note="spotdl tague les fichiers et récupère les pochettes lui-même. Quand son accès à Spotify fonctionne, c'est la voie la plus complète : il ne reste rien à rattraper."
+              />
+
+              <CommandBox
+                title="Repasser sur les manquants"
                 command={exported.command}
-                copied={copied}
-                onCopy={() => {
-                  void navigator.clipboard.writeText(exported.command);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
-                note="yt-dlp aspire le son brut : les fichiers arrivent nommés « Artiste - Titre.mp3 » dans ton dossier de dépôt, et Onzer les identifie et les range tout seul. Onzer ne lance pas cette commande — c'est ton outil, ton terminal, ta décision."
+                copied={copied === "ytdlp"}
+                onCopy={() => copy(exported.command, "ytdlp")}
+                note="yt-dlp aspire le son brut et ne dépend d'aucun accès à Spotify — à lancer pour ce que spotdl n'a pas pu récupérer. Les fichiers arrivent nommés « Artiste - Titre.mp3 » et Onzer les identifie ensuite tout seul."
+                quiet
               />
             </>
           )}

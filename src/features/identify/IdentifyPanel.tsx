@@ -53,7 +53,10 @@ export function IdentifyPanel() {
   if (status === null) return null;
 
   const { progress } = status;
-  const settled = progress.identified + progress.notFound + progress.failed;
+  // Les refusés comptent : ils ont bien été traités. Les oublier laissait la
+  // jauge inexplicablement figée — 550 sur 574 alors que plus rien n'attendait.
+  const settled =
+    progress.identified + progress.notFound + progress.rejected + progress.failed;
   const ratio = progress.total === 0 ? 0 : settled / progress.total;
   const running = status.configured && progress.pending > 0;
 
@@ -80,7 +83,7 @@ export function IdentifyPanel() {
             {status.configured
               ? `${settled}/${progress.total} traités${
                   progress.notFound > 0 ? ` · ${progress.notFound} introuvable(s)` : ""
-                }`
+                }${progress.rejected > 0 ? ` · ${progress.rejected} à vérifier` : ""}`
               : "Onzer reconnaît tes morceaux au son. Une clé gratuite suffit."}
           </p>
         </div>

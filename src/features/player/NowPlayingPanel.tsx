@@ -1,6 +1,7 @@
 import { Artwork } from "@/features/library/Artwork";
 import { Icon, IconButton } from "@/components/Icon";
 import { formatDuration, type QueueItem } from "@/lib/ipc";
+import { TrackNote } from "./TrackNote";
 import { useLyrics } from "./useLyrics";
 
 export type PanelTab = "lyrics" | "queue";
@@ -89,6 +90,8 @@ export function NowPlayingPanel(props: NowPlayingPanelProps) {
             onClick={() => props.onRadio(track.trackId)}
           />
         </div>
+
+        <TrackNote trackId={track.trackId} />
       </div>
 
       <div className="mt-4 flex shrink-0 gap-1 px-4">

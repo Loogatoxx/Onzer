@@ -25,8 +25,10 @@ pub struct PlaylistSummary {
     pub name: String,
     pub kind: String,
     pub track_count: i64,
-    /// Pochette du premier morceau, en guise de vignette.
+    /// Image choisie, ou à défaut la pochette du premier morceau.
     pub cover_hash: Option<String>,
+    /// Une phrase libre, écrite par l'utilisateur.
+    pub description: Option<String>,
     pub updated_at: i64,
 }
 
@@ -54,15 +56,18 @@ pub async fn create(pool: &SqlitePool, name: &str) -> Result<i64> {
 /// Liste les playlists, la plus récemment modifiée d'abord.
 pub async fn list(pool: &SqlitePool) -> Result<Vec<PlaylistSummary>> {
     let rows = sqlx::query_as::<_, PlaylistSummary>(
-        "SELECT p.id, p.name, p.kind, p.updated_at,
+        // `cover_path` d'abord : une image choisie à la main l'emporte
+        // toujours sur celle qu'Onzer aurait devinée.
+        "SELECT p.id, p.name, p.kind, p.updated_at, p.description,
                 (SELECT COUNT(*) FROM playlist_tracks pt WHERE pt.playlist_id = p.id)
                     AS track_count,
-                (SELECT al.artwork_hash
-                   FROM playlist_tracks pt
-                   JOIN tracks t   ON t.id = pt.track_id
-                   LEFT JOIN albums al ON al.id = t.album_id
-                  WHERE pt.playlist_id = p.id AND al.artwork_hash IS NOT NULL
-                  ORDER BY pt.position LIMIT 1) AS cover_hash
+                COALESCE(p.cover_path,
+                    (SELECT al.artwork_hash
+                       FROM playlist_tracks pt
+                       JOIN tracks t   ON t.id = pt.track_id
+                       LEFT JOIN albums al ON al.id = t.album_id
+                      WHERE pt.playlist_id = p.id AND al.artwork_hash IS NOT NULL
+                      ORDER BY pt.position LIMIT 1)) AS cover_hash
            FROM playlists p
           ORDER BY p.is_pinned DESC, p.updated_at DESC",
     )

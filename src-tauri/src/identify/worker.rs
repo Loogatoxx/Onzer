@@ -101,6 +101,12 @@ pub struct IdentificationProgress {
     pub pending: i64,
     /// Morceaux absents des bases publiques. Ce n'est pas un échec.
     pub not_found: i64,
+    /// Correspondances trouvées mais refusées par la corroboration.
+    ///
+    /// Oubliés du décompte lors de leur introduction, ils rendaient la jauge
+    /// **inexplicablement figée** : 550 sur 574 alors que plus rien n'était en
+    /// attente. Un état qui existe doit être compté quelque part.
+    pub rejected: i64,
     pub failed: i64,
     pub total: i64,
 }
@@ -112,12 +118,13 @@ impl IdentificationProgress {
 }
 
 pub async fn progress(pool: &SqlitePool) -> Result<IdentificationProgress> {
-    let row: (i64, i64, i64, i64, i64) = sqlx::query_as(
+    let row: (i64, i64, i64, i64, i64, i64) = sqlx::query_as(
         "SELECT
              COUNT(*),
              SUM(CASE WHEN identification_state = 'done'      THEN 1 ELSE 0 END),
              SUM(CASE WHEN identification_state = 'pending'   THEN 1 ELSE 0 END),
              SUM(CASE WHEN identification_state = 'not_found' THEN 1 ELSE 0 END),
+             SUM(CASE WHEN identification_state = 'rejected'  THEN 1 ELSE 0 END),
              SUM(CASE WHEN identification_state = 'failed'    THEN 1 ELSE 0 END)
          FROM tracks WHERE deleted_at IS NULL",
     )
@@ -129,7 +136,8 @@ pub async fn progress(pool: &SqlitePool) -> Result<IdentificationProgress> {
         identified: row.1,
         pending: row.2,
         not_found: row.3,
-        failed: row.4,
+        rejected: row.4,
+        failed: row.5,
     })
 }
 

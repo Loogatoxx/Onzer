@@ -273,6 +273,11 @@ pub fn run() {
             commands::collection::suspect_tracks,
             commands::collection::restore_original_tags,
             commands::collection::correct_track,
+            commands::collection::set_playlist_cover,
+            commands::collection::clear_playlist_cover,
+            commands::collection::set_playlist_description,
+            commands::collection::track_note,
+            commands::collection::set_track_note,
         ])
         .run(tauri::generate_context!())
         .expect("échec au lancement d'Onzer");

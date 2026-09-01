@@ -411,6 +411,7 @@ pub async fn export_queries(
 
     Ok(ExportedList {
         command: ytdlp_command(&list_path, &inbox),
+        spotdl_command: spotdl_command(&list_path, &inbox),
         path: list_path.display().to_string(),
         count: queries.len(),
     })
@@ -422,7 +423,11 @@ pub async fn export_queries(
 pub struct ExportedList {
     pub path: String,
     pub count: usize,
+    /// Boucle `yt-dlp` : ne dépend d'aucun accès à Spotify.
     pub command: String,
+    /// Variante `spotdl` : tague et récupère la pochette d'elle-même, quand son
+    /// accès à Spotify fonctionne.
+    pub spotdl_command: String,
 }
 
 #[cfg(test)]

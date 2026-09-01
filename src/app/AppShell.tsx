@@ -666,6 +666,27 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
                   })
                   .catch((cause: unknown) => setError(String(cause)));
               }}
+              onPickPlaylistCover={async (id) => {
+                const chosen = await open({
+                  multiple: false,
+                  title: "Choisir une image de playlist",
+                  filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp"] }],
+                });
+                if (typeof chosen !== "string") return;
+
+                try {
+                  await ipc.setPlaylistCover(id, chosen);
+                  reloadPlaylists();
+                } catch (cause) {
+                  setError(String(cause));
+                }
+              }}
+              onPlaylistDescription={(id, text) => {
+                void ipc
+                  .setPlaylistDescription(id, text)
+                  .then(reloadPlaylists)
+                  .catch((cause: unknown) => setError(String(cause)));
+              }}
               onDeletePlaylist={(id) => {
                 void ipc
                   .deletePlaylist(id)
@@ -774,6 +795,8 @@ interface PageProps {
   onGenerated: (playlist: GeneratedPlaylist) => void;
   onError: (message: string) => void;
   onRenamePlaylist: (id: number, name: string) => void;
+  onPickPlaylistCover: (id: number) => Promise<void>;
+  onPlaylistDescription: (id: number, description: string) => void;
   onDeletePlaylist: (id: number) => void;
   children: React.ReactNode;
 }
@@ -931,6 +954,9 @@ function Page(props: PageProps) {
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           onRename={(name) => props.onRenamePlaylist(route.id, name)}
+          onPickCover={() => void props.onPickPlaylistCover(route.id)}
+          description={summary?.description ?? null}
+          onDescription={(text) => props.onPlaylistDescription(route.id, text)}
           extra={<DeleteButton onConfirm={() => props.onDeletePlaylist(route.id)} />}
         />
         {props.children}

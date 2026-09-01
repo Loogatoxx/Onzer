@@ -73,7 +73,10 @@ export interface MediaKeysStatus {
 export interface ExportedList {
   path: string;
   count: number;
+  /** Boucle `yt-dlp` : ne dépend d'aucun accès à Spotify. */
   command: string;
+  /** Variante `spotdl` : tague et récupère la pochette d'elle-même. */
+  spotdlCommand: string;
 }
 
 /** Miroir de `commands::sync::PlaylistComparison`. */
@@ -201,7 +204,10 @@ export interface PlaylistSummary {
   name: string;
   kind: string;
   trackCount: number;
+  /** Image choisie, ou à défaut la pochette du premier morceau. */
   coverHash: string | null;
+  /** Une phrase libre, écrite par l'utilisateur. */
+  description: string | null;
   updatedAt: number;
 }
 
@@ -332,6 +338,8 @@ export interface IdentificationProgress {
   pending: number;
   /** Morceaux absents des bases publiques. Ce n'est pas un échec. */
   notFound: number;
+  /** Correspondances trouvées mais refusées par la corroboration. */
+  rejected: number;
   failed: number;
   total: number;
 }
@@ -684,6 +692,22 @@ export const ipc = {
    * Les paroles sont effacées au passage : elles appartenaient à l'ancien
    * titre, et les garder ferait afficher celles d'un autre morceau.
    */
+  setPlaylistCover: (playlistId: number, sourcePath: string): Promise<void> =>
+    invoke<void>("set_playlist_cover", { playlistId, sourcePath }),
+
+  clearPlaylistCover: (playlistId: number): Promise<void> =>
+    invoke<void>("clear_playlist_cover", { playlistId }),
+
+  setPlaylistDescription: (playlistId: number, description: string): Promise<void> =>
+    invoke<void>("set_playlist_description", { playlistId, description }),
+
+  /** Note personnelle attachée à un morceau. Reste en base, jamais dans le fichier. */
+  trackNote: (trackId: number): Promise<string | null> =>
+    invoke<string | null>("track_note", { trackId }),
+
+  setTrackNote: (trackId: number, note: string): Promise<void> =>
+    invoke<void>("set_track_note", { trackId, note }),
+
   correctTrack: (
     trackId: number,
     title: string,

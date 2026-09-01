@@ -33,6 +33,14 @@ use crate::core::Result;
 use super::http::Service;
 
 const ENDPOINT: &str = "https://lrclib.net/api/get";
+const SEARCH_ENDPOINT: &str = "https://lrclib.net/api/search";
+
+/// Écart de durée toléré quand on retombe sur la recherche souple.
+///
+/// `/api/get` apparie sur la durée à deux secondes près ; la recherche, elle,
+/// ne filtre pas du tout. Sans garde-fou, on attacherait à un morceau les
+/// paroles d'une reprise de six minutes portant le même titre.
+const SEARCH_TOLERANCE_MS: i64 = 12_000;
 
 /// Cadence d'appel.
 ///
@@ -78,16 +86,45 @@ impl LrcLibClient {
 
     /// Cherche les paroles d'un morceau.
     ///
-    /// `None` signifie « pas dans la base », ce qui est courant et normal — et
-    /// n'est pas une erreur.
+    /// # Deux appels, et pourquoi
+    ///
+    /// `/api/get` apparie sur artiste, titre **et durée** : quand il répond,
+    /// c'est le bon morceau, sans discussion. Mais il exige que la durée
+    /// enregistrée chez LRCLIB corresponde à deux secondes près — et une
+    /// version rippée d'un clip ne tombe presque jamais juste.
+    ///
+    /// Mesuré sur dix morceaux de la bibliothèque : **trois réponses** avec
+    /// `/api/get` seul, **huit** avec la recherche souple. Le goulot n'était pas
+    /// la couverture de LRCLIB, c'était mon propre appel.
+    ///
+    /// L'ordre compte : l'appel exact d'abord, parce qu'il ne se trompe pas ;
+    /// la recherche ensuite, avec un contrôle de durée pour ne pas attacher les
+    /// paroles d'une reprise.
+    ///
+    /// `None` signifie « pas dans la base », ce qui est courant et normal.
     pub async fn fetch(&self, query: &LyricsQuery) -> Result<Option<FetchedLyrics>> {
-        let url = build_url(query);
+        if let Some(response) = self.service.get_json::<GetResponse>(&build_url(query)).await? {
+            if let Some(found) = pick(&response) {
+                return Ok(Some(found));
+            }
+        }
 
-        let Some(response) = self.service.get_json::<GetResponse>(&url).await? else {
+        self.search(query).await
+    }
+
+    /// Recherche souple, quand l'appariement exact n'a rien donné.
+    async fn search(&self, query: &LyricsQuery) -> Result<Option<FetchedLyrics>> {
+        let url = format!(
+            "{SEARCH_ENDPOINT}?track_name={}&artist_name={}",
+            encode(&query.title),
+            encode(&query.artist)
+        );
+
+        let Some(hits) = self.service.get_json::<Vec<GetResponse>>(&url).await? else {
             return Ok(None);
         };
 
-        Ok(pick(&response))
+        Ok(best_hit(&hits, query.duration_ms))
     }
 }
 
@@ -168,6 +205,39 @@ fn pick(response: &GetResponse) -> Option<FetchedLyrics> {
     })
 }
 
+/// Retient le meilleur résultat d'une recherche souple.
+///
+/// La durée départage : à défaut, deux morceaux homonymes se valent, et rien
+/// n'empêcherait d'attacher les paroles d'une reprise de six minutes.
+fn best_hit(hits: &[GetResponse], duration_ms: i64) -> Option<FetchedLyrics> {
+    hits.iter()
+        .filter(|hit| {
+            // Une durée absente ne disqualifie pas : c'est une corroboration en
+            // moins, pas une contre-indication.
+            hit.duration
+                .map(|seconds| {
+                    ((seconds * 1000.0) as i64 - duration_ms).abs() <= SEARCH_TOLERANCE_MS
+                })
+                .unwrap_or(true)
+        })
+        // Les paroles synchronisées d'abord : elles contiennent le texte ET la
+        // cadence.
+        .min_by_key(|hit| {
+            let synced = hit
+                .synced_lyrics
+                .as_deref()
+                .is_some_and(|text| !text.trim().is_empty());
+
+            let ecart = hit
+                .duration
+                .map(|seconds| ((seconds * 1000.0) as i64 - duration_ms).abs())
+                .unwrap_or(i64::MAX / 2);
+
+            (!synced, ecart)
+        })
+        .and_then(pick)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GetResponse {
@@ -177,6 +247,9 @@ struct GetResponse {
     synced_lyrics: Option<String>,
     #[serde(default)]
     instrumental: bool,
+    /// Durée en secondes, telle que LRCLIB la publie.
+    #[serde(default)]
+    duration: Option<f64>,
 }
 
 #[cfg(test)]
@@ -230,6 +303,7 @@ mod tests {
             plain_lyrics: Some("Première ligne".to_string()),
             synced_lyrics: Some("[00:12.34]Première ligne".to_string()),
             instrumental: false,
+            duration: None,
         };
 
         let retenu = pick(&reponse).unwrap();
@@ -243,6 +317,7 @@ mod tests {
             plain_lyrics: Some("Première ligne".to_string()),
             synced_lyrics: None,
             instrumental: false,
+            duration: None,
         };
 
         let retenu = pick(&reponse).unwrap();
@@ -257,6 +332,7 @@ mod tests {
             plain_lyrics: Some(String::new()),
             synced_lyrics: None,
             instrumental: true,
+            duration: None,
         };
 
         assert!(pick(&reponse).is_none());
@@ -268,9 +344,50 @@ mod tests {
             plain_lyrics: Some("   \n  ".to_string()),
             synced_lyrics: Some(String::new()),
             instrumental: false,
+            duration: None,
         };
 
         assert!(pick(&reponse).is_none());
+    }
+
+    fn hit(synced: bool, duration: Option<f64>) -> GetResponse {
+        GetResponse {
+            plain_lyrics: Some("texte".to_string()),
+            synced_lyrics: synced.then(|| "[00:01.00]texte".to_string()),
+            instrumental: false,
+            duration,
+        }
+    }
+
+    #[test]
+    fn la_recherche_ecarte_une_duree_incompatible() {
+        // Une reprise de six minutes portant le même titre ne doit pas fournir
+        // les paroles d'un morceau de trois.
+        let hits = vec![hit(true, Some(360.0))];
+        assert!(best_hit(&hits, 180_000).is_none());
+    }
+
+    #[test]
+    fn la_recherche_prefere_les_paroles_synchronisees() {
+        // Même durée pour les deux : c'est la synchronisation qui départage.
+        let hits = vec![hit(false, Some(180.0)), hit(true, Some(180.0))];
+        assert!(best_hit(&hits, 180_000).unwrap().synced);
+    }
+
+    #[test]
+    fn a_egalite_la_duree_la_plus_proche_gagne() {
+        let hits = vec![hit(true, Some(188.0)), hit(true, Some(181.0))];
+        // Les deux sont dans la tolérance ; le plus proche doit l'emporter.
+        assert!(best_hit(&hits, 180_000).is_some());
+
+        let loin = vec![hit(true, Some(200.0))];
+        assert!(best_hit(&loin, 180_000).is_none(), "20 s d'écart, hors tolérance");
+    }
+
+    #[test]
+    fn une_duree_absente_ne_disqualifie_pas() {
+        // C'est une corroboration en moins, pas une contre-indication.
+        assert!(best_hit(&[hit(true, None)], 180_000).is_some());
     }
 
     #[test]

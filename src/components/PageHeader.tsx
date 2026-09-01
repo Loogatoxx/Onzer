@@ -21,6 +21,11 @@ interface PageHeaderProps {
   onRename?: (name: string) => void;
   /** Boutons additionnels, placés après les commandes de lecture. */
   extra?: React.ReactNode;
+  /** Quand il est fourni, la pochette devient remplaçable au clic. */
+  onPickCover?: () => void;
+  /** Quand elle est fournie, la ligne de description devient modifiable. */
+  description?: string | null;
+  onDescription?: (description: string) => void;
 }
 
 /**
@@ -47,8 +52,12 @@ export function PageHeader({
   onShuffle,
   onRename,
   extra,
+  onPickCover,
+  description,
+  onDescription,
 }: PageHeaderProps) {
   const [draft, setDraft] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   function commit() {
     const name = draft?.trim() ?? "";
@@ -59,8 +68,21 @@ export function PageHeader({
   return (
     <header className="relative bg-gradient-to-b from-elevated/70 to-transparent px-6 pb-4 pt-6">
       <div className="flex items-end gap-6">
-        <div className="shrink-0 overflow-hidden rounded-lg shadow-2xl shadow-black/50">
+        <div className="group relative shrink-0 overflow-hidden rounded-lg shadow-2xl shadow-black/50">
           {cover}
+
+          {/* La pochette ne se remplace que là où elle appartient à
+              l'utilisateur : une playlist. Un album garde la sienne. */}
+          {onPickCover !== undefined && (
+            <button
+              type="button"
+              onClick={onPickCover}
+              className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-base/70 text-ink opacity-0 transition-opacity hover:opacity-100"
+            >
+              <Icon name="pencil" size={22} />
+              <span className="text-[12px] font-semibold">Changer l'image</span>
+            </button>
+          )}
         </div>
 
         <div className="min-w-0 flex-1 pb-2">
@@ -93,6 +115,39 @@ export function PageHeader({
               className="display-xl mt-2 w-full rounded-md bg-elevated px-2 text-[clamp(2rem,5.5vw,4.25rem)] text-ink outline-none"
             />
           )}
+
+          {onDescription !== undefined &&
+            (note === null ? (
+              <button
+                type="button"
+                onClick={() => setNote(description ?? "")}
+                className={`mt-3 block max-w-xl text-left text-[13px] leading-relaxed transition-colors hover:text-ink ${
+                  description == null || description === ""
+                    ? "text-ink-faint"
+                    : "text-ink-muted"
+                }`}
+              >
+                {description == null || description === ""
+                  ? "Ajouter une description"
+                  : description}
+              </button>
+            ) : (
+              <input
+                autoFocus
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                onBlur={() => {
+                  onDescription(note);
+                  setNote(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                  if (event.key === "Escape") setNote(null);
+                }}
+                placeholder="Une phrase pour t'en souvenir"
+                className="mt-3 w-full max-w-xl rounded-md bg-elevated px-2 py-1 text-[13px] text-ink placeholder:text-ink-faint focus:outline-none"
+              />
+            ))}
 
           <p className="mt-4 flex flex-wrap items-center gap-x-2 text-[13px] text-ink-muted">
             {meta}

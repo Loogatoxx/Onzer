@@ -568,12 +568,13 @@ pub async fn fetch_missing_artwork(state: State<'_, AppState>) -> Result<i64> {
         ));
     }
 
-    let pending: Vec<(i64, String, Option<String>)> = sqlx::query_as(
+    let pending: Vec<(i64, String, Option<String>, i64)> = sqlx::query_as(
         "SELECT t.id, t.title,
                 (SELECT a.name FROM track_artists ta
                    JOIN artists a ON a.id = ta.artist_id
                   WHERE ta.track_id = t.id AND ta.role = 'main'
-                  ORDER BY ta.position LIMIT 1)
+                  ORDER BY ta.position LIMIT 1),
+                t.duration_ms
            FROM tracks t
       LEFT JOIN albums al ON al.id = t.album_id
           WHERE t.deleted_at IS NULL
@@ -591,40 +592,65 @@ pub async fn fetch_missing_artwork(state: State<'_, AppState>) -> Result<i64> {
         let clients = (
             crate::identify::musicbrainz::MusicBrainzClient::new(),
             crate::identify::coverart::CoverArtClient::new(),
+            crate::identify::deezer::DeezerClient::new(),
         );
 
-        let (Ok(musicbrainz), Ok(cover_art)) = clients else {
+        let (Ok(musicbrainz), Ok(cover_art), Ok(deezer)) = clients else {
             ARTWORK_RUNNING.store(false, Ordering::SeqCst);
             return;
         };
 
-        for (track_id, title, artist) in pending {
-            let Ok(hits) = musicbrainz.search(artist.as_deref(), &title).await else {
-                break; // service en difficulté : inutile d'insister
-            };
+        for (track_id, title, artist, duration_ms) in pending {
+            // ── D'abord MusicBrainz et la Cover Art Archive ──────────────
+            //
+            // Elles apportent aussi l'album et l'année, pas seulement l'image :
+            // quand elles répondent, on en tire plus.
+            let mut attached = false;
 
-            let Some(hit) = hits.into_iter().next() else {
+            if let Ok(hits) = musicbrainz.search(artist.as_deref(), &title).await {
+                if let Some(hit) = hits.into_iter().next() {
+                    if let Ok(Some(metadata)) = musicbrainz.lookup(&hit.recording_mbid).await {
+                        let cover = cover_art
+                            .fetch_front(
+                                metadata.release_mbid.as_deref(),
+                                metadata.release_group_mbid.as_deref(),
+                            )
+                            .await
+                            .unwrap_or(None);
+
+                        if let Some(bytes) = cover {
+                            let resolver = paths.read().await.clone();
+                            match attach_artwork(&pool, &resolver, track_id, &metadata, &bytes)
+                                .await
+                            {
+                                Ok(()) => attached = true,
+                                Err(error) => {
+                                    tracing::warn!(track_id, %error, "pochette non attachée");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if attached {
+                continue;
+            }
+
+            // ── Puis Deezer ─────────────────────────────────────────────
+            //
+            // La Cover Art Archive est alimentée par des bénévoles : excellente
+            // sur les catalogues anciens, lacunaire ailleurs. Le catalogue d'un
+            // service commercial est complet par construction — mesuré sur huit
+            // morceaux sans pochette, Deezer en a trouvé huit.
+            let Ok(Some(bytes)) = deezer.cover(artist.as_deref(), &title, duration_ms).await
+            else {
                 continue;
             };
-
-            let Ok(Some(metadata)) = musicbrainz.lookup(&hit.recording_mbid).await else {
-                continue;
-            };
-
-            let cover = cover_art
-                .fetch_front(
-                    metadata.release_mbid.as_deref(),
-                    metadata.release_group_mbid.as_deref(),
-                )
-                .await
-                .unwrap_or(None);
-
-            let Some(bytes) = cover else { continue };
 
             let resolver = paths.read().await.clone();
-            if let Err(error) = attach_artwork(&pool, &resolver, track_id, &metadata, &bytes).await
-            {
-                tracing::warn!(track_id, %error, "pochette non attachée");
+            if let Err(error) = attach_cover_only(&pool, &resolver, track_id, &bytes).await {
+                tracing::warn!(track_id, %error, "pochette Deezer non attachée");
             }
         }
 
@@ -632,6 +658,22 @@ pub async fn fetch_missing_artwork(state: State<'_, AppState>) -> Result<i64> {
     });
 
     Ok(total)
+}
+
+/// Attache une pochette seule, sans métadonnées d'album.
+///
+/// Deezer ne nous apprend rien sur l'album qu'on voudrait écrire — et ce n'est
+/// pas ce qu'on répare ici. Quand le morceau n'a pas d'album, l'image reste
+/// donc sans support : mieux vaut cela qu'inventer un album pour la porter.
+async fn attach_cover_only(
+    pool: &sqlx::SqlitePool,
+    paths: &crate::core::PathResolver,
+    track_id: i64,
+    bytes: &[u8],
+) -> Result<()> {
+    let hash = crate::library::artwork::store(&paths.artwork_dir(), bytes)?;
+
+    crate::db::repository::attach_artwork(pool, track_id, &hash, None, None, None).await
 }
 
 /// Range une pochette et la rattache au morceau.
@@ -735,6 +777,107 @@ pub async fn correct_track(
 
     // Les paroles appartenaient à l'ancien titre.
     sqlx::query("UPDATE tracks SET lyrics = NULL WHERE id = ?")
+        .bind(track_id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(())
+}
+
+// ── Personnalisation ────────────────────────────────────────────────────────
+
+/// Donne une image à une playlist.
+///
+/// # Pourquoi copier le fichier
+///
+/// Pointer vers l'image d'origine ferait dépendre la playlist d'un fichier que
+/// l'utilisateur peut déplacer, renommer ou jeter — et la pochette
+/// disparaîtrait sans explication. L'image est donc rangée dans le cache
+/// d'Onzer, à côté des autres pochettes, sous son empreinte.
+#[tauri::command]
+pub async fn set_playlist_cover(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    source_path: String,
+) -> Result<()> {
+    let bytes = tokio::fs::read(&source_path)
+        .await
+        .map_err(|error| OnzerError::Invalid(format!("image illisible : {error}")))?;
+
+    let paths = state.paths.read().await.clone();
+    let hash = crate::library::artwork::store(&paths.artwork_dir(), &bytes)?;
+
+    sqlx::query("UPDATE playlists SET cover_path = ?, updated_at = ? WHERE id = ?")
+        .bind(&hash)
+        .bind(crate::core::now_ms())
+        .bind(playlist_id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(())
+}
+
+/// Retire l'image choisie : la playlist revient à la mosaïque de ses morceaux.
+#[tauri::command]
+pub async fn clear_playlist_cover(state: State<'_, AppState>, playlist_id: i64) -> Result<()> {
+    sqlx::query("UPDATE playlists SET cover_path = NULL, updated_at = ? WHERE id = ?")
+        .bind(crate::core::now_ms())
+        .bind(playlist_id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(())
+}
+
+/// Décrit une playlist en une phrase.
+#[tauri::command]
+pub async fn set_playlist_description(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    description: String,
+) -> Result<()> {
+    let description = description.trim();
+
+    sqlx::query("UPDATE playlists SET description = ?, updated_at = ? WHERE id = ?")
+        .bind((!description.is_empty()).then_some(description))
+        .bind(crate::core::now_ms())
+        .bind(playlist_id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(())
+}
+
+/// Note personnelle attachée à un morceau.
+#[tauri::command]
+pub async fn track_note(state: State<'_, AppState>, track_id: i64) -> Result<Option<String>> {
+    let note: Option<String> = sqlx::query_scalar("SELECT note FROM tracks WHERE id = ?")
+        .bind(track_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .flatten();
+
+    Ok(note.filter(|value| !value.trim().is_empty()))
+}
+
+/// Écrit une note personnelle.
+///
+/// # Pourquoi elle ne va pas dans le fichier
+///
+/// Contrairement aux paroles, une note ne décrit pas le morceau : elle décrit
+/// **ce qu'il représente pour toi**. L'écrire dans les tags la ferait voyager
+/// avec le fichier, jusque chez quelqu'un d'autre, ce qui n'est pas ce qu'on
+/// veut d'un souvenir. Elle reste dans la base.
+#[tauri::command]
+pub async fn set_track_note(
+    state: State<'_, AppState>,
+    track_id: i64,
+    note: String,
+) -> Result<()> {
+    let note = note.trim();
+
+    sqlx::query("UPDATE tracks SET note = ? WHERE id = ?")
+        .bind((!note.is_empty()).then_some(note))
         .bind(track_id)
         .execute(&state.pool)
         .await?;

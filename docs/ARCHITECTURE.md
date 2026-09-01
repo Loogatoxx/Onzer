@@ -1224,6 +1224,96 @@ s'apprend pas au moment où l'on en a besoin — à ce moment-là, on a déjà p
 
 ---
 
+## ADR-042 — Un état qui existe doit être compté quelque part
+
+**Contexte.** L'identification semblait **bloquée à 550 sur 574**. Rien ne progressait plus,
+aucune erreur n'apparaissait, et la file d'attente était vide.
+
+**Le diagnostic.** Rien n'était bloqué. Le décompte réel : 299 identifiés, 251 introuvables,
+**24 rejetés** — 574 au total. L'état `rejected`, introduit avec la corroboration
+(ADR-034), n'avait jamais été ajouté à la requête de progression. Les morceaux qu'il capturait
+disparaissaient donc du total affiché : ni en attente, ni terminés, nulle part.
+
+**Décision.** `IdentificationProgress` porte désormais un champ `rejected`, et la jauge
+affiche « · N à vérifier ». La règle qui en découle vaut au-delà de ce cas : **tout état
+d'une machine à états doit apparaître dans le décompte qui la résume**, sans quoi la somme
+ment et l'utilisateur conclut à un blocage. Un test vérifie que les états se totalisent.
+
+---
+
+## ADR-043 — Une correspondance exacte n'est pas une correspondance trouvée
+
+**Contexte.** Les paroles étaient rarement récupérées. Le soupçon initial visait LRCLIB.
+
+**La mesure.** Sur dix morceaux de la bibliothèque, `/api/get` — la route à correspondance
+stricte — en trouvait **trois**. La route `/api/search`, sur les dix mêmes, en trouvait
+**huit**. Le défaut n'était pas dans le service : il était dans mon appel, qui exigeait une
+égalité de durée à la seconde près, alors que la même chanson diffère de deux secondes selon
+l'encodage.
+
+**Décision.** `fetch()` tente `/api/get`, puis **retombe sur `/api/search`**. La tolérance de
+douze secondes remplace l'égalité stricte, et parmi les résultats acceptables, les paroles
+synchronisées passent devant les autres. Le garde-fou demeure : une durée trop éloignée est
+refusée, car des paroles fausses sont pires que pas de paroles (ADR-033).
+
+---
+
+## ADR-044 — Une archive bénévole ne remplace pas un catalogue
+
+**Contexte.** 165 morceaux sur 574 restaient sans pochette après le passage MusicBrainz →
+Cover Art Archive.
+
+**La mesure.** La Cover Art Archive est alimentée à la main, œuvre par œuvre : excellente sur
+les catalogues anciens, lacunaire ailleurs. Sur huit morceaux tirés au hasard parmi les
+manquants, **Deezer en a trouvé huit**. iTunes, testé en parallèle, rendait « Polokus » pour
+« Damso — Macarena » : sa recherche mélange les champs, celle de Deezer les respecte
+(`artist:"…" track:"…"`).
+
+**Décision.** MusicBrainz reste **en premier** — il apporte l'album et l'année en plus de
+l'image, donc davantage de savoir. Deezer intervient **en second**, uniquement pour l'image,
+et sous le même contrôle de durée que partout ailleurs : quinze secondes d'écart maximum,
+sans quoi c'est une reprise et l'image serait fausse. L'appel est anonyme, sans clé ni compte.
+
+---
+
+## ADR-045 — Les deux commandes, toujours, sans avoir à demander
+
+**Contexte.** Onzer sait nommer ce qui manque — les morceaux d'une playlist comparée
+(ADR-038) comme les recommandations. Il proposait jusqu'ici une seule commande, `yt-dlp`.
+
+**Le constat de l'utilisateur.** `spotdl` rend directement les métadonnées correctes et la
+pochette ; `yt-dlp` rend le son brut mais ne dépend d'aucun accès à Spotify — celui-ci
+tombant régulièrement (ADR-036). Les deux ne se remplacent pas : **ils s'enchaînent**.
+
+**Décision.** Les deux commandes sont générées **partout où une liste est produite**, dans
+cet ordre : `spotdl` d'abord, puisqu'il ne laisse rien à rattraper quand il fonctionne ;
+`yt-dlp` ensuite, pour repasser sur ce que le premier n'a pas obtenu. La syntaxe est celle de
+macOS, vérifiée (ADR-039). Onzer n'exécute ni l'une ni l'autre : il les met en forme,
+l'utilisateur décide.
+
+---
+
+## ADR-046 — La personnalisation ne doit pas contaminer les données
+
+**Contexte.** Une bibliothèque qu'on ne peut pas marquer de sa main reste un inventaire.
+Manquaient : une image de playlist, une description, et un endroit à soi.
+
+**Décision.** Trois ajouts, séparés par nature :
+
+| Ajout | Où il vit | Ce qu'il touche |
+|---|---|---|
+| Image de playlist | `playlists.cover_path` | Prime sur la mosaïque déduite, ne modifie aucun fichier |
+| Description | `playlists.description` | Idem |
+| **Note personnelle** sur un morceau | `tracks.note` (migration 0005) | Rien d'autre |
+
+La note est la trouvaille assumée : un souvenir attaché à une chanson — où on l'a entendue,
+à qui elle fait penser. Elle n'est **jamais** écrite dans les tags du fichier, **jamais**
+transmise au moteur de recommandation, **jamais** comptée dans les statistiques. Une note qui
+influencerait ce qu'Onzer propose cesserait d'être un espace libre : on se mettrait à écrire
+pour la machine. Elle reste dans la base, à l'utilisateur seul.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

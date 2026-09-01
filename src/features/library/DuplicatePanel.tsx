@@ -18,7 +18,18 @@ import { formatDuration, ipc, type NearDuplicate } from "@/lib/ipc";
  * la durée, l'album, et le nombre d'écoutes — c'est presque toujours celui
  * qu'on a écouté qu'on garde.
  */
-export function DuplicatePanel({ onRemoved }: { onRemoved: () => void }) {
+export function DuplicatePanel({
+  onRemoved,
+  onPlay,
+  currentTrackId,
+  isPlaying,
+}: {
+  onRemoved: () => void;
+  /** Écoute un morceau seul, pour trancher à l'oreille. */
+  onPlay: (trackId: number) => void;
+  currentTrackId: number | null;
+  isPlaying: boolean;
+}) {
   const [rows, setRows] = useState<NearDuplicate[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
@@ -41,6 +52,22 @@ export function DuplicatePanel({ onRemoved }: { onRemoved: () => void }) {
     const last = groups[groups.length - 1];
     if (last !== undefined && last[0]?.groupKey === row.groupKey) last.push(row);
     else groups.push([row]);
+  }
+
+  /**
+   * Écarte un groupe déclaré légitime.
+   *
+   * Deux morceaux peuvent porter le même titre et durer presque pareil sans
+   * avoir de rapport — une reprise, deux interludes homonymes. Sans ce bouton,
+   * le panneau redemanderait éternellement.
+   */
+  async function dismiss(groupKey: string) {
+    try {
+      await ipc.ignoreDuplicateGroup(groupKey);
+      setRows((previous) => previous.filter((row) => row.groupKey !== groupKey));
+    } catch (cause) {
+      setError(String(cause));
+    }
   }
 
   async function remove(trackId: number) {
@@ -88,16 +115,47 @@ export function DuplicatePanel({ onRemoved }: { onRemoved: () => void }) {
         <div className="mt-2 space-y-3 border-t border-line pt-2">
           {groups.map((group) => (
             <div key={group[0]?.groupKey ?? ""}>
-              <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                {group[0]?.title}
-              </p>
+              <div className="flex items-center justify-between gap-3 px-1">
+                <p className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  {group[0]?.title}
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => void dismiss(group[0]?.groupKey ?? "")}
+                  className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] text-ink-faint transition-colors hover:bg-raised hover:text-ink"
+                >
+                  Ce ne sont pas des doublons
+                </button>
+              </div>
 
               <ul className="mt-1">
                 {group.map((row) => (
                   <li
                     key={row.id}
-                    className="flex items-center gap-3 rounded-lg px-1 py-1.5"
+                    className="group flex items-center gap-3 rounded-lg px-1 py-1.5 transition-colors hover:bg-raised/40"
                   >
+                    {/* Écouter est le seul moyen de trancher entre un clip et
+                        sa version album : la durée n'y suffit pas. */}
+                    <button
+                      type="button"
+                      title={`Écouter ${row.title}`}
+                      aria-label={`Écouter ${row.title}`}
+                      onClick={() => onPlay(row.id)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-raised text-ink-muted transition-colors hover:bg-ink hover:text-base"
+                    >
+                      <span
+                        className={
+                          currentTrackId === row.id && isPlaying ? "" : "translate-x-[1px]"
+                        }
+                      >
+                        <Icon
+                          name={currentTrackId === row.id && isPlaying ? "pause" : "play"}
+                          size={12}
+                        />
+                      </span>
+                    </button>
+
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[12px] text-ink">
                         {row.album ?? "Sans album"}

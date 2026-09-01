@@ -51,13 +51,15 @@ export interface TrackSummary {
   hasLyrics: boolean;
 }
 
-/** Miroir de `identify::spotify::SpotifyTrack`. */
-export interface SpotifyTrack {
+/** Miroir de `identify::spotdl::PlaylistTrack`. */
+export interface PlaylistTrack {
   title: string;
   artists: string[];
   album: string | null;
   durationMs: number;
   url: string;
+  /** « Artiste - Titre », prêt pour un téléchargeur externe. */
+  query: string;
 }
 
 /** Miroir de `commands::sync::PlaylistComparison`. */
@@ -65,17 +67,9 @@ export interface PlaylistComparison {
   playlistName: string;
   total: number;
   present: number;
-  missing: SpotifyTrack[];
+  missing: PlaylistTrack[];
   /** Commande prête à coller dans un terminal. */
   command: string;
-  listPath: string | null;
-}
-
-/** Miroir de `commands::sync::SpotifyStatus`. */
-export interface SpotifyStatus {
-  configured: boolean;
-  /** Aperçu masqué, du genre `a1b2••••••`. Le secret ne revient jamais. */
-  idHint: string | null;
 }
 
 /** Miroir de `commands::library::NearDuplicate`. */
@@ -124,6 +118,15 @@ export interface Suggestion {
   /** « Parce que tu écoutes Damso et Népal ». */
   reason: string;
   score: number;
+}
+
+/** Miroir de `identify::discover::TrackSuggestion`. */
+export interface TrackSuggestion {
+  title: string;
+  artist: string;
+  durationMs: number | null;
+  /** « Artiste - Titre », prêt pour un téléchargeur externe. */
+  query: string;
 }
 
 /** Miroir de `commands::home::HomeMix`. */
@@ -509,6 +512,10 @@ export const ipc = {
   discoverArtists: (): Promise<Suggestion[]> =>
     invoke<Suggestion[]>("discover_artists"),
 
+  /** Titres d'artistes déjà aimés, absents de la bibliothèque. */
+  discoverTracks: (): Promise<TrackSuggestion[]> =>
+    invoke<TrackSuggestion[]>("discover_tracks"),
+
   listArtists: (): Promise<ArtistSummary[]> =>
     invoke<ArtistSummary[]>("list_artists"),
 
@@ -523,18 +530,21 @@ export const ipc = {
   nearDuplicates: (): Promise<NearDuplicate[]> =>
     invoke<NearDuplicate[]>("near_duplicates"),
 
+  /** Déclare qu'un groupe n'est pas un doublon. Réversible : c'est un réglage. */
+  ignoreDuplicateGroup: (groupKey: string): Promise<void> =>
+    invoke<void>("ignore_duplicate_group", { groupKey }),
+
   /**
-   * Compare une playlist Spotify publique à la bibliothèque.
+   * Compare un fichier produit par `spotdl save` à la bibliothèque.
    *
    * Onzer lit et compare. Il ne télécharge rien.
    */
-  comparePlaylist: (url: string): Promise<PlaylistComparison> =>
-    invoke<PlaylistComparison>("compare_playlist", { url }),
+  comparePlaylistFile: (path: string): Promise<PlaylistComparison> =>
+    invoke<PlaylistComparison>("compare_playlist_file", { path }),
 
-  spotifyStatus: (): Promise<SpotifyStatus> => invoke<SpotifyStatus>("spotify_status"),
-
-  setSpotifyCredentials: (clientId: string, clientSecret: string): Promise<void> =>
-    invoke<void>("set_spotify_credentials", { clientId, clientSecret }),
+  /** La commande qui produit le fichier à comparer. */
+  playlistSaveCommand: (url: string): Promise<string> =>
+    invoke<string>("playlist_save_command", { url }),
 
   analysisProgress: (): Promise<AnalysisProgress> =>
     invoke<AnalysisProgress>("analysis_progress"),

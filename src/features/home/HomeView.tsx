@@ -10,7 +10,6 @@ import {
   type HomeMix,
   type TrackSummary,
 } from "@/lib/ipc";
-import { DiscoverPanel } from "./DiscoverPanel";
 
 interface HomeViewProps {
   /** Lance la lecture d'un morceau de la rangée « Reprendre ». */
@@ -124,8 +123,6 @@ export function HomeView({
           </div>
         </section>
       )}
-
-      <DiscoverPanel />
     </div>
   );
 }

@@ -32,7 +32,7 @@ use tauri::State;
 
 use crate::core::{OnzerError, Result};
 use crate::db::repository::TrackSummary;
-use crate::identify::discover::{DiscoveryClient, Suggestion};
+use crate::identify::discover::{DiscoveryClient, Suggestion, TrackSuggestion};
 use crate::AppState;
 
 /// Part de la bibliothèque retenue par une catégorie.
@@ -283,6 +283,19 @@ pub async fn discover_artists(state: State<'_, AppState>) -> Result<Vec<Suggesti
         .ok_or_else(|| OnzerError::Invalid("client de découverte indisponible".to_string()))?;
 
     client.suggest(&state.pool).await
+}
+
+/// Suggère des titres d'artistes déjà aimés, mais absents de la collection.
+///
+/// **Sur action explicite uniquement**, comme le reste de la découverte.
+#[tauri::command]
+pub async fn discover_tracks(state: State<'_, AppState>) -> Result<Vec<TrackSuggestion>> {
+    let client = DISCOVERY
+        .get_or_init(|| DiscoveryClient::new().ok())
+        .as_ref()
+        .ok_or_else(|| OnzerError::Invalid("client de découverte indisponible".to_string()))?;
+
+    client.suggest_tracks(&state.pool).await
 }
 
 #[cfg(test)]

@@ -47,6 +47,7 @@ use super::http::Service;
 use super::ratelimit::MUSICBRAINZ_MIN_INTERVAL;
 
 const MUSICBRAINZ_SEARCH: &str = "https://musicbrainz.org/ws/2/artist";
+const MUSICBRAINZ_BROWSE: &str = "https://musicbrainz.org/ws/2/recording";
 const LISTENBRAINZ_SIMILAR: &str = "https://labs.api.listenbrainz.org/similar-artists/json";
 
 /// Recette de similarité de ListenBrainz.
@@ -299,6 +300,142 @@ struct SimilarArtist {
     name: String,
     #[serde(default)]
     score: f64,
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Titres à découvrir
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Nombre de titres suggérés.
+const TRACK_SUGGESTIONS: usize = 30;
+
+/// Enregistrements demandés par artiste. C'est le maximum d'une page.
+const RECORDINGS_PER_ARTIST: usize = 100;
+
+/// Un titre absent de la bibliothèque.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackSuggestion {
+    pub title: String,
+    pub artist: String,
+    /// Durée annoncée par MusicBrainz, quand elle est connue.
+    pub duration_ms: Option<i64>,
+    /// Requête prête pour un téléchargeur externe : « Artiste - Titre ».
+    pub query: String,
+}
+
+impl DiscoveryClient {
+    /// Suggère des titres d'artistes déjà aimés, mais absents de la collection.
+    ///
+    /// # Pourquoi la discographie plutôt que la similarité
+    ///
+    /// ListenBrainz sait dire quels titres se ressemblent — à condition que
+    /// quelqu'un les ait écoutés chez eux. Interrogé sur les enregistrements de
+    /// cette bibliothèque, il répond **systématiquement une liste vide** : le
+    /// rap francophone y est trop peu représenté. Livrer une section vide
+    /// aurait été pire que de ne rien livrer.
+    ///
+    /// La discographie, elle, est complète et fiable : MusicBrainz connaît 194
+    /// enregistrements de Damso. Comparer ce catalogue à ce qu'on possède
+    /// répond exactement à la question posée — « des titres que je pourrais
+    /// aimer et que je n'ai pas » — sans rien inventer.
+    pub async fn suggest_tracks(&self, pool: &SqlitePool) -> Result<Vec<TrackSuggestion>> {
+        let seeds = self.seed_artists(pool).await?;
+        let owned = owned_titles(pool).await?;
+
+        let mut found = Vec::new();
+
+        for (name, mbid) in &seeds {
+            let url = format!(
+                "{MUSICBRAINZ_BROWSE}?artist={mbid}&limit={RECORDINGS_PER_ARTIST}&fmt=json"
+            );
+
+            let Ok(Some(page)) = self.musicbrainz.get_json::<RecordingBrowse>(&url).await else {
+                continue; // un artiste indisponible n'arrête pas les autres
+            };
+
+            // Un catalogue contient plusieurs enregistrements du même titre —
+            // live, remix, réédition. Sous le même nom, ils n'apprennent rien
+            // de plus à l'utilisateur.
+            let mut seen = std::collections::HashSet::new();
+
+            for recording in page.recordings {
+                let key = normalize_key(&recording.title);
+                if key.is_empty() || owned.contains(&key) || !seen.insert(key) {
+                    continue;
+                }
+
+                found.push(TrackSuggestion {
+                    query: format!("{name} - {}", recording.title),
+                    title: recording.title,
+                    artist: name.clone(),
+                    duration_ms: recording.length.map(i64::from),
+                });
+            }
+        }
+
+        // Entrelacé par artiste plutôt que groupé : une liste qui commence par
+        // trente titres du même artiste ressemble à une discographie, pas à une
+        // découverte.
+        Ok(interleave(found, &seeds).into_iter().take(TRACK_SUGGESTIONS).collect())
+    }
+}
+
+/// Alterne les artistes, en préservant l'ordre interne de chacun.
+fn interleave(
+    suggestions: Vec<TrackSuggestion>,
+    seeds: &[(String, String)],
+) -> Vec<TrackSuggestion> {
+    let mut par_artiste: Vec<Vec<TrackSuggestion>> = seeds.iter().map(|_| Vec::new()).collect();
+
+    for suggestion in suggestions {
+        if let Some(index) = seeds.iter().position(|(name, _)| *name == suggestion.artist) {
+            par_artiste[index].push(suggestion);
+        }
+    }
+
+    let mut sortie = Vec::new();
+    let mut rang = 0;
+
+    loop {
+        let mut ajoute = false;
+        for liste in &mut par_artiste {
+            if rang < liste.len() {
+                sortie.push(liste[rang].clone());
+                ajoute = true;
+            }
+        }
+        if !ajoute {
+            break;
+        }
+        rang += 1;
+    }
+
+    sortie
+}
+
+/// Les titres déjà possédés, sous forme normalisée.
+async fn owned_titles(pool: &SqlitePool) -> Result<std::collections::HashSet<String>> {
+    let titles: Vec<String> =
+        sqlx::query_scalar("SELECT normalized_title FROM tracks WHERE deleted_at IS NULL")
+            .fetch_all(pool)
+            .await?;
+
+    Ok(titles.into_iter().collect())
+}
+
+#[derive(Debug, Deserialize)]
+struct RecordingBrowse {
+    #[serde(default)]
+    recordings: Vec<BrowsedRecording>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BrowsedRecording {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    length: Option<u32>,
 }
 
 #[cfg(test)]

@@ -1,38 +1,67 @@
 import { useState } from "react";
 
 import { Icon } from "@/components/Icon";
-import { ipc, type Suggestion } from "@/lib/ipc";
+import {
+  formatDuration,
+  ipc,
+  type Suggestion,
+  type TrackSuggestion,
+} from "@/lib/ipc";
 
 /**
- * Artistes à découvrir.
+ * Ce que tu n'as pas encore.
  *
- * # Pourquoi c'est le seul endroit d'Onzer qui parle de ce que tu n'as pas
+ * # Pourquoi c'est le seul endroit d'Onzer qui parle de l'extérieur
  *
- * Le moteur de recommandation ne connaît que ta bibliothèque. Il sait très bien
- * te dire quoi y réécouter ; il ne peut pas, par construction, te parler de ce
- * qui n'y est pas. Suggérer un artiste absent suppose une source extérieure —
- * ici ListenBrainz, en données ouvertes, sans clé ni compte.
+ * Le moteur de recommandation ne connaît que la bibliothèque. Il sait très bien
+ * dire quoi y réécouter ; il ne peut pas, par construction, parler de ce qui
+ * n'y est pas.
+ *
+ * # Deux questions, deux sources
+ *
+ * | Question | Source | Pourquoi celle-là |
+ * |---|---|---|
+ * | Quels **titres** me manquent ? | Discographies MusicBrainz | Complètes et fiables |
+ * | Quels **artistes** essayer ? | ListenBrainz | Proximité fondée sur les écoutes réelles |
+ *
+ * Le choix des titres mérite une explication. ListenBrainz sait dire quels
+ * enregistrements se ressemblent — à condition que quelqu'un les ait écoutés
+ * chez eux. Interrogé sur cette bibliothèque, il répond **systématiquement une
+ * liste vide** : le rap francophone y est trop peu représenté. La discographie,
+ * elle, est complète : MusicBrainz connaît 194 enregistrements de Damso.
+ * Comparer ce catalogue à ce qu'on possède répond exactement à la question,
+ * sans rien inventer.
  *
  * # Pourquoi un bouton et non un chargement automatique
  *
  * Onzer est un lecteur hors ligne. Interroger un service à l'ouverture de la
- * page se ferait dans ton dos ; un bouton, non. Ce qui part se limite à des
- * identifiants d'artistes — pas un titre, pas une écoute, pas un horodatage.
+ * page se ferait dans ton dos ; un bouton, non.
  */
 export function DiscoverPanel() {
-  const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
+  const [tab, setTab] = useState<"tracks" | "artists">("tracks");
+  const [tracks, setTracks] = useState<TrackSuggestion[] | null>(null);
+  const [artists, setArtists] = useState<Suggestion[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function search() {
     setLoading(true);
     setError(null);
 
     try {
-      const found = await ipc.discoverArtists();
-      setSuggestions(found);
-      if (found.length === 0) {
-        setError("Aucune suggestion : tes artistes sont peu représentés dans les bases publiques.");
+      if (tab === "tracks") {
+        const found = await ipc.discoverTracks();
+        setTracks(found);
+        if (found.length === 0) {
+          setError("Rien à proposer : tes artistes sont déjà complets, ou absents des bases publiques.");
+        }
+      } else {
+        const found = await ipc.discoverArtists();
+        setArtists(found);
+        if (found.length === 0) {
+          setError("Aucune suggestion : tes artistes sont peu représentés dans les bases publiques.");
+        }
       }
     } catch (cause) {
       setError(String(cause));
@@ -41,47 +70,117 @@ export function DiscoverPanel() {
     }
   }
 
+  const current = tab === "tracks" ? tracks : artists;
+  const command =
+    tracks === null || tracks.length === 0
+      ? ""
+      : `spotdl download ${tracks.map((track) => `'${track.query.replace(/'/g, "'\\''")}'`).join(" ")}`;
+
   return (
-    <section className="mt-10">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="display text-[clamp(1.15rem,2.4vw,1.5rem)] text-ink">
-          À découvrir ailleurs
-        </h2>
+    <section>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-1 rounded-full bg-elevated p-1">
+          <Tab active={tab === "tracks"} onClick={() => setTab("tracks")}>
+            Titres
+          </Tab>
+          <Tab active={tab === "artists"} onClick={() => setTab("artists")}>
+            Artistes
+          </Tab>
+        </div>
 
         <button
           type="button"
           disabled={loading}
           onClick={() => void search()}
-          className="flex items-center gap-2 rounded-full bg-elevated px-4 py-2 text-[13px] font-semibold text-ink transition-colors hover:bg-raised disabled:opacity-40"
+          className="flex items-center gap-2 rounded-full bg-ink px-5 py-2 text-[13px] font-semibold text-base transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           <span className={loading ? "animate-spin" : ""}>
             <Icon name={loading ? "repeat" : "sparkle"} size={15} />
           </span>
-          {loading ? "Recherche…" : suggestions === null ? "Chercher" : "Actualiser"}
+          {loading ? "Recherche…" : current === null ? "Chercher" : "Actualiser"}
         </button>
       </div>
 
-      {suggestions === null && !loading && (
-        <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-ink-faint">
-          Onzer ne connaît que ta bibliothèque. Pour te proposer des artistes que
-          tu n'as pas, il demande à ListenBrainz qui ressemble à ceux que tu
-          écoutes le plus. Seuls des identifiants d'artistes quittent ta machine.
+      {current === null && !loading && (
+        <p className="mt-4 max-w-2xl text-[13px] leading-relaxed text-ink-faint">
+          {tab === "tracks"
+            ? "Onzer compare la discographie complète de tes artistes préférés à ce que tu possèdes, et te dit ce qui manque."
+            : "Onzer demande à ListenBrainz quels artistes ressemblent à ceux que tu écoutes le plus, et écarte ceux que tu as déjà."}{" "}
+          Seuls des noms et des identifiants quittent ta machine, et uniquement
+          sur ce clic.
         </p>
       )}
 
-      {error !== null && <p className="mt-3 text-[13px] text-warn">{error}</p>}
+      {error !== null && <p className="mt-4 text-[13px] text-warn">{error}</p>}
 
-      {suggestions !== null && suggestions.length > 0 && (
+      {tab === "tracks" && tracks !== null && tracks.length > 0 && (
         <>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {suggestions.map((suggestion, index) => (
+          <div className="mt-5 rounded-xl bg-surface p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-[13px] font-semibold text-ink">
+                Tout récupérer d'un coup
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(command);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="rounded-full bg-elevated px-3 py-1 text-[11px] font-semibold text-ink-muted transition-colors hover:text-ink"
+              >
+                {copied ? "Copié" : "Copier"}
+              </button>
+            </div>
+
+            <pre className="mt-3 max-h-24 overflow-auto rounded-lg bg-base p-3 font-mono text-[11px] leading-relaxed text-ink-muted">
+              {command}
+            </pre>
+
+            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+              Onzer ne lance pas cette commande — c'est ton outil, ton terminal,
+              ta décision. Lance-la depuis ton dossier <span className="font-mono">_Inbox</span>{" "}
+              et le rangement se fera tout seul.
+            </p>
+          </div>
+
+          <ul className="mt-6 divide-y divide-line">
+            {tracks.map((track, index) => (
+              <li key={`${track.query}-${index}`} className="flex items-center gap-4 py-3">
+                <span className="numerals w-7 shrink-0 text-right text-[13px] text-ink-faint">
+                  {index + 1}
+                </span>
+
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-medium text-ink">
+                    {track.title}
+                  </span>
+                  <span className="block truncate text-[13px] text-ink-muted">
+                    {track.artist}
+                  </span>
+                </span>
+
+                {track.durationMs !== null && (
+                  <span className="numerals shrink-0 text-[13px] text-ink-faint">
+                    {formatDuration(track.durationMs)}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {tab === "artists" && artists !== null && artists.length > 0 && (
+        <>
+          <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {artists.map((suggestion, index) => (
               <div
                 key={suggestion.mbid}
                 className="flex items-center gap-3 rounded-lg bg-surface p-3"
               >
                 {/* Pas de portrait : les récupérer supposerait d'aller les
-                    chercher chez un tiers, pour un ornement. Le rang suffit à
-                    donner du rythme à la grille. */}
+                    chercher chez un tiers, pour un ornement. */}
                 <span className="numerals display w-7 shrink-0 text-center text-xl text-ink-faint">
                   {index + 1}
                 </span>
@@ -106,5 +205,27 @@ export function DiscoverPanel() {
         </>
       )}
     </section>
+  );
+}
+
+function Tab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-4 py-1.5 text-[13px] font-semibold transition-colors ${
+        active ? "bg-ink text-base" : "text-ink-muted hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

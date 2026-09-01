@@ -324,5 +324,45 @@ pub async fn near_duplicates(state: State<'_, AppState>) -> Result<Vec<NearDupli
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(rows)
+    // Les groupes déclarés légitimes disparaissent : sans cela, le panneau
+    // redemanderait éternellement pour une reprise ou deux interludes
+    // homonymes.
+    let ignored = ignored_groups(&state.pool).await?;
+
+    Ok(rows
+        .into_iter()
+        .filter(|row| !ignored.contains(&row.group_key))
+        .collect())
+}
+
+/// Groupes de doublons que l'utilisateur a déclarés légitimes.
+///
+/// Stockés dans les réglages plutôt que dans une table : c'est une poignée de
+/// clés, et leur cycle de vie suit celui d'une préférence, pas d'une donnée.
+const IGNORED_DUPLICATES: &str = "duplicate_groups_ignored";
+
+async fn ignored_groups(pool: &sqlx::SqlitePool) -> Result<Vec<String>> {
+    Ok(crate::db::settings::get(pool, IGNORED_DUPLICATES)
+        .await?
+        .unwrap_or_default())
+}
+
+/// Déclare qu'un groupe n'est pas un doublon.
+///
+/// # Pourquoi c'est nécessaire
+///
+/// Deux morceaux peuvent porter le même titre et durer presque pareil sans
+/// avoir le moindre rapport — une reprise, un interlude homonyme sur deux
+/// albums. Sans moyen de le dire, le panneau redemanderait éternellement.
+///
+/// La décision est réversible : c'est un réglage, pas une suppression.
+#[tauri::command]
+pub async fn ignore_duplicate_group(state: State<'_, AppState>, group_key: String) -> Result<()> {
+    let mut ignored = ignored_groups(&state.pool).await?;
+
+    if !ignored.contains(&group_key) {
+        ignored.push(group_key);
+    }
+
+    crate::db::settings::set(&state.pool, IGNORED_DUPLICATES, &ignored).await
 }

@@ -553,6 +553,8 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
                   coverHash: artist.coverHash,
                 })
               }
+              onPlayOne={(id) => void playback.play([id], 0)}
+              isPlaying={playback.state?.isPlaying ?? false}
               currentTrack={current}
               positionMs={playback.state?.positionMs ?? 0}
               onSeek={(position) => void playback.seek(position)}
@@ -661,6 +663,9 @@ interface PageProps {
     name: string;
     coverHash: string | null;
   }) => void;
+  /** Écoute un morceau seul, sans toucher à la file affichée. */
+  onPlayOne: (trackId: number) => void;
+  isPlaying: boolean;
   /** Morceau en cours, pour la page des paroles. */
   currentTrack: QueueItem | null;
   positionMs: number;
@@ -896,7 +901,12 @@ function Page(props: PageProps) {
         <div className="mt-3 space-y-2">
           <IdentifyPanel />
           <SuspectPanel onRestored={props.onReload} />
-          <DuplicatePanel onRemoved={props.onReload} />
+          <DuplicatePanel
+            onRemoved={props.onReload}
+            onPlay={props.onPlayOne}
+            currentTrackId={props.currentTrack?.trackId ?? null}
+            isPlaying={props.isPlaying}
+          />
           <LyricsBar />
         </div>
 

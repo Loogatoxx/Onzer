@@ -4,17 +4,21 @@ import { Icon } from "@/components/Icon";
 import { Artwork } from "@/features/library/Artwork";
 import {
   ipc,
+  type Category,
   type GeneratedPlaylist,
   type Home,
   type HomeMix,
   type TrackSummary,
 } from "@/lib/ipc";
+import { DiscoverPanel } from "./DiscoverPanel";
 
 interface HomeViewProps {
   /** Lance la lecture d'un morceau de la rangée « Reprendre ». */
   onPlayTrack: (tracks: TrackSummary[], index: number) => void;
   onGenerated: (playlist: GeneratedPlaylist) => void;
   onError: (message: string) => void;
+  /** Ouvre une catégorie d'ambiance en pleine page. */
+  onOpenCategory: (key: string, title: string) => void;
 }
 
 /**
@@ -34,12 +38,19 @@ interface HomeViewProps {
  * morceaux. Quatre pochettes assemblées disent tout de suite qu'il s'agit d'un
  * assemblage, et donnent un aperçu de ce qu'il contient.
  */
-export function HomeView({ onPlayTrack, onGenerated, onError }: HomeViewProps) {
+export function HomeView({
+  onPlayTrack,
+  onGenerated,
+  onError,
+  onOpenCategory,
+}: HomeViewProps) {
   const [home, setHome] = useState<Home | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     void ipc.home().then(setHome).catch(() => undefined);
+    void ipc.categories().then(setCategories).catch(() => undefined);
   }, []);
 
   useEffect(reload, [reload]);
@@ -91,7 +102,78 @@ export function HomeView({ onPlayTrack, onGenerated, onError }: HomeViewProps) {
           </section>
         )
       ))}
+
+      {categories.length > 0 && (
+        <section className="mt-10">
+          <h2 className="display text-[clamp(1.15rem,2.4vw,1.5rem)] text-ink">
+            Explorer par ambiance
+          </h2>
+          <p className="mt-1 text-[12px] text-ink-faint">
+            Calculé sur le son lui-même, et relatif à ta bibliothèque — aucun
+            genre n'est nécessaire.
+          </p>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+            {categories.map((category) => (
+              <CategoryCard
+                key={category.key}
+                category={category}
+                onClick={() => onOpenCategory(category.key, category.title)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <DiscoverPanel />
     </div>
+  );
+}
+
+/**
+ * Carte de catégorie.
+ *
+ * Plus basse qu'une carte de mix, et la mosaïque y est un bandeau : une
+ * catégorie n'est pas une écoute prête à lancer, c'est une porte vers une
+ * liste. La différence de forme évite d'avoir à l'expliquer.
+ */
+function CategoryCard({
+  category,
+  onClick,
+}: {
+  category: Category;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group overflow-hidden rounded-lg bg-surface text-left transition-colors hover:bg-elevated"
+    >
+      <div className="flex h-20 w-full">
+        {category.coverHashes.length === 0 ? (
+          <div className="h-full w-full bg-gradient-to-br from-raised to-elevated" />
+        ) : (
+          category.coverHashes.slice(0, 4).map((hash, index) => (
+            <Artwork
+              key={`${hash}-${index}`}
+              hash={hash}
+              className="h-full flex-1 rounded-none"
+            />
+          ))
+        )}
+      </div>
+
+      <div className="p-3">
+        <p className="truncate text-[15px] font-semibold text-ink">{category.title}</p>
+        <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-ink-faint">
+          {category.subtitle}
+        </p>
+        <p className="numerals mt-1.5 text-[11px] text-ink-faint">
+          {category.trackCount} titres
+        </p>
+      </div>
+    </button>
   );
 }
 

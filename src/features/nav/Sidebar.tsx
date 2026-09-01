@@ -12,10 +12,14 @@ export type Route =
   | { kind: "stats" }
   /** Une playlist produite par le moteur. Absente de la barre latérale. */
   | { kind: "generated" }
+  /** Une catégorie d'ambiance, ouverte depuis l'accueil. */
+  | { kind: "category"; key: string; name: string }
   | { kind: "playlist"; id: number; name: string };
 
 export function routeKey(route: Route): string {
-  return route.kind === "playlist" ? `playlist:${route.id}` : route.kind;
+  if (route.kind === "playlist") return `playlist:${route.id}`;
+  if (route.kind === "category") return `category:${route.key}`;
+  return route.kind;
 }
 
 interface SidebarProps {

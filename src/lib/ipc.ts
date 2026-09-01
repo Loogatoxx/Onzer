@@ -52,6 +52,25 @@ export interface LyricsProgress {
   running: boolean;
 }
 
+/** Miroir de `commands::categories::Category`. */
+export interface Category {
+  key: string;
+  title: string;
+  subtitle: string;
+  trackCount: number;
+  coverHashes: string[];
+}
+
+/** Miroir de `identify::discover::Suggestion`. */
+export interface Suggestion {
+  name: string;
+  /** Identifiant MusicBrainz, pour aller vérifier soi-même. */
+  mbid: string;
+  /** « Parce que tu écoutes Damso et Népal ». */
+  reason: string;
+  score: number;
+}
+
 /** Miroir de `commands::home::HomeMix`. */
 export interface HomeMix {
   /** Correspond à `reco::engine::PlaylistKind::as_str`. */
@@ -415,6 +434,21 @@ export const ipc = {
 
   /** Contenu de la page d'accueil : reprise, mix du jour, mix de goût. */
   home: (): Promise<Home> => invoke<Home>("home"),
+
+  /** Catégories d'ambiance, calculées sur les quartiles de la bibliothèque. */
+  categories: (): Promise<Category[]> => invoke<Category[]>("categories"),
+
+  categoryTracks: (key: string): Promise<TrackSummary[]> =>
+    invoke<TrackSummary[]>("category_tracks", { key }),
+
+  /**
+   * Artistes absents de la bibliothèque, suggérés par ListenBrainz.
+   *
+   * Sur action explicite : seuls des identifiants MusicBrainz d'artistes
+   * quittent la machine — pas un titre, pas une écoute.
+   */
+  discoverArtists: (): Promise<Suggestion[]> =>
+    invoke<Suggestion[]>("discover_artists"),
 
   analysisProgress: (): Promise<AnalysisProgress> =>
     invoke<AnalysisProgress>("analysis_progress"),

@@ -815,6 +815,82 @@ unique aurait pu passer par chance.
 
 ---
 
+## ADR-026 — Les catégories sont des quartiles de ta propre bibliothèque
+
+**Contexte.** Sur 325 morceaux, **deux** portaient un genre dans leurs tags. Un classement
+par genre afficherait deux catégories et un grand vide. L'analyse audio, elle, couvre tout.
+
+**Le piège des seuils absolus.** Sur cette bibliothèque — du rap, essentiellement —
+l'énergie médiane vaut **0,86**. Une règle « énergique = au-dessus de 0,7 » y retiendrait les
+trois quarts des morceaux et ne distinguerait rien. Un seuil écrit en dur ne veut rien dire
+hors du corpus qui l'a inspiré.
+
+**Décision.** Chaque catégorie est un **quartile de la bibliothèque elle-même**. « Ça tape »
+désigne les 25 % les plus énergiques *de ta musique*, quelle qu'elle soit. La règle se
+déplace avec la collection et n'a jamais à être réglée.
+
+Mesuré sur la bibliothèque de test : seuil d'énergie à 0,96 pour 82 morceaux, seuil de
+valence basse à 0,39 pour 81 — des tranches équilibrées qu'aucune constante n'aurait pu
+deviner.
+
+**Ce sont des filtres, pas des playlists générées.** « Montre-moi mes morceaux calmes » est
+une question à réponse exacte ; la faire passer par le moteur de recommandation y ajouterait
+diversité, exploration et hasard — trois façons de ne pas répondre à la question posée.
+
+**Sécurité du SQL.** Les noms de colonnes sont interpolés, mais viennent tous d'une table
+constante du programme ; la clé fournie par l'interface est résolue par `definition()` avant
+d'atteindre la moindre requête, et le seuil reste un paramètre lié. Un test vérifie qu'une
+clé inventée est refusée.
+
+---
+
+## ADR-027 — Le seul endroit qui parle de ce que tu n'as pas
+
+**Contexte.** Le moteur ne connaît que la bibliothèque. Il ne peut pas, par construction,
+suggérer un artiste absent.
+
+**Décision.** ListenBrainz, en données ouvertes, sans clé ni compte. La recette de similarité
+retenue est bâtie sur les **sessions d'écoute** — deux artistes sont proches s'ils sont
+souvent écoutés dans une même séance —, une notion plus proche de l'usage réel que du genre
+déclaré.
+
+**Ce qui sort de la machine** se limite à des identifiants MusicBrainz d'artistes : pas un
+titre, pas une écoute, pas un horodatage. Et rien ne part sans un clic.
+
+**La méthode : faire voter tes artistes.** Les voisins de chacun de tes cinq artistes les
+plus fournis sont agrégés, et **leurs scores s'additionnent**. Prendre les meilleurs voisins
+d'un seul donnerait sa discographie élargie ; les faire voter fait ressortir ce qui se
+trouve au *centre* de tes goûts plutôt qu'à la périphérie de l'un d'eux. Ceux que tu possèdes
+déjà sont écartés.
+
+**Onzer ne télécharge rien** (voir la discussion de l'ADR sur l'identification acoustique) :
+il nomme des artistes, à charge pour l'utilisateur d'aller les chercher où il en a
+l'habitude.
+
+---
+
+## ADR-028 — Une fonction de base sans test est une erreur en attente
+
+**Contexte.** `restore_identity` écrivait dans `tracks_fts` avec des noms de colonnes
+inventés — `artists` et `album` là où le schéma dit `artist_names` et `album_title`. La
+transaction échouait, et l'utilisateur lisait « no such column: artists » en cliquant sur
+« Rétablir ».
+
+**Pourquoi rien ne l'a arrêté.** Le compilateur ne vérifie pas le SQL. Aucun test ne couvrait
+la fonction, et les 472 autres passaient. Le défaut n'existait que sur le chemin exact que
+l'utilisateur a emprunté.
+
+**Décision.** Toute fonction qui écrit dans `tracks_fts` doit être couverte par un test qui
+**relit l'index** — c'est-à-dire qui cherche le morceau après coup. Vérifier la ligne de
+`tracks` ne prouve rien : l'index est une table séparée, et c'est précisément là que la
+faute se logeait.
+
+**Conséquence de style.** L'index se réécrit par `DELETE` puis `INSERT`, comme partout
+ailleurs dans `repository.rs`. Mélanger deux façons d'écrire une table FTS5 est le meilleur
+moyen de se tromper de colonnes.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

@@ -5,6 +5,7 @@
 //! métier, ce qui garde le cœur testable par `cargo test` sans lancer
 //! l'application.
 
+pub mod categories;
 pub mod collection;
 pub mod home;
 pub mod identify;

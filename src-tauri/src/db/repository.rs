@@ -580,13 +580,26 @@ pub async fn restore_identity(
 
     // L'index de recherche doit suivre, sans quoi le morceau resterait
     // trouvable sous le nom qu'on vient d'effacer.
+    //
+    // Effacer puis réinsérer, comme partout ailleurs dans ce fichier : une
+    // table FTS5 n'est pas une table ordinaire, et mélanger les deux façons de
+    // l'écrire est le meilleur moyen de se tromper de noms de colonnes — ce
+    // qui est précisément arrivé ici, avec un `UPDATE` inventant des colonnes
+    // `artists` et `album` là où le schéma dit `artist_names` et
+    // `album_title`.
+    sqlx::query("DELETE FROM tracks_fts WHERE track_id = ?")
+        .bind(track_id)
+        .execute(&mut *tx)
+        .await?;
+
     sqlx::query(
-        "UPDATE tracks_fts SET title = ?, artists = ?, album = ? WHERE track_id = ?",
+        "INSERT INTO tracks_fts (track_id, title, artist_names, album_title)
+         VALUES (?, ?, ?, ?)",
     )
+    .bind(track_id)
     .bind(title)
     .bind(artist.unwrap_or(""))
     .bind(album.unwrap_or(""))
-    .bind(track_id)
     .execute(&mut *tx)
     .await?;
 
@@ -787,4 +800,133 @@ pub async fn record_import(
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn base() -> (tempfile::TempDir, SqlitePool) {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("test.db")).await.unwrap();
+        crate::db::migrate(&pool).await.unwrap();
+        (dir, pool)
+    }
+
+    fn metadata(title: &str, artist: &str, album: &str) -> TrackMetadata {
+        TrackMetadata {
+            title: title.to_string(),
+            artists: vec![artist.to_string()],
+            featured_artists: Vec::new(),
+            album_artist: None,
+            album: Some(album.to_string()),
+            track_no: None,
+            disc_no: None,
+            year: None,
+            genres: Vec::new(),
+            duration_ms: 200_000,
+            bitrate: None,
+            sample_rate: None,
+            channels: None,
+            format: "mp3".to_string(),
+            artwork: None,
+            lyrics: None,
+            from_filename: false,
+        }
+    }
+
+    async fn inserer(pool: &SqlitePool, meta: &TrackMetadata, path: &str) -> i64 {
+        insert_track(
+            pool,
+            NewTrack {
+                metadata: meta,
+                relative_path: path,
+                file_size: 1,
+                content_hash: path,
+                audio_hash: path,
+                file_modified_at: None,
+                artwork_hash: None,
+                source: "scan",
+            },
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn retablir_lidentite_met_a_jour_lindex_de_recherche() {
+        // # Le défaut que ce test verrouille
+        //
+        // `restore_identity` écrivait dans `tracks_fts` avec des noms de
+        // colonnes inventés — `artists` et `album` là où le schéma dit
+        // `artist_names` et `album_title`. La transaction échouait, et
+        // l'utilisateur voyait « no such column: artists » en cliquant sur
+        // « Rétablir ».
+        //
+        // Rien ne l'avait attrapé parce que rien ne testait cette fonction.
+        // Chercher le morceau après coup est le seul assert qui touche
+        // réellement l'index.
+        let (_dir, pool) = base().await;
+        let meta = metadata("carmen", "Stromae", "Ipséité");
+        let track_id = inserer(&pool, &meta, "Stromae/Ipseite/carmen.mp3").await;
+
+        restore_identity(&pool, track_id, "Θ. Macarena", Some("Damso"), None)
+            .await
+            .unwrap();
+
+        let sous_le_bon_nom = search_tracks(&pool, "Macarena", 10).await.unwrap();
+        assert_eq!(sous_le_bon_nom.len(), 1, "le morceau doit être retrouvé sous son vrai titre");
+        assert_eq!(sous_le_bon_nom[0].title, "Θ. Macarena");
+        assert_eq!(sous_le_bon_nom[0].artist.as_deref(), Some("Damso"));
+
+        let sous_lancien_nom = search_tracks(&pool, "carmen", 10).await.unwrap();
+        assert!(
+            sous_lancien_nom.is_empty(),
+            "le morceau ne doit plus répondre au nom qu'on vient d'effacer"
+        );
+    }
+
+    #[tokio::test]
+    async fn retablir_lidentite_empeche_de_reproposer_la_correspondance() {
+        // L'état `rejected`, et non `pending` : sans lui l'ouvrier reprendrait
+        // le morceau au tour suivant et réappliquerait ce que l'utilisateur
+        // vient de refuser.
+        let (_dir, pool) = base().await;
+        let meta = metadata("carmen", "Stromae", "Ipséité");
+        let track_id = inserer(&pool, &meta, "Stromae/Ipseite/carmen.mp3").await;
+
+        mark_identification(&pool, track_id, "done").await.unwrap();
+        restore_identity(&pool, track_id, "Θ. Macarena", Some("Damso"), None)
+            .await
+            .unwrap();
+
+        let (etat, mbid): (String, Option<String>) = sqlx::query_as(
+            "SELECT identification_state, recording_mbid FROM tracks WHERE id = ?",
+        )
+        .bind(track_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(etat, "rejected");
+        assert!(mbid.is_none(), "la correspondance refusée ne doit plus être référencée");
+    }
+
+    #[tokio::test]
+    async fn retablir_sans_artiste_ne_laisse_pas_de_credit_fantome() {
+        let (_dir, pool) = base().await;
+        let meta = metadata("Titre", "Ancien artiste", "Album");
+        let track_id = inserer(&pool, &meta, "Ancien/Album/Titre.mp3").await;
+
+        restore_identity(&pool, track_id, "Titre", None, None).await.unwrap();
+
+        let credits: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM track_artists WHERE track_id = ?")
+                .bind(track_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        assert_eq!(credits, 0);
+    }
 }

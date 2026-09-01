@@ -129,6 +129,8 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           return ipc.lovedTracks();
         case "playlist":
           return ipc.playlistTracks(route.id);
+        case "category":
+          return ipc.categoryTracks(route.key);
         default:
           return ipc.listTracks(PAGE_SIZE);
       }
@@ -424,6 +426,9 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               onPlayTracks={(list, index) =>
                 void playback.play(list.map((track) => track.id), index)
               }
+              onOpenCategory={(key, title) =>
+                navigate({ kind: "category", key, name: title })
+              }
               onReload={bump}
               onGenerated={showGenerated}
               onError={setError}
@@ -513,6 +518,7 @@ interface PageProps {
   onPlayAll: (shuffle: boolean) => void;
   /** Lance une liste arbitraire — la rangée de reprise de l'accueil. */
   onPlayTracks: (tracks: TrackSummary[], index: number) => void;
+  onOpenCategory: (key: string, title: string) => void;
   /** Recharge la liste affichée après une correction de tags. */
   onReload: () => void;
   onGenerated: (playlist: GeneratedPlaylist) => void;
@@ -565,6 +571,7 @@ function Page(props: PageProps) {
         onPlayTrack={props.onPlayTracks}
         onGenerated={props.onGenerated}
         onError={props.onError}
+        onOpenCategory={props.onOpenCategory}
       />
     );
   }
@@ -581,6 +588,28 @@ function Page(props: PageProps) {
               <Icon name="heartFilled" size={72} className="text-base" />
             </div>
           }
+          onPlay={play}
+          {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+        />
+        {props.children}
+      </>
+    );
+  }
+
+  if (route.kind === "category") {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Ambiance"
+          title={route.name}
+          meta={
+            <>
+              {meta}
+              <span className="text-ink-faint">·</span>
+              <span>calculé sur le son, relatif à ta bibliothèque</span>
+            </>
+          }
+          cover={<CoverTile name="sparkle" />}
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
         />

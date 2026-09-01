@@ -41,6 +41,7 @@ pub mod fingerprint;
 pub mod http;
 pub mod lrclib;
 pub mod coverart;
+pub mod discover;
 pub mod musicbrainz;
 pub mod ratelimit;
 pub mod revise;

@@ -18,6 +18,8 @@ export type Route =
   | { kind: "lyrics" }
   /** Comparer une playlist Spotify à la bibliothèque. */
   | { kind: "sync" }
+  /** L'aide-mémoire des raccourcis clavier. */
+  | { kind: "shortcuts" }
   /** Une catégorie d'ambiance, ouverte depuis l'accueil. */
   | { kind: "category"; key: string; name: string }
   | { kind: "playlist"; id: number; name: string };
@@ -161,6 +163,17 @@ export function Sidebar({
           )}
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => onNavigate({ kind: "shortcuts" })}
+        className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] transition-colors ${
+          active === "shortcuts" ? "text-ink" : "text-ink-faint hover:text-ink-muted"
+        }`}
+      >
+        <Icon name="check" size={13} />
+        Raccourcis clavier
+      </button>
     </aside>
   );
 }

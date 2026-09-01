@@ -279,13 +279,19 @@ async fn identify_one(
     let identification = match acoustid.lookup(&fingerprint).await {
         Ok(Some(identification)) => identification,
         Ok(None) => {
-            // Réponse définitive : le morceau n'est pas dans l'index. Réessayer
-            // demain ne changerait rien et gaspillerait du quota.
-            // Le service a répondu : ce n'est pas une panne.
-            tracing::debug!(track_id, "inconnu des bases publiques");
-            clear_error(pool).await;
-            let _ = repository::mark_identification(pool, track_id, "not_found").await;
-            return Attempt::Settled;
+            // L'index ne reconnaît pas ce signal. C'est fréquent sur une source
+            // vidéo : intro parlée, jingle, outro — le morceau est décalé au
+            // point que l'empreinte ne colle plus.
+            //
+            // Le nom du fichier, lui, dit « Artiste - Titre ». C'est une
+            // information de moindre qualité, mais ce n'est pas rien : on la
+            // soumet au **même juge**, qui exigera la même corroboration.
+            tracing::debug!(track_id, "inconnu des bases publiques, essai par le nom");
+
+            return fallback_by_name(
+                pool, paths, musicbrainz, cover_art, track_id, relative_path,
+            )
+            .await;
         }
         Err(error) => {
             // Panne réseau, service en difficulté ou clé invalide : le morceau
@@ -395,6 +401,108 @@ async fn identify_one(
         }
     }
 
+    Attempt::Settled
+}
+
+/// Plan B : chercher par le nom du fichier quand l'empreinte échoue.
+///
+/// # Pourquoi ce filet existe
+///
+/// L'empreinte acoustique échoue sur environ un fichier sur trois quand la
+/// source est un clip vidéo : les intros parlées et les outros décalent le
+/// signal au point que l'index ne reconnaît plus rien. Le morceau reste alors
+/// sans pochette et sans album, alors que son nom de fichier dit exactement de
+/// quoi il s'agit.
+///
+/// # Ce qui ne change pas
+///
+/// La corroboration. Une correspondance textuelle passe par le **même juge**
+/// que l'acoustique : durée compatible, tags non contredits. Un filet de
+/// sécurité qui accepterait n'importe quoi serait pire que pas de filet — il
+/// écrirait de faux tags là où il n'y en avait aucun.
+async fn fallback_by_name(
+    pool: &SqlitePool,
+    paths: &PathResolver,
+    musicbrainz: &MusicBrainzClient,
+    cover_art: Option<&CoverArtClient>,
+    track_id: i64,
+    relative_path: &str,
+) -> Attempt {
+    let evidence = file_evidence(pool, track_id).await.unwrap_or_default();
+
+    let Some(title) = evidence.title.as_deref().filter(|t| !t.trim().is_empty()) else {
+        let _ = repository::mark_identification(pool, track_id, "not_found").await;
+        return Attempt::Settled;
+    };
+
+    let hits = match musicbrainz.search(evidence.artist.as_deref(), title).await {
+        Ok(hits) => hits,
+        Err(error) => {
+            tracing::warn!(track_id, %error, "recherche par nom impossible");
+            record_error(pool, format!("MusicBrainz — {error}")).await;
+            return Attempt::ServiceUnavailable;
+        }
+    };
+
+    // Le premier candidat que le juge accepte. Les résultats arrivent triés par
+    // pertinence : descendre plus bas reviendrait à préférer un moins bon.
+    for hit in hits {
+        let candidate = verdict::CandidateEvidence {
+            title: hit.title.clone(),
+            artist: hit.artist.clone(),
+            length_ms: hit.length_ms,
+            // Une fiche trouvée par le texte a forcément une existence
+            // discographique : c'est ainsi qu'elle a été indexée.
+            release_count: 1,
+            score: hit.score,
+        };
+
+        if !verdict::assess(&evidence, &candidate).is_accepted() {
+            continue;
+        }
+
+        let Ok(Some(metadata)) = musicbrainz.lookup(&hit.recording_mbid).await else {
+            continue;
+        };
+
+        let cover = match cover_art {
+            Some(client) => client
+                .fetch_front(
+                    metadata.release_mbid.as_deref(),
+                    metadata.release_group_mbid.as_deref(),
+                )
+                .await
+                .unwrap_or(None),
+            None => None,
+        };
+
+        let trace = tagger::IdentificationTrace {
+            score: hit.score,
+            note: "trouvé par le nom du fichier, l'empreinte ayant échoué",
+        };
+
+        match tagger::apply(pool, paths, track_id, relative_path, &metadata, cover.as_deref(), &trace)
+            .await
+        {
+            Ok(applied) => {
+                clear_error(pool).await;
+                tracing::info!(
+                    track_id,
+                    titre = %metadata.title,
+                    destination = %applied.relative_path,
+                    "identifié par le nom du fichier"
+                );
+                return Attempt::Settled;
+            }
+            Err(error) => {
+                tracing::warn!(track_id, %error, "identification par nom non appliquée");
+                break;
+            }
+        }
+    }
+
+    clear_error(pool).await;
+    let _ = repository::mark_identification(pool, track_id, "not_found").await;
     Attempt::Settled
 }
 

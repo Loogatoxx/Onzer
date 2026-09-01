@@ -45,8 +45,10 @@ pub struct PlaylistComparison {
     pub present: usize,
     /// Les absents, dans l'ordre de la playlist.
     pub missing: Vec<PlaylistTrack>,
-    /// Commande prête à coller dans un terminal.
+    /// Commande `spotdl`, quand son accès à Spotify fonctionne.
     pub command: String,
+    /// Boucle `yt-dlp`, qui ne dépend d'aucun accès à Spotify.
+    pub ytdlp_command: String,
 }
 
 /// Compare une liste collée à la main.
@@ -116,50 +118,59 @@ async fn compare(
         }
     }
 
-    let command = download_command(&missing, &playlist_name, state).await;
+    let (command, ytdlp_command) = download_commands(&missing, &playlist_name, state).await;
 
     Ok(PlaylistComparison {
         playlist_name,
         present: total - missing.len(),
         total,
         command,
+        ytdlp_command,
         missing,
     })
 }
 
-/// La commande à coller pour récupérer les seuls titres manquants.
+/// Les commandes à coller pour récupérer les titres manquants.
 ///
-/// # Pourquoi un fichier et `xargs`
+/// # Le défaut corrigé
 ///
-/// Sur la playlist de test, 484 titres manquaient. Écrite d'un bloc, la
-/// commande aurait fait une vingtaine de kilo-octets — illisible, et proche des
-/// limites de longueur d'un shell. Les requêtes partent donc dans un fichier,
-/// qu'`xargs` découpe lui-même autant que nécessaire.
+/// La première version passait par `xargs -a`. Cette option est une **extension
+/// GNU** : la version BSD livrée avec macOS ne la connaît pas et répond
+/// `xargs: invalid option -- a`. Une commande générée pour macOS par une
+/// application macOS n'avait aucune excuse de supposer un `xargs` Linux.
 ///
-/// Les requêtes sont en clair — « Artiste - Titre » — plutôt qu'en liens :
-/// `spotdl` accepte les deux, et un fichier lisible permet de vérifier, voire
-/// d'élaguer à la main, ce qu'on s'apprête à lancer.
+/// `spotdl` accepte directement un fichier `.txt` en argument : le détour
+/// n'avait même pas lieu d'être.
 ///
-/// La sortie vise le **dossier de dépôt** : ce qui est récupéré atterrit là où
-/// Onzer l'attend, et le reste — dédoublonnage, identification, rangement — se
-/// fait tout seul.
-async fn download_command(
+/// # Pourquoi deux commandes
+///
+/// | Outil | Ce qu'il fait | État |
+/// |---|---|---|
+/// | `spotdl` | Cherche et tague tout seul | Dépend du scraper Spotify, cassé par intermittence |
+/// | `yt-dlp` | Aspire le son brut | Ne dépend de rien côté Spotify |
+///
+/// La seconde est devenue la voie principale : Onzer possède désormais sa
+/// propre identification acoustique, et n'a plus besoin qu'un téléchargeur lui
+/// apporte des métadonnées. Le nom de fichier est composé depuis la requête —
+/// « Artiste - Titre.mp3 » — ce qui donne au filet de sécurité de l'ouvrier
+/// exactement ce qu'il sait lire quand l'empreinte échoue.
+async fn download_commands(
     missing: &[PlaylistTrack],
     playlist_name: &str,
     state: &State<'_, AppState>,
-) -> String {
+) -> (String, String) {
     if missing.is_empty() {
-        return String::new();
+        return (String::new(), String::new());
     }
 
     let paths = state.paths.read().await.clone();
     let Some(root) = paths.library_root() else {
-        return String::new();
+        return (String::new(), String::new());
     };
 
     let inbox = crate::ingest::inbox::inbox_path(root);
     if std::fs::create_dir_all(&inbox).is_err() {
-        return String::new();
+        return (String::new(), String::new());
     }
 
     let list_path = inbox.join(format!(
@@ -174,18 +185,52 @@ async fn download_command(
         .collect();
 
     if std::fs::write(&list_path, body).is_err() {
-        return String::new();
+        return (String::new(), String::new());
     }
 
+    (
+        spotdl_command(&list_path, &inbox),
+        ytdlp_command(&list_path, &inbox),
+    )
+}
+
+/// `spotdl` lit lui-même un fichier de requêtes, une par ligne.
+fn spotdl_command(list_path: &std::path::Path, inbox: &std::path::Path) -> String {
     format!(
-        "xargs -a {} -d '\\n' {} download --output {}",
-        shell_quote(&list_path.display().to_string()),
+        "{} download {} --output {}",
         shell_quote(&spotdl_binary()),
+        shell_quote(&list_path.display().to_string()),
         shell_quote(&format!(
             "{}/{{artists}} - {{title}}.{{output-ext}}",
             inbox.display()
         ))
     )
+}
+
+/// Boucle `yt-dlp`, qui ne dépend d'aucun accès à Spotify.
+///
+/// Le nom du fichier vient de la **requête**, pas du titre de la vidéo : les
+/// titres YouTube sont bruités (« [Clip Officiel] », « prod. by … ») alors que
+/// la requête est déjà propre. Cela donne « Artiste - Titre.mp3 », soit
+/// exactement la forme que l'ouvrier d'identification sait relire.
+///
+/// Les barres obliques sont remplacées : un titre contenant « AC/DC » créerait
+/// sinon un dossier au milieu du chemin.
+fn ytdlp_command(list_path: &std::path::Path, inbox: &std::path::Path) -> String {
+    format!(
+        "while IFS= read -r q; do [ -n \"$q\" ] && {} -x --audio-format mp3 \
+--embed-thumbnail --add-metadata -o \"{}/${{q//\\//-}}.%(ext)s\" \"ytsearch1:$q\"; done < {}",
+        ytdlp_binary(),
+        inbox.display(),
+        shell_quote(&list_path.display().to_string())
+    )
+}
+
+/// Chemin de `yt-dlp`, cherché aux mêmes endroits que `spotdl`.
+fn ytdlp_binary() -> String {
+    binary_path("yt-dlp", &[
+        "/Library/Frameworks/Python.framework/Versions/3.14/bin/yt-dlp",
+    ])
 }
 
 /// La commande qui produit le fichier à comparer.
@@ -233,19 +278,30 @@ pub async fn playlist_save_command(state: State<'_, AppState>, url: String) -> R
 /// général, et l'on retombe sur le nom nu si aucun ne répond — auquel cas le
 /// `PATH` de l'utilisateur fera son office.
 fn spotdl_binary() -> String {
-    let candidates = [
-        dirs_home().map(|home| home.join(".local/bin/spotdl")),
-        Some(std::path::PathBuf::from("/opt/homebrew/bin/spotdl")),
-        Some(std::path::PathBuf::from("/usr/local/bin/spotdl")),
-    ];
+    binary_path("spotdl", &[])
+}
 
-    for candidate in candidates.into_iter().flatten() {
+/// Cherche un exécutable aux emplacements habituels d'installation.
+///
+/// `extra` permet d'ajouter un chemin propre à un outil — l'installation
+/// Python encadrée de `yt-dlp`, par exemple.
+fn binary_path(name: &str, extra: &[&str]) -> String {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    if let Some(home) = dirs_home() {
+        candidates.push(home.join(".local/bin").join(name));
+    }
+    candidates.push(std::path::PathBuf::from(format!("/opt/homebrew/bin/{name}")));
+    candidates.push(std::path::PathBuf::from(format!("/usr/local/bin/{name}")));
+    candidates.extend(extra.iter().map(std::path::PathBuf::from));
+
+    for candidate in candidates {
         if candidate.is_file() {
             return candidate.display().to_string();
         }
     }
 
-    "spotdl".to_string()
+    name.to_string()
 }
 
 fn dirs_home() -> Option<std::path::PathBuf> {
@@ -315,6 +371,60 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
 
+/// Écrit une liste de requêtes dans le dossier de dépôt, et rend sa boucle.
+///
+/// # Pourquoi le même chemin que la comparaison
+///
+/// Les recommandations et les manquants d'une playlist posent la même
+/// question — « comment je récupère tout ça ? ». Leur répondre différemment
+/// obligerait l'utilisateur à réapprendre deux fois la même chose, et
+/// dédoublerait la logique de nommage des fichiers.
+#[tauri::command]
+pub async fn export_queries(
+    state: State<'_, AppState>,
+    queries: Vec<String>,
+    file_name: String,
+) -> Result<ExportedList> {
+    if queries.is_empty() {
+        return Err(OnzerError::Invalid("rien à exporter".to_string()));
+    }
+
+    let paths = state.paths.read().await.clone();
+    let root = paths
+        .library_root()
+        .ok_or_else(|| OnzerError::Invalid("aucune bibliothèque configurée".to_string()))?;
+
+    let inbox = crate::ingest::inbox::inbox_path(root);
+    std::fs::create_dir_all(&inbox)?;
+
+    let safe_name = crate::library::naming::sanitize_segment(&file_name)
+        .unwrap_or_else(|| "liste".to_string());
+    let list_path = inbox.join(format!("{safe_name}.txt"));
+
+    let body: String = queries
+        .iter()
+        .map(|query| format!("{}\n", query.trim()))
+        .filter(|line| line.trim() != "")
+        .collect();
+
+    std::fs::write(&list_path, body)?;
+
+    Ok(ExportedList {
+        command: ytdlp_command(&list_path, &inbox),
+        path: list_path.display().to_string(),
+        count: queries.len(),
+    })
+}
+
+/// Une liste écrite, avec de quoi la récupérer.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedList {
+    pub path: String,
+    pub count: usize,
+    pub command: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,5 +435,45 @@ mod tests {
         // la suite comme des commandes.
         assert_eq!(shell_quote("Damso - L'été"), r"'Damso - L'\''été'");
         assert_eq!(shell_quote("/Volumes/Ma musique"), "'/Volumes/Ma musique'");
+    }
+}
+
+#[cfg(test)]
+mod tests_commandes {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn la_commande_spotdl_ne_passe_plus_par_xargs() {
+        // `xargs -a` est une extension GNU : la version BSD de macOS répond
+        // « invalid option -- a ». `spotdl` lit lui-même un fichier de
+        // requêtes, le détour n'avait pas lieu d'être.
+        let commande = spotdl_command(Path::new("/M/_Inbox/liste.txt"), Path::new("/M/_Inbox"));
+
+        assert!(!commande.contains("xargs"), "{commande}");
+        assert!(commande.contains("download '/M/_Inbox/liste.txt'"), "{commande}");
+    }
+
+    #[test]
+    fn la_boucle_ytdlp_nomme_les_fichiers_depuis_la_requete() {
+        // C'est ce qui donne « Artiste - Titre.mp3 », la forme exacte que le
+        // filet de sécurité de l'ouvrier sait relire quand l'empreinte échoue.
+        let commande = ytdlp_command(Path::new("/M/_Inbox/liste.txt"), Path::new("/M/_Inbox"));
+
+        assert!(commande.contains("ytsearch1:$q"), "{commande}");
+        assert!(commande.contains("${q//\\//-}"), "les barres obliques doivent être neutralisées");
+        assert!(commande.contains("< '/M/_Inbox/liste.txt'"), "{commande}");
+    }
+
+    #[test]
+    fn les_deux_commandes_visent_le_dossier_de_depot() {
+        // C'est ce qui ferme la boucle : ce qui est récupéré atterrit là où
+        // Onzer l'attend, et le rangement suit tout seul.
+        for commande in [
+            spotdl_command(Path::new("/M/l.txt"), Path::new("/M/_Inbox")),
+            ytdlp_command(Path::new("/M/l.txt"), Path::new("/M/_Inbox")),
+        ] {
+            assert!(commande.contains("/M/_Inbox"), "{commande}");
+        }
     }
 }

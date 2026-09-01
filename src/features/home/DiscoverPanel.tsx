@@ -1,9 +1,11 @@
 import { useState } from "react";
 
 import { Icon } from "@/components/Icon";
+import { CommandBox } from "@/features/sync/SyncView";
 import {
   formatDuration,
   ipc,
+  type ExportedList,
   type Suggestion,
   type TrackSuggestion,
 } from "@/lib/ipc";
@@ -44,6 +46,7 @@ export function DiscoverPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [exported, setExported] = useState<ExportedList | null>(null);
 
   async function search() {
     setLoading(true);
@@ -51,6 +54,7 @@ export function DiscoverPanel() {
 
     try {
       if (tab === "tracks") {
+        setExported(null);
         const found = await ipc.discoverTracks();
         setTracks(found);
         if (found.length === 0) {
@@ -71,10 +75,28 @@ export function DiscoverPanel() {
   }
 
   const current = tab === "tracks" ? tracks : artists;
-  const command =
-    tracks === null || tracks.length === 0
-      ? ""
-      : `spotdl download ${tracks.map((track) => `'${track.query.replace(/'/g, "'\\''")}'`).join(" ")}`;
+
+  /**
+   * Écrit les suggestions dans le dossier de dépôt.
+   *
+   * Le même chemin que les manquants d'une playlist : la question posée est la
+   * même, et deux réponses différentes obligeraient à réapprendre deux fois la
+   * même chose.
+   */
+  async function exportList() {
+    if (tracks === null || tracks.length === 0) return;
+
+    try {
+      setExported(
+        await ipc.exportQueries(
+          tracks.map((track) => track.query),
+          "_recommandations",
+        ),
+      );
+    } catch (cause) {
+      setError(String(cause));
+    }
+  }
 
   return (
     <section>
@@ -115,34 +137,35 @@ export function DiscoverPanel() {
 
       {tab === "tracks" && tracks !== null && tracks.length > 0 && (
         <>
-          <div className="mt-5 rounded-xl bg-surface p-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-[13px] font-semibold text-ink">
-                Tout récupérer d'un coup
+          {exported === null ? (
+            <button
+              type="button"
+              onClick={() => void exportList()}
+              className="mt-5 flex items-center gap-2 rounded-full bg-elevated px-5 py-2 text-[13px] font-semibold text-ink transition-colors hover:bg-raised"
+            >
+              <Icon name="folder" size={15} />
+              Exporter la liste et sa commande
+            </button>
+          ) : (
+            <>
+              <p className="mt-5 text-[12px] text-ink-muted">
+                {exported.count} requêtes écrites dans{" "}
+                <span className="font-mono text-ink-faint">{exported.path}</span>
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(command);
+
+              <CommandBox
+                title="Tout récupérer d'un coup"
+                command={exported.command}
+                copied={copied}
+                onCopy={() => {
+                  void navigator.clipboard.writeText(exported.command);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                 }}
-                className="rounded-full bg-elevated px-3 py-1 text-[11px] font-semibold text-ink-muted transition-colors hover:text-ink"
-              >
-                {copied ? "Copié" : "Copier"}
-              </button>
-            </div>
-
-            <pre className="mt-3 max-h-24 overflow-auto rounded-lg bg-base p-3 font-mono text-[11px] leading-relaxed text-ink-muted">
-              {command}
-            </pre>
-
-            <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-              Onzer ne lance pas cette commande — c'est ton outil, ton terminal,
-              ta décision. Lance-la depuis ton dossier <span className="font-mono">_Inbox</span>{" "}
-              et le rangement se fera tout seul.
-            </p>
-          </div>
+                note="yt-dlp aspire le son brut : les fichiers arrivent nommés « Artiste - Titre.mp3 » dans ton dossier de dépôt, et Onzer les identifie et les range tout seul. Onzer ne lance pas cette commande — c'est ton outil, ton terminal, ta décision."
+              />
+            </>
+          )}
 
           <ul className="mt-6 divide-y divide-line">
             {tracks.map((track, index) => (

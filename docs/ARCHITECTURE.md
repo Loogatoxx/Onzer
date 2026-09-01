@@ -1155,6 +1155,75 @@ porte.
 
 ---
 
+## ADR-039 — `xargs -a` n'existe pas sur macOS
+
+**Contexte.** La commande générée pour récupérer les manquants répondait
+`xargs: invalid option -- a` sur la machine de l'utilisateur.
+
+**La cause.** `-a` est une **extension GNU**. La version BSD livrée avec macOS ne la connaît
+pas. Une application macOS générant une commande pour macOS n'avait aucune excuse de supposer
+un `xargs` Linux.
+
+**Décision.** Le détour n'avait même pas lieu d'être : `spotdl` accepte directement un fichier
+de requêtes en argument. Et surtout, une **seconde commande** est désormais proposée, en
+premier — une boucle `yt-dlp`, qui ne dépend d'aucun accès à Spotify.
+
+**Pourquoi `yt-dlp` est devenu la voie principale.** L'accès Spotify de `spotdl` est cassé par
+intermittence (voir ADR-038), y compris pour les recherches textuelles. Or Onzer possède
+maintenant sa **propre identification acoustique** : il n'a plus besoin qu'un téléchargeur lui
+apporte des métadonnées. Aspirer le son brut suffit.
+
+Le nom de fichier est composé depuis la requête et non depuis le titre de la vidéo — les
+titres YouTube sont bruités (« [Clip Officiel] », « prod. by … ») alors que la requête est
+déjà propre. On obtient « Artiste - Titre.mp3 », soit exactement ce que le filet de sécurité
+de l'ouvrier sait relire. Les barres obliques sont neutralisées : « AC/DC » créerait sinon un
+dossier au milieu du chemin.
+
+---
+
+## ADR-040 — Le nom du fichier est le plan B de l'empreinte
+
+**Contexte.** L'empreinte acoustique échoue sur environ un fichier sur trois quand la source
+est un clip vidéo : intro parlée, jingle, outro — le signal est décalé au point que l'index
+ne reconnaît plus rien. Le morceau restait alors sans pochette ni album, alors que son nom de
+fichier disait exactement de quoi il s'agissait.
+
+**Décision.** Quand AcoustID ne trouve rien, l'ouvrier cherche dans MusicBrainz **par le
+texte** — artiste et titre lus dans le nom du fichier.
+
+**Ce qui ne change pas : la corroboration.** La correspondance textuelle passe par le
+**même juge** que l'acoustique (`verdict`) — durée compatible, tags non contredits. Un filet
+de sécurité qui accepterait n'importe quoi serait pire que pas de filet : il écrirait de faux
+tags là où il n'y en avait aucun.
+
+Deux détails : le score MusicBrainz (0 à 100) est ramené sur l'échelle d'AcoustID (0 à 1)
+pour que les deux passent par le même juge sans conversion ad hoc ; et les caractères
+réservés de Lucene sont neutralisés — un titre contenant une parenthèse ferait répondre une
+erreur de syntaxe plutôt qu'une liste vide.
+
+---
+
+## ADR-041 — Une touche qui ne répond pas doit dire pourquoi
+
+**Contexte.** Les touches F7, F8 et F9 d'un clavier Apple émettent des événements **système**,
+pas des frappes ordinaires : la page web ne les voit jamais, et l'API `MediaSession` ne les
+capterait pas davantage — elle suppose que le son sort de la page, alors qu'il sort du moteur
+Rust. Seul un raccourci global peut les recevoir.
+
+**Le mur.** L'enregistrement échoue sur macOS tant que l'application n'a pas l'autorisation
+d'accessibilité : `Failed to watch media key event`. Sans rien de plus, l'utilisateur appuie
+sur F8, rien ne se passe, et rien ne lui dit pourquoi.
+
+**Décision.** L'échec est **conservé et affiché** sur la page des raccourcis, avec le chemin
+exact du réglage à ouvrir et un bouton « J'ai autorisé, réessayer » qui rejoue
+l'enregistrement sans redémarrage. C'est la leçon de l'ADR-030 appliquée d'avance : un
+avertissement qui ne quitte pas les journaux est un défaut qui attend.
+
+**La page des raccourcis** existe pour la même raison qu'un aide-mémoire : un raccourci ne
+s'apprend pas au moment où l'on en a besoin — à ce moment-là, on a déjà pris la souris.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

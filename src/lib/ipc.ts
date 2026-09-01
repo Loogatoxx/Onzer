@@ -62,14 +62,30 @@ export interface PlaylistTrack {
   query: string;
 }
 
+/** Miroir de `commands::system::MediaKeysStatus`. */
+export interface MediaKeysStatus {
+  working: boolean;
+  /** Message du système, quand l'enregistrement a échoué. */
+  error: string | null;
+}
+
+/** Miroir de `commands::sync::ExportedList`. */
+export interface ExportedList {
+  path: string;
+  count: number;
+  command: string;
+}
+
 /** Miroir de `commands::sync::PlaylistComparison`. */
 export interface PlaylistComparison {
   playlistName: string;
   total: number;
   present: number;
   missing: PlaylistTrack[];
-  /** Commande prête à coller dans un terminal. */
+  /** Commande `spotdl`, quand son accès à Spotify fonctionne. */
   command: string;
+  /** Boucle `yt-dlp`, qui ne dépend d'aucun accès à Spotify. */
+  ytdlpCommand: string;
 }
 
 /** Miroir de `commands::sync::SpotifyStatus`. */
@@ -415,6 +431,13 @@ const PLAYBACK_TICK_EVENT = "playback://tick";
 export const ipc = {
   appStatus: (): Promise<AppStatus> => invoke<AppStatus>("app_status"),
 
+  mediaKeysStatus: (): Promise<MediaKeysStatus> =>
+    invoke<MediaKeysStatus>("media_keys_status"),
+
+  /** Réessaie après une autorisation accordée, sans redémarrer. */
+  retryMediaKeys: (): Promise<MediaKeysStatus> =>
+    invoke<MediaKeysStatus>("retry_media_keys"),
+
   setLibraryRoot: (path: string): Promise<void> =>
     invoke<void>("set_library_root", { path }),
 
@@ -557,6 +580,15 @@ export const ipc = {
    */
   comparePlaylistText: (text: string): Promise<PlaylistComparison> =>
     invoke<PlaylistComparison>("compare_playlist_text", { text }),
+
+  /**
+   * Écrit une liste de requêtes dans le dossier de dépôt, et rend sa boucle.
+   *
+   * Sert aux recommandations comme aux manquants d'une playlist : la question
+   * posée — « comment je récupère tout ça ? » — est la même.
+   */
+  exportQueries: (queries: string[], fileName: string): Promise<ExportedList> =>
+    invoke<ExportedList>("export_queries", { queries, fileName }),
 
   /** La commande qui produit le fichier à comparer. */
   playlistSaveCommand: (url: string): Promise<string> =>

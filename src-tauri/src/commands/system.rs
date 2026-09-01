@@ -49,3 +49,51 @@ pub async fn app_status(state: State<'_, AppState>) -> Result<AppStatus> {
         event_count,
     })
 }
+
+// ── Touches multimédia ──────────────────────────────────────────────────────
+
+/// Pourquoi les touches multimédia ne répondent pas, le cas échéant.
+///
+/// # Pourquoi remonter cela à l'écran
+///
+/// Sur macOS, capter F7/F8/F9 exige une autorisation d'accessibilité que le
+/// système n'accorde pas de lui-même. Sans elle, l'enregistrement échoue en
+/// silence : l'utilisateur appuie sur la touche, rien ne se passe, et rien ne
+/// lui dit pourquoi. Un avertissement qui ne quitte pas les journaux est un
+/// défaut qui attend — c'est ce qui avait retardé la découverte du décodeur
+/// incapable de se déplacer.
+static MEDIA_KEYS_ERROR: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+pub fn set_media_keys_error(error: String) {
+    if let Ok(mut slot) = MEDIA_KEYS_ERROR.write() {
+        *slot = (!error.is_empty()).then_some(error);
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaKeysStatus {
+    pub working: bool,
+    /// Message du système, quand l'enregistrement a échoué.
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub fn media_keys_status() -> MediaKeysStatus {
+    let error = MEDIA_KEYS_ERROR.read().ok().and_then(|slot| slot.clone());
+
+    MediaKeysStatus {
+        working: error.is_none(),
+        error,
+    }
+}
+
+/// Réessaie d'enregistrer les touches, après une autorisation accordée.
+///
+/// Sans cela, il faudrait redémarrer l'application pour que le réglage prenne
+/// effet — le meilleur moyen de faire croire qu'il n'a pas marché.
+#[tauri::command]
+pub fn retry_media_keys(app: tauri::AppHandle) -> MediaKeysStatus {
+    crate::register_media_keys(&app);
+    media_keys_status()
+}

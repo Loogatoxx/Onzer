@@ -18,6 +18,7 @@ import { NowPlayingPanel, type PanelTab } from "@/features/player/NowPlayingPane
 import { LyricsView } from "@/features/player/LyricsView";
 import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
+import { ShortcutsView } from "@/features/nav/ShortcutsView";
 import { SyncView } from "@/features/sync/SyncView";
 import { WrappedView } from "@/features/stats/WrappedView";
 import {
@@ -115,6 +116,9 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   const searching = query.trim() !== "";
   const shown = searching ? (results ?? []) : tracks;
 
+  /** Le morceau en cours. Dérivé tôt : les raccourcis clavier s'en servent. */
+  const current = playback.state?.current ?? null;
+
   // ── Chargements ───────────────────────────────────────────────────────
 
   const reloadPlaylists = useCallback(() => {
@@ -146,6 +150,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       || route.kind === "artists"
       || route.kind === "lyrics"
       || route.kind === "sync"
+      || route.kind === "shortcuts"
     ) {
       return;
     }
@@ -239,10 +244,69 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
         return;
       }
 
-      if (event.code === "Space") {
-        event.preventDefault();
-        void playback.toggle();
+      const state = playback.state;
+
+      // ⌘ est réservé à la navigation : tout le reste tient à une touche, sans
+      // quoi on ne s'en sert jamais.
+      if (event.metaKey) {
+        if (event.code === "KeyF") {
+          event.preventDefault();
+          document.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+          return;
+        }
+        if (event.key === "?") {
+          event.preventDefault();
+          navigate({ kind: "shortcuts" });
+          return;
+        }
+        if (event.code === "ArrowRight") {
+          event.preventDefault();
+          void playback.next();
+          return;
+        }
+        if (event.code === "ArrowLeft") {
+          event.preventDefault();
+          void playback.previous();
+          return;
+        }
         return;
+      }
+
+      switch (event.code) {
+        case "Space":
+          event.preventDefault();
+          void playback.toggle();
+          return;
+
+        case "KeyL":
+          if (current !== null) void toggleLoved(current.trackId);
+          return;
+
+        case "KeyS":
+          if (state !== null) void playback.toggleShuffle(!state.shuffle);
+          return;
+
+        case "KeyR":
+          if (state !== null) void playback.cycleRepeat(state.repeat);
+          return;
+
+        case "KeyM":
+          if (state !== null) {
+            void playback.setVolume(state.volume === 0 ? 0.8 : 0);
+          }
+          return;
+
+        case "ArrowUp":
+        case "ArrowDown": {
+          if (state === null) return;
+          event.preventDefault();
+          const step = event.code === "ArrowUp" ? 0.05 : -0.05;
+          void playback.setVolume(Math.min(1, Math.max(0, state.volume + step)));
+          return;
+        }
+
+        default:
+          break;
       }
 
       const direction =
@@ -251,7 +315,6 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
 
       event.preventDefault();
 
-      const state = playback.state;
       if (state?.current == null) return;
 
       const step = seekStep(repeats.current);
@@ -278,7 +341,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [playback]);
+  }, [playback, current, navigate]);
 
   // ── Actions ───────────────────────────────────────────────────────────
 
@@ -495,8 +558,6 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       }
     />
   );
-
-  const current = playback.state?.current ?? null;
 
   return (
     <div className="flex h-full flex-col bg-base">
@@ -763,6 +824,10 @@ function Page(props: PageProps) {
 
   if (route.kind === "sync") {
     return <SyncView />;
+  }
+
+  if (route.kind === "shortcuts") {
+    return <ShortcutsView />;
   }
 
   if (route.kind === "lyrics") {

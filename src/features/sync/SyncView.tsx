@@ -113,8 +113,10 @@ function FromPlaylist() {
   async function pick() {
     const selected = await open({
       multiple: false,
-      title: "Choisir le fichier produit par spotdl save",
-      filters: [{ name: "Liste spotdl", extensions: ["spotdl", "json"] }],
+      title: "Choisir une liste de titres",
+      filters: [
+        { name: "Listes de titres", extensions: ["csv", "txt", "spotdl", "json"] },
+      ],
     });
     if (typeof selected !== "string") return;
 
@@ -155,17 +157,31 @@ function FromPlaylist() {
           className="mt-3 h-40 w-full resize-none rounded-lg bg-base p-3 font-mono text-[12px] leading-relaxed text-ink placeholder:text-ink-faint focus:outline focus:outline-1 focus:outline-accent"
         />
 
-        <button
-          type="button"
-          disabled={loading || pasted.trim() === ""}
-          onClick={() => void comparePasted()}
-          className="mt-3 flex items-center gap-2 rounded-full bg-ink px-5 py-2 text-[13px] font-semibold text-base transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
-          <span className={loading ? "animate-spin" : ""}>
-            <Icon name={loading ? "repeat" : "search"} size={15} />
-          </span>
-          Comparer cette liste
-        </button>
+        <div className="mt-3 flex flex-wrap gap-3">
+          <button
+            type="button"
+            disabled={loading || pasted.trim() === ""}
+            onClick={() => void comparePasted()}
+            className="flex items-center gap-2 rounded-full bg-ink px-5 py-2 text-[13px] font-semibold text-base transition-opacity hover:opacity-90 disabled:opacity-40"
+          >
+            <span className={loading ? "animate-spin" : ""}>
+              <Icon name={loading ? "repeat" : "search"} size={15} />
+            </span>
+            Comparer cette liste
+          </button>
+
+          {/* Un fichier évite le copier-coller d'un export de plusieurs
+              centaines de lignes, que certains champs de saisie tronquent. */}
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void pick()}
+            className="flex items-center gap-2 rounded-full bg-elevated px-5 py-2 text-[13px] font-semibold text-ink transition-colors hover:bg-raised disabled:opacity-40"
+          >
+            <Icon name="folder" size={15} />
+            Déposer un CSV
+          </button>
+        </div>
       </div>
 
       <details className="mt-6 rounded-xl bg-surface/60 p-4">
@@ -283,32 +299,25 @@ function FromPlaylist() {
             </p>
           ) : (
             <>
+              {comparison.ytdlpCommand !== "" && (
+                <CommandBox
+                  title="Récupérer les manquants"
+                  command={comparison.ytdlpCommand}
+                  copied={copied === "ytdlp"}
+                  onCopy={() => copy(comparison.ytdlpCommand, "ytdlp")}
+                  note="yt-dlp aspire le son brut : il ne dépend d'aucun accès à Spotify. Les fichiers sont nommés « Artiste - Titre.mp3 » et déposés dans ton dossier de dépôt — Onzer les identifie et les range ensuite tout seul, avec sa propre empreinte acoustique."
+                />
+              )}
+
               {comparison.command !== "" && (
-                <div className="mt-5 rounded-xl bg-surface p-4">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="text-[13px] font-semibold text-ink">
-                      3. Récupérer les seuls manquants
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => copy(comparison.command, "download")}
-                      className="rounded-full bg-elevated px-3 py-1 text-[11px] font-semibold text-ink-muted transition-colors hover:text-ink"
-                    >
-                      {copied === "download" ? "Copié" : "Copier"}
-                    </button>
-                  </div>
-
-                  <pre className="mt-3 max-h-32 overflow-auto rounded-lg bg-base p-3 font-mono text-[11px] leading-relaxed text-ink-muted">
-                    {comparison.command}
-                  </pre>
-
-                  <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
-                    La sortie vise ton dossier de dépôt : ce que tu récupères y
-                    atterrit, et le dédoublonnage, l'identification et le
-                    rangement se font tout seuls. Onzer ne lance pas cette
-                    commande — c'est ton outil, ton terminal, ta décision.
-                  </p>
-                </div>
+                <CommandBox
+                  title="Variante spotdl"
+                  command={comparison.command}
+                  copied={copied === "download"}
+                  onCopy={() => copy(comparison.command, "download")}
+                  note="Plus confortable quand l'accès Spotify de spotdl fonctionne — il tague lui-même. À utiliser si la boucle yt-dlp ne te convient pas."
+                  quiet
+                />
               )}
 
               <ul className="mt-6 divide-y divide-line">
@@ -346,5 +355,50 @@ function FromPlaylist() {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Encart d'une commande à copier.
+ *
+ * `quiet` distingue la variante de repli de la voie principale : deux blocs de
+ * même poids visuel laisseraient croire qu'il faut lancer les deux.
+ */
+export function CommandBox({
+  title,
+  command,
+  note,
+  copied,
+  onCopy,
+  quiet = false,
+}: {
+  title: string;
+  command: string;
+  note: string;
+  copied: boolean;
+  onCopy: () => void;
+  quiet?: boolean;
+}) {
+  return (
+    <div className={`mt-5 rounded-xl p-4 ${quiet ? "bg-surface/50" : "bg-surface"}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className={`text-[13px] font-semibold ${quiet ? "text-ink-muted" : "text-ink"}`}>
+          {title}
+        </p>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="rounded-full bg-elevated px-3 py-1 text-[11px] font-semibold text-ink-muted transition-colors hover:text-ink"
+        >
+          {copied ? "Copié" : "Copier"}
+        </button>
+      </div>
+
+      <pre className="mt-3 max-h-32 overflow-auto rounded-lg bg-base p-3 font-mono text-[11px] leading-relaxed text-ink-muted">
+        {command}
+      </pre>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">{note}</p>
+    </div>
   );
 }

@@ -58,6 +58,7 @@ pub fn run() {
     tauri::Builder::default()
         // Sélecteur de dossier natif, pour choisir la racine de bibliothèque.
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             // `app_data_dir` pointe vers ~/Library/Application Support/Onzer
             // sur macOS. On ne code jamais ce chemin en dur.
@@ -196,11 +197,14 @@ pub fn run() {
             });
 
             spawn_playback_loop(app.handle().clone());
+            register_media_keys(app.handle());
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::system::app_status,
+            commands::system::media_keys_status,
+            commands::system::retry_media_keys,
             commands::library::set_library_root,
             commands::library::import_folder,
             commands::library::list_tracks,
@@ -238,6 +242,7 @@ pub fn run() {
             commands::library::ignore_duplicate_group,
             commands::sync::compare_playlist_file,
             commands::sync::compare_playlist_text,
+            commands::sync::export_queries,
             commands::sync::playlist_save_command,
             commands::sync::spotify_status,
             commands::sync::set_spotify_credentials,
@@ -334,6 +339,92 @@ fn spawn_album_revision(pool: SqlitePool, paths: Arc<RwLock<PathResolver>>) {
             Err(error) => tracing::warn!(%error, "révision des albums impossible"),
         }
     });
+}
+
+/// Branche les touches multimédia du clavier.
+///
+/// # Pourquoi un raccourci global et non un événement de la page
+///
+/// Sur un clavier Apple, F7, F8 et F9 émettent des événements **système** de
+/// contrôle de lecture, pas des frappes ordinaires. La page web ne les voit
+/// jamais. L'API `MediaSession` du navigateur ne les capterait pas davantage :
+/// elle suppose que le son sort de la page, alors qu'il sort du moteur Rust.
+///
+/// Le raccourci global est donc le seul chemin. Sa contrepartie est assumée :
+/// il fonctionne même quand Onzer n'est pas au premier plan — ce qui est très
+/// exactement ce qu'on attend d'une touche de lecture.
+pub fn register_media_keys(app: &tauri::AppHandle) {
+    use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+    let shortcuts = [
+        (Code::MediaPlayPause, MediaAction::Toggle),
+        (Code::MediaTrackNext, MediaAction::Next),
+        (Code::MediaTrackPrevious, MediaAction::Previous),
+    ];
+
+    for (code, action) in shortcuts {
+        let shortcut = Shortcut::new(Some(Modifiers::empty()), code);
+        let handle = app.clone();
+
+        let outcome = app.global_shortcut().on_shortcut(shortcut, move |_, _, event| {
+            // Une pression émet deux événements ; n'agir qu'au relâchement
+            // évite de sauter deux morceaux d'un seul appui.
+            if event.state() != ShortcutState::Released {
+                return;
+            }
+
+            let handle = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = action.run(&handle).await {
+                    tracing::warn!(%error, "touche multimédia sans effet");
+                }
+            });
+        });
+
+        if let Err(error) = outcome {
+            // Une touche refusée n'est pas une raison d'empêcher le démarrage.
+            // Mais elle ne doit pas non plus rester enterrée dans un journal :
+            // l'utilisateur appuierait sur F8 sans rien comprendre. La raison
+            // est conservée pour être affichée.
+            tracing::warn!(%error, ?code, "touche multimédia non enregistrée");
+            commands::system::set_media_keys_error(error.to_string());
+            return;
+        }
+    }
+
+    commands::system::set_media_keys_error(String::new());
+}
+
+/// Ce qu'une touche multimédia déclenche.
+#[derive(Debug, Clone, Copy)]
+enum MediaAction {
+    Toggle,
+    Next,
+    Previous,
+}
+
+impl MediaAction {
+    async fn run(self, app: &tauri::AppHandle) -> core::Result<()> {
+        let state = app.state::<AppState>();
+        let player = state.player()?;
+
+        match self {
+            Self::Toggle => player.toggle().await?,
+            Self::Next | Self::Previous => {
+                let paths = state.paths.read().await.clone();
+                if matches!(self, Self::Next) {
+                    player.next(&state.pool, &paths, false).await?;
+                } else {
+                    player.previous(&state.pool, &paths).await?;
+                }
+            }
+        }
+
+        // L'interface doit suivre : sans cet événement, la barre de lecture
+        // continuerait d'afficher le morceau précédent.
+        let _ = app.emit(commands::playback::STATE_EVENT, player.snapshot().await);
+        Ok(())
+    }
 }
 
 fn spawn_playback_loop(handle: tauri::AppHandle) {

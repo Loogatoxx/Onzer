@@ -375,6 +375,164 @@ struct Track {
     position: Option<u32>,
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  Recherche par texte — le filet de sécurité
+// ════════════════════════════════════════════════════════════════════════════
+
+const SEARCH_ENDPOINT: &str = "https://musicbrainz.org/ws/2/recording";
+
+/// Score minimal d'une correspondance textuelle.
+///
+/// MusicBrainz note de 0 à 100. En dessous de 85, la correspondance relève du
+/// mot commun — « Intro », « Freestyle » — plutôt que du morceau cherché.
+const MIN_SEARCH_SCORE: u32 = 85;
+
+/// Une correspondance textuelle, avant corroboration.
+#[derive(Debug, Clone)]
+pub struct SearchHit {
+    pub recording_mbid: String,
+    pub title: String,
+    pub artist: Option<String>,
+    pub length_ms: Option<i64>,
+    /// Confiance de MusicBrainz, ramenée entre 0 et 1 pour rejoindre l'échelle
+    /// d'AcoustID — les deux passent ensuite par le même juge.
+    pub score: f64,
+}
+
+impl MusicBrainzClient {
+    /// Cherche un enregistrement par son artiste et son titre.
+    ///
+    /// # Quand cela sert
+    ///
+    /// L'empreinte acoustique échoue sur environ un fichier sur trois quand la
+    /// source est un clip : les intros parlées, les jingles et les outros
+    /// décalent le signal au point que l'index ne reconnaît plus rien. Le nom
+    /// du fichier, lui, dit « Artiste - Titre » — c'est une information de
+    /// moindre qualité, mais ce n'est pas rien.
+    ///
+    /// Elle passe par le **même juge** que l'empreinte (`verdict`) : une
+    /// correspondance textuelle non corroborée par la durée doit être refusée
+    /// exactement comme une correspondance acoustique douteuse.
+    pub async fn search(&self, artist: Option<&str>, title: &str) -> Result<Vec<SearchHit>> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // La syntaxe de Lucene donne son poids à chaque champ. Sans artiste, on
+        // cherche sur le seul titre — moins sûr, mais le juge tranchera.
+        let query = match artist.map(str::trim).filter(|name| !name.is_empty()) {
+            Some(artist) => format!(
+                "artist:\"{}\" AND recording:\"{}\"",
+                escape(artist),
+                escape(title)
+            ),
+            None => format!("recording:\"{}\"", escape(title)),
+        };
+
+        let url = format!(
+            "{SEARCH_ENDPOINT}?query={}&fmt=json&limit=5",
+            encode(&query)
+        );
+
+        let Some(response) = self.service.get_json::<SearchResponse>(&url).await? else {
+            return Ok(Vec::new());
+        };
+
+        Ok(response
+            .recordings
+            .into_iter()
+            .filter(|hit| hit.score >= MIN_SEARCH_SCORE)
+            .map(|hit| {
+                let (artists, _) = split_artist_credit(&hit.artist_credit);
+                SearchHit {
+                    recording_mbid: hit.id,
+                    title: hit.title,
+                    artist: artists.into_iter().next(),
+                    length_ms: hit.length.map(i64::from),
+                    score: f64::from(hit.score) / 100.0,
+                }
+            })
+            .collect())
+    }
+}
+
+/// Neutralise les caractères réservés de Lucene.
+///
+/// Un titre contenant un guillemet ou une parenthèse casserait la requête, et
+/// MusicBrainz répondrait une erreur de syntaxe plutôt qu'une liste vide.
+fn escape(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| !matches!(c, '"' | '\\' | ':' | '(' | ')' | '[' | ']' | '^' | '~'))
+        .collect()
+}
+
+/// Encodage de composant d'URL.
+fn encode(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            b' ' => out.push_str("%20"),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+
+    out
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchResponse {
+    #[serde(default)]
+    recordings: Vec<SearchRecording>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchRecording {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    score: u32,
+    #[serde(default)]
+    length: Option<u32>,
+    #[serde(rename = "artist-credit", default)]
+    artist_credit: Vec<ArtistCredit>,
+}
+
+#[cfg(test)]
+mod tests_recherche {
+    use super::*;
+
+    #[test]
+    fn neutralise_les_caracteres_reserves() {
+        // Un titre comme « Intro (feat. X) » casserait la requête Lucene et
+        // MusicBrainz répondrait une erreur de syntaxe, pas une liste vide.
+        assert_eq!(escape("Intro (feat. X)"), "Intro feat. X");
+        assert_eq!(escape("A \"B\" C"), "A B C");
+        assert_eq!(escape("Ratio: 1"), "Ratio 1");
+    }
+
+    #[test]
+    fn conserve_les_accents_et_les_espaces() {
+        // Les écarter mutilerait la recherche : « Ipséité » ne se trouve pas
+        // sous « Ipsit ».
+        assert_eq!(escape("Θ. Macarena"), "Θ. Macarena");
+        assert_eq!(escape("Festival de rêves"), "Festival de rêves");
+    }
+
+    #[test]
+    fn encode_pour_lurl() {
+        assert_eq!(encode("Népal"), "N%C3%A9pal");
+        assert_eq!(encode("a b"), "a%20b");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

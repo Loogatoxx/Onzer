@@ -46,6 +46,8 @@ pub struct RepairReport {
     pub originals_recovered: u64,
     /// Morceaux sans album sortis d'un dossier d'album.
     pub refiled: u64,
+    /// Lignes d'index de recherche remises en accord avec la base.
+    pub reindexed: u64,
 }
 
 impl RepairReport {
@@ -55,6 +57,7 @@ impl RepairReport {
             && self.files_set_aside == 0
             && self.originals_recovered == 0
             && self.refiled == 0
+            && self.reindexed == 0
     }
 }
 
@@ -64,6 +67,7 @@ pub async fn run(pool: &SqlitePool, paths: &PathResolver) -> Result<RepairReport
     let (merged, files_set_aside) = merge_duplicates(pool, paths).await?;
     let originals_recovered = recover_original_tags(pool, paths).await?;
     let refiled = refile_albumless(pool, paths).await?;
+    let reindexed = resync_search_index(pool).await?;
 
     Ok(RepairReport {
         hashed,
@@ -71,7 +75,55 @@ pub async fn run(pool: &SqlitePool, paths: &PathResolver) -> Result<RepairReport
         files_set_aside,
         originals_recovered,
         refiled,
+        reindexed,
     })
+}
+
+/// Remet l'index de recherche en accord avec la base.
+///
+/// # Le défaut que cette passe répare, après coup
+///
+/// L'index FTS5 est une **copie** : titre, artistes et album y sont dupliqués
+/// pour être indexés. Rattacher une pochette, compléter un album ou détacher
+/// une compilation changeait la base sans toucher à cette copie.
+///
+/// Mesuré sur la bibliothèque : **113 morceaux sur 590** étaient trouvables
+/// sous un album qu'ils n'avaient plus — « Macarena » répondait encore à
+/// « I migliori anni '90 » et restait introuvable sous son vrai album. Un
+/// index qui répond à côté est pire qu'un index vide : on croit avoir cherché.
+///
+/// Corriger les chemins d'écriture ne répare pas ce qu'ils ont déjà écrit,
+/// d'où cette passe — comme pour la révision des albums (ADR-032).
+async fn resync_search_index(pool: &SqlitePool) -> Result<u64> {
+    // Seules les lignes réellement divergentes sont réécrites : réindexer
+    // toute la bibliothèque à chaque démarrage coûterait cher pour rien, et
+    // rendrait le rapport de remise en état illisible — il annoncerait 590
+    // réparations là où il n'y a rien à réparer.
+    let drifted: Vec<i64> = sqlx::query_scalar(
+        "SELECT t.id
+           FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+           JOIN tracks_fts f ON f.track_id = t.id
+          WHERE t.deleted_at IS NULL
+            AND (
+                 IFNULL(f.album_title, '') <> IFNULL(al.title, '')
+              OR f.title <> t.title
+            )",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if drifted.is_empty() {
+        return Ok(0);
+    }
+
+    let mut tx = pool.begin().await?;
+    for track_id in &drifted {
+        crate::db::repository::reindex_track(&mut tx, *track_id).await?;
+    }
+    tx.commit().await?;
+
+    Ok(drifted.len() as u64)
 }
 
 /// Range les morceaux sans album restés dans un dossier d'album.
@@ -637,5 +689,41 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(evenements, 1, "l'historique doit survivre au ménage");
+    }
+    #[tokio::test]
+    async fn remet_l_index_en_accord_avec_la_base() {
+        // Le cas mesuré : 113 morceaux répondaient encore à un album de
+        // compilation effacé depuis, et restaient introuvables sous le leur.
+        let (_dir, pool, paths) = bibliotheque().await;
+
+        let chemin = ecrire(&paths, "A/Album/01 - Un.mp3", 100);
+        let track_id = inserer(&pool, &paths, &chemin).await;
+
+        sqlx::query("UPDATE tracks_fts SET album_title = 'I migliori anni 90' WHERE track_id = ?")
+            .bind(track_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(run(&pool, &paths).await.unwrap().reindexed, 1);
+
+        let indexe: Option<String> =
+            sqlx::query_scalar("SELECT album_title FROM tracks_fts WHERE track_id = ?")
+                .bind(track_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let en_base: Option<String> = sqlx::query_scalar(
+            "SELECT al.title FROM tracks t LEFT JOIN albums al ON al.id = t.album_id WHERE t.id = ?",
+        )
+        .bind(track_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(indexe.unwrap_or_default(), en_base.unwrap_or_default());
+
+        // Une seconde exécution n'a plus rien à réparer.
+        assert_eq!(run(&pool, &paths).await.unwrap().reindexed, 0);
     }
 }

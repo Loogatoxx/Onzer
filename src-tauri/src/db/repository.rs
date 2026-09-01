@@ -607,6 +607,63 @@ pub async fn restore_identity(
     Ok(())
 }
 
+/// Réécrit la ligne d'index d'un morceau depuis l'état courant de la base.
+///
+/// # Pourquoi une fonction plutôt qu'un appel à chaque endroit
+///
+/// L'index de recherche est une **copie** : titre, artistes et album y sont
+/// dupliqués pour que FTS5 puisse les indexer. Toute copie dérive dès qu'un
+/// seul chemin d'écriture l'oublie — et c'est arrivé : 113 morceaux étaient
+/// trouvables sous « I migliori anni '90 », un album de compilation effacé
+/// depuis, parce que rattacher une pochette changeait l'album sans toucher à
+/// l'index.
+///
+/// Elle relit la base au lieu de recevoir les valeurs en paramètre : un
+/// appelant qui se tromperait de valeurs propagerait l'erreur au lieu de la
+/// corriger.
+pub async fn reindex_track(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    track_id: i64,
+) -> Result<()> {
+    let row: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT t.title,
+                (SELECT GROUP_CONCAT(a.name, ' ') FROM track_artists ta
+                   JOIN artists a ON a.id = ta.artist_id
+                  WHERE ta.track_id = t.id),
+                al.title
+           FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE t.id = ?",
+    )
+    .bind(track_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    let Some((title, artists, album)) = row else {
+        return Ok(());
+    };
+
+    // Effacer puis réinsérer : une table FTS5 n'est pas une table ordinaire, et
+    // c'est la seule façon d'écrire employée dans ce fichier.
+    sqlx::query("DELETE FROM tracks_fts WHERE track_id = ?")
+        .bind(track_id)
+        .execute(&mut **tx)
+        .await?;
+
+    sqlx::query(
+        "INSERT INTO tracks_fts (track_id, title, artist_names, album_title)
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind(track_id)
+    .bind(title)
+    .bind(artists.unwrap_or_default())
+    .bind(album.unwrap_or_default())
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
 /// Rattache une pochette à un morceau.
 ///
 /// # Pourquoi cela peut créer un album
@@ -669,6 +726,10 @@ pub async fn attach_artwork(
             .await?;
     }
 
+    // L'album vient de changer : sans cette ligne, le morceau resterait
+    // cherchable sous l'ancien et introuvable sous le nouveau.
+    reindex_track(&mut tx, track_id).await?;
+
     tx.commit().await?;
     Ok(())
 }
@@ -721,6 +782,8 @@ pub async fn attach_album_only(
         .bind(track_id)
         .execute(&mut *tx)
         .await?;
+
+    reindex_track(&mut tx, track_id).await?;
 
     tx.commit().await?;
     Ok(())

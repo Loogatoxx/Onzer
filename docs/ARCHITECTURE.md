@@ -1467,6 +1467,33 @@ l'application n'a pas compris ce qui vient de se passer.
 
 ---
 
+## ADR-054 — Une copie qui ne suit pas est un mensonge indexé
+
+**Contexte.** L'index de recherche FTS5 duplique le titre, les artistes et l'album : c'est le
+prix de la recherche instantanée. Toute copie dérive dès qu'un seul chemin d'écriture
+l'oublie.
+
+**La mesure.** 113 morceaux sur 590 portaient dans l'index un album qu'ils n'avaient plus.
+« Macarena » répondait encore à « I migliori anni '90 » — la compilation italienne détachée
+depuis (ADR-032) — et restait introuvable sous son vrai album. Rattacher une pochette
+changeait l'album en base sans toucher à l'index ; la complétion automatique et la révision
+faisaient de même.
+
+**Décision.** Une seule fonction, `reindex_track`, appelée par tous les chemins qui touchent
+à l'identité ou à l'album. Elle **relit la base** au lieu de recevoir les valeurs en
+paramètre : un appelant qui se tromperait propagerait son erreur au lieu de la corriger.
+
+Et, comme toujours, corriger le chemin ne répare pas ce qu'il a déjà écrit : la remise en
+état au démarrage compare index et base, et ne réécrit que les lignes divergentes. Vérifié
+de bout en bout sur la bibliothèque réelle — une divergence introduite à la main est
+détectée, signalée et corrigée au lancement suivant.
+
+**Pourquoi ne pas tout réindexer au démarrage.** Réécrire 590 lignes chaque fois coûterait
+pour rien et rendrait le rapport illisible : il annoncerait 590 réparations là où il n'y a
+rien à réparer. Un rapport qui crie tout le temps ne se lit plus.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

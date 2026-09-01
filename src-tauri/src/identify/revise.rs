@@ -221,11 +221,20 @@ async fn detach_album(pool: &SqlitePool, paths: &PathResolver, album_id: i64) ->
             }
         }
 
+        let mut tx = pool.begin().await?;
+
         sqlx::query("UPDATE tracks SET album_id = NULL, year = NULL, relative_path = ? WHERE id = ?")
             .bind(&final_path)
             .bind(track_id)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
+
+        // L'index de recherche porte une copie de l'album : effacer l'un sans
+        // l'autre laisserait le morceau trouvable sous une compilation qui
+        // n'existe plus.
+        crate::db::repository::reindex_track(&mut tx, *track_id).await?;
+
+        tx.commit().await?;
     }
 
     // L'album devenu vide n'a plus de raison d'exister.

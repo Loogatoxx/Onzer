@@ -146,6 +146,7 @@ pub fn run() {
                             fichiers_ecartes = rapport.files_set_aside,
                             tags_origine = rapport.originals_recovered,
                             ranges = rapport.refiled,
+                            reindexes = rapport.reindexed,
                             "bibliothèque remise en état"
                         ),
                         Ok(_) => tracing::debug!("bibliothèque saine, rien à réparer"),

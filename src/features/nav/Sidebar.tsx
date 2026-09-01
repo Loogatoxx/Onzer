@@ -6,6 +6,7 @@ import type { PlaylistSummary } from "@/lib/ipc";
 
 /** Ce que l'application peut afficher dans sa zone principale. */
 export type Route =
+  | { kind: "home" }
   | { kind: "library" }
   | { kind: "loved" }
   | { kind: "stats" }
@@ -61,6 +62,12 @@ export function Sidebar({
       <nav className="rounded-xl bg-surface p-2">
         <NavItem
           icon="home"
+          label="Accueil"
+          active={active === "home"}
+          onClick={() => onNavigate({ kind: "home" })}
+        />
+        <NavItem
+          icon="library"
           label="Bibliothèque"
           active={active === "library" || active === "generated"}
           onClick={() => onNavigate({ kind: "library" })}
@@ -141,7 +148,7 @@ function NavItem({
   active,
   onClick,
 }: {
-  icon: "home" | "stats";
+  icon: "home" | "library" | "stats";
   label: string;
   active: boolean;
   onClick: () => void;

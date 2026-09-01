@@ -702,6 +702,54 @@ une bibliothèque.
 
 ---
 
+## ADR-023 — L'accueil propose des entrées, pas la bibliothèque
+
+**Contexte.** Une bibliothèque personnelle a un défaut que les catalogues en ligne n'ont
+pas : **on l'a déjà toute entendue**. Ouvrir sur une liste de 253 morceaux connus ne donne
+envie de rien.
+
+**Décision.** L'accueil devient la page d'ouverture et ne montre aucune liste. Trois rayons,
+répondant chacun à une question différente :
+
+| Rayon | Question |
+|---|---|
+| Reprendre | « Qu'est-ce que j'écoutais ? » |
+| Mix du jour | « Fais-moi écouter un artiste que j'aime, sans que je choisisse » |
+| Faits pour toi | « Surprends-moi, dans une direction que je choisis » |
+
+**Trois nouveaux types de mix**, avec une règle que les précédents n'avaient pas : certains
+**brident le bandit**. Il sert à découvrir ce qui marche quand la question est ouverte
+(« que me proposer maintenant ? »), mais un mix nommé « Jamais écoutés » y a déjà répondu.
+Le laisser piocher dans l'affinité produirait une playlist de titres archi-connus sous un
+nom qui promet l'inverse — et rien ne détruit plus vite la confiance qu'une promesse
+démentie au premier titre.
+
+| Mix | Stratégies autorisées | Filtre |
+|---|---|---|
+| `loved` | Affinité seule | — |
+| `never_played` | Découverte seule | `play_count = 0` |
+| `artist_mix` | Similarité + découverte | — |
+
+Un mix d'artiste prend pour référence le **barycentre sonore de tout son catalogue**, et non
+un de ses morceaux : un artiste qui alterne les registres serait sinon réduit à celui du
+titre tiré au sort.
+
+**La rotation quotidienne.** Un mix identique chaque matin cesse d'être regardé au bout de
+trois jours. L'ordre des artistes est permuté par le quantième du jour : la sélection ne
+change pas — ce sont bien les plus écoutés — mais la tête de rangée, oui.
+
+**Compléter plutôt que se rabattre.** Le premier jet ne consultait la bibliothèque que si
+l'historique était *vide*. Sur une bibliothèque jeune il ne l'est pas : il compte deux
+artistes. Le rayon affichait donc deux cartes au lieu de six. L'historique reste
+prioritaire, les artistes les mieux fournis complètent — avec un plancher de quatre
+morceaux, en deçà duquel un « mix » ne se distingue pas d'une playlist ordinaire.
+
+**Pourquoi des mosaïques.** Un mix n'est pas un album. Une pochette unique le ferait passer
+pour un disque, et l'on s'attendrait à y retrouver toujours les mêmes morceaux. Quatre
+pochettes assemblées disent qu'il s'agit d'un assemblage, et montrent ce qu'il contient.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

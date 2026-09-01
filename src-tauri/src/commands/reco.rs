@@ -127,6 +127,21 @@ async fn title_for(kind: &PlaylistKind, pool: &sqlx::SqlitePool) -> String {
         }
         PlaylistKind::ForNow => "Pour toi maintenant".to_string(),
         PlaylistKind::Forgotten => "Tu les avais oubliés".to_string(),
+        PlaylistKind::Loved => "En boucle en ce moment".to_string(),
+        PlaylistKind::NeverPlayed => "Jamais écoutés".to_string(),
+        PlaylistKind::ArtistMix { artist_id } => {
+            let name: Option<String> = sqlx::query_scalar("SELECT name FROM artists WHERE id = ?")
+                .bind(artist_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten();
+
+            match name {
+                Some(name) => format!("Mix {name}"),
+                None => "Mix".to_string(),
+            }
+        }
     }
 }
 
@@ -153,6 +168,9 @@ fn base_subtitle(kind: &PlaylistKind, context: &ListeningContext) -> String {
         PlaylistKind::Radio { .. } => "Dans le même univers sonore".to_string(),
         PlaylistKind::ForNow => format!("Ce que tu écoutes {}", context.label()),
         PlaylistKind::Forgotten => "Aimés autrefois, plus écoutés depuis longtemps".to_string(),
+        PlaylistKind::Loved => "Ce que tu réécoutes le plus ces temps-ci".to_string(),
+        PlaylistKind::NeverPlayed => "Le fond de ta bibliothèque, jamais lancé".to_string(),
+        PlaylistKind::ArtistMix { .. } => "Son univers, et ce qui lui ressemble".to_string(),
     }
 }
 
@@ -294,4 +312,53 @@ pub async fn reco_diagnostics(state: State<'_, AppState>) -> Result<RecoDiagnost
             )
             .collect(),
     })
+}
+
+/// Ce qui a la meilleure cote en ce moment.
+#[tauri::command]
+pub async fn start_loved(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    length: Option<usize>,
+) -> Result<GeneratedPlaylist> {
+    generate_and_play(
+        &app,
+        &state,
+        PlaylistKind::Loved,
+        length.unwrap_or(DEFAULT_LENGTH).clamp(5, 100),
+    )
+    .await
+}
+
+/// Le fond de bibliothèque jamais lancé.
+#[tauri::command]
+pub async fn start_never_played(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    length: Option<usize>,
+) -> Result<GeneratedPlaylist> {
+    generate_and_play(
+        &app,
+        &state,
+        PlaylistKind::NeverPlayed,
+        length.unwrap_or(DEFAULT_LENGTH).clamp(5, 100),
+    )
+    .await
+}
+
+/// L'univers sonore d'un artiste.
+#[tauri::command]
+pub async fn start_artist_mix(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    artist_id: i64,
+    length: Option<usize>,
+) -> Result<GeneratedPlaylist> {
+    generate_and_play(
+        &app,
+        &state,
+        PlaylistKind::ArtistMix { artist_id },
+        length.unwrap_or(DEFAULT_LENGTH).clamp(5, 100),
+    )
+    .await
 }

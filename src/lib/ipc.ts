@@ -52,6 +52,31 @@ export interface LyricsProgress {
   running: boolean;
 }
 
+/** Miroir de `commands::home::HomeMix`. */
+export interface HomeMix {
+  /** Correspond à `reco::engine::PlaylistKind::as_str`. */
+  kind: string;
+  /** Renseigné pour un mix d'artiste uniquement. */
+  artistId: number | null;
+  title: string;
+  subtitle: string;
+  /** Jusqu'à quatre pochettes, pour une mosaïque. */
+  coverHashes: string[];
+}
+
+/** Miroir de `commands::home::HomeShelf`. */
+export interface HomeShelf {
+  title: string;
+  mixes: HomeMix[];
+}
+
+/** Miroir de `commands::home::Home`. */
+export interface Home {
+  greeting: string;
+  resume: TrackSummary[];
+  shelves: HomeShelf[];
+}
+
 /** Miroir de `commands::collection::SuspectTrack`. */
 export interface SuspectTrack {
   id: number;
@@ -378,6 +403,18 @@ export const ipc = {
 
   startForgotten: (length?: number): Promise<GeneratedPlaylist> =>
     invoke<GeneratedPlaylist>("start_forgotten", { length }),
+
+  startLoved: (length?: number): Promise<GeneratedPlaylist> =>
+    invoke<GeneratedPlaylist>("start_loved", { length }),
+
+  startNeverPlayed: (length?: number): Promise<GeneratedPlaylist> =>
+    invoke<GeneratedPlaylist>("start_never_played", { length }),
+
+  startArtistMix: (artistId: number, length?: number): Promise<GeneratedPlaylist> =>
+    invoke<GeneratedPlaylist>("start_artist_mix", { artistId, length }),
+
+  /** Contenu de la page d'accueil : reprise, mix du jour, mix de goût. */
+  home: (): Promise<Home> => invoke<Home>("home"),
 
   analysisProgress: (): Promise<AnalysisProgress> =>
     invoke<AnalysisProgress>("analysis_progress"),

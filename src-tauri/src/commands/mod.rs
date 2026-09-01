@@ -6,6 +6,7 @@
 //! l'application.
 
 pub mod collection;
+pub mod home;
 pub mod identify;
 pub mod library;
 pub mod playback;

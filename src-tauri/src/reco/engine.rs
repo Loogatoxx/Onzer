@@ -67,6 +67,12 @@ pub enum PlaylistKind {
     ForNow,
     /// Des morceaux aimés autrefois, plus écoutés depuis longtemps.
     Forgotten,
+    /// Ce qui a la meilleure cote en ce moment.
+    Loved,
+    /// Le fond de bibliothèque jamais lancé une seule fois.
+    NeverPlayed,
+    /// L'univers sonore d'un artiste : ses morceaux et leurs voisins.
+    ArtistMix { artist_id: i64 },
 }
 
 impl PlaylistKind {
@@ -75,6 +81,45 @@ impl PlaylistKind {
             Self::Radio { .. } => "radio",
             Self::ForNow => "for_now",
             Self::Forgotten => "forgotten",
+            Self::Loved => "loved",
+            Self::NeverPlayed => "never_played",
+            Self::ArtistMix { .. } => "artist_mix",
+        }
+    }
+
+    /// Stratégies autorisées, quand la nature du mix les impose.
+    ///
+    /// # Pourquoi certains mix bridentple bandit
+    ///
+    /// Le bandit sert à **découvrir ce qui marche** quand la question est
+    /// ouverte : « que me proposer maintenant ? ». Mais un mix qui s'appelle
+    /// « Jamais écoutés » a déjà répondu à la question. Le laisser piocher dans
+    /// l'affinité produirait une playlist de morceaux archi-connus sous un
+    /// titre qui promet l'inverse — et rien ne détruit plus vite la confiance
+    /// qu'une promesse démentie dès le premier titre.
+    ///
+    /// `None` laisse le bandit libre, ce qui reste le cas général.
+    pub fn forced_strategies(&self) -> Option<&'static [Strategy]> {
+        match self {
+            Self::Loved => Some(&[Strategy::Affinity]),
+            Self::NeverPlayed => Some(&[Strategy::Discovery]),
+            // Un mix d'artiste mêle ce qu'on connaît de lui et ce qui lui
+            // ressemble : c'est ce mélange qui fait sa saveur.
+            Self::ArtistMix { .. } => Some(&[Strategy::Similarity, Strategy::Discovery]),
+            _ => None,
+        }
+    }
+
+    /// Le morceau est-il recevable pour ce type de mix ?
+    ///
+    /// Filtre appliqué **avant** la notation : un « Jamais écoutés » qui
+    /// laisserait passer un morceau écouté trois fois ne serait pas un mix
+    /// approximatif, il serait faux.
+    pub fn accepts(&self, meta: &TrackMeta) -> bool {
+        match self {
+            Self::NeverPlayed => meta.play_count == 0,
+            Self::ArtistMix { .. } => true,
+            _ => true,
         }
     }
 }
@@ -391,6 +436,12 @@ fn score_pools(data: &EngineData, kind: &PlaylistKind, now: i64) -> ScoredPools 
             .vector(*seed_track_id)
             .map(<[f32]>::to_vec)
             .or_else(|| centroid_of_favourites(data)),
+        // Le centre de gravité sonore de l'artiste, et non un seul de ses
+        // morceaux : un artiste qui alterne les registres serait sinon réduit
+        // à celui du titre tiré au sort.
+        PlaylistKind::ArtistMix { artist_id } => {
+            centroid_of_artist(data, *artist_id).or_else(|| centroid_of_favourites(data))
+        }
         _ => centroid_of_favourites(data),
     };
 
@@ -401,6 +452,10 @@ fn score_pools(data: &EngineData, kind: &PlaylistKind, now: i64) -> ScoredPools 
     let mut forgotten = Vec::new();
 
     for (&track_id, meta) in &data.meta {
+        if !kind.accepts(meta) {
+            continue;
+        }
+
         let candidate = data.candidate(track_id);
         let global_affinity = data.affinity_of(track_id);
 
@@ -503,6 +558,25 @@ fn centroid_of_favourites(data: &EngineData) -> Option<Vec<f32>> {
     data.space.centroid(&favourites)
 }
 
+/// Centre de gravité sonore d'un artiste.
+///
+/// `None` si aucun de ses morceaux n'est encore analysé — le mix retombe alors
+/// sur le goût général, ce qui vaut mieux qu'un mix vide.
+fn centroid_of_artist(data: &EngineData, artist_id: i64) -> Option<Vec<f32>> {
+    let tracks: Vec<i64> = data
+        .meta
+        .iter()
+        .filter(|(_, meta)| meta.artist_id == Some(artist_id))
+        .map(|(&track_id, _)| track_id)
+        .collect();
+
+    if tracks.is_empty() {
+        return None;
+    }
+
+    data.space.centroid(&tracks)
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  Assemblage
 // ════════════════════════════════════════════════════════════════════════════
@@ -549,10 +623,12 @@ pub fn generate(
 
     // Les stratégies inapplicables faute de données sont écartées d'emblée :
     // laisser le bandit tirer une stratégie vide gaspillerait des emplacements.
+    let allowed = kind.forced_strategies();
     let arms: Vec<Arm> = data
         .arms
         .iter()
         .copied()
+        .filter(|arm| allowed.is_none_or(|list| list.contains(&arm.strategy)))
         .filter(|arm| strategy_is_usable(arm.strategy, &pools, data))
         .collect();
 

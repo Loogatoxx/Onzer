@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { CoverTile, HeaderAction, PageHeader } from "@/components/PageHeader";
 import { Icon } from "@/components/Icon";
 import { DiscoverBar } from "@/features/discover/DiscoverBar";
+import { HomeView } from "@/features/home/HomeView";
 import { IdentifyPanel } from "@/features/identify/IdentifyPanel";
 import { SuspectPanel } from "@/features/identify/SuspectPanel";
 import { LyricsBar } from "@/features/lyrics/LyricsBar";
@@ -59,9 +60,11 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   // ── Navigation ────────────────────────────────────────────────────────
   // Une pile plutôt qu'un simple état courant : les flèches précédent/suivant
   // de la barre du haut n'ont de sens que s'il y a un historique.
-  const [stack, setStack] = useState<Route[]>([{ kind: "library" }]);
+  // L'accueil est la première page : ouvrir sur une liste de morceaux déjà
+  // tous connus ne donne envie de rien.
+  const [stack, setStack] = useState<Route[]>([{ kind: "home" }]);
   const [cursor, setCursor] = useState(0);
-  const route: Route = stack[cursor] ?? { kind: "library" };
+  const route: Route = stack[cursor] ?? { kind: "home" };
 
   const navigate = useCallback((next: Route) => {
     setStack((previous) => [...previous.slice(0, cursor + 1), next]);
@@ -115,7 +118,9 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   // Contenu de la page courante. Une playlist générée fait exception : son
   // ordre vient du moteur et ne se recharge pas depuis la base.
   useEffect(() => {
-    if (route.kind === "stats" || route.kind === "generated") return;
+    if (route.kind === "stats" || route.kind === "generated" || route.kind === "home") {
+      return;
+    }
 
     let active = true;
     const load = (): Promise<TrackSummary[]> => {
@@ -416,6 +421,9 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               generated={generated}
               importing={importing}
               onPlayAll={(shuffle) => void playAll(shuffle)}
+              onPlayTracks={(list, index) =>
+                void playback.play(list.map((track) => track.id), index)
+              }
               onReload={bump}
               onGenerated={showGenerated}
               onError={setError}
@@ -503,6 +511,8 @@ interface PageProps {
   generated: GeneratedPlaylist | null;
   importing: boolean;
   onPlayAll: (shuffle: boolean) => void;
+  /** Lance une liste arbitraire — la rangée de reprise de l'accueil. */
+  onPlayTracks: (tracks: TrackSummary[], index: number) => void;
   /** Recharge la liste affichée après une correction de tags. */
   onReload: () => void;
   onGenerated: (playlist: GeneratedPlaylist) => void;
@@ -547,6 +557,16 @@ function Page(props: PageProps) {
 
   if (route.kind === "stats") {
     return <WrappedView />;
+  }
+
+  if (route.kind === "home") {
+    return (
+      <HomeView
+        onPlayTrack={props.onPlayTracks}
+        onGenerated={props.onGenerated}
+        onError={props.onError}
+      />
+    );
   }
 
   if (route.kind === "loved") {

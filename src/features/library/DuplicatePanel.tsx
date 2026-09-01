@@ -41,17 +41,27 @@ export function DuplicatePanel({
 
   useEffect(reload, [reload]);
 
-  if (rows.length === 0) {
-    return null;
-  }
-
   // Les lignes arrivent triées par clé de regroupement : il suffit de les
   // découper, sans avoir à trier de nouveau côté interface.
-  const groups: NearDuplicate[][] = [];
+  const found: NearDuplicate[][] = [];
   for (const row of rows) {
-    const last = groups[groups.length - 1];
+    const last = found[found.length - 1];
     if (last !== undefined && last[0]?.groupKey === row.groupKey) last.push(row);
-    else groups.push([row]);
+    else found.push([row]);
+  }
+
+  // Un groupe retombé à un seul morceau n'est plus un doublon : le problème
+  // est réglé, et continuer de demander « est-ce bien un doublon ? » pour un
+  // morceau tout seul serait absurde. Il disparaît de lui-même, sans qu'on ait
+  // à cliquer sur quoi que ce soit.
+  //
+  // Le filtre est ici plutôt que dans la requête, qui l'applique déjà : entre
+  // deux relectures, l'état local a changé sous nos yeux, et c'est cet
+  // état-là que l'utilisateur regarde.
+  const groups = found.filter((group) => group.length > 1);
+
+  if (groups.length === 0) {
+    return null;
   }
 
   /**

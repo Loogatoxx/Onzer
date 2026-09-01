@@ -52,7 +52,15 @@ function seekStep(repeats: number): number {
 /** Délai avant de lancer une recherche, pour ne pas requêter à chaque frappe. */
 const SEARCH_DEBOUNCE_MS = 200;
 
-/** Plafond de morceaux chargés d'un coup. Au-delà, il faudra virtualiser. */
+/**
+ * Taille d'une tranche de bibliothèque.
+ *
+ * Ce n'est plus un plafond mais un **pas** : la liste se complète d'elle-même
+ * quand on approche du bas. Une bibliothèque de six cents morceaux s'arrêtait
+ * visuellement à cinq cents, sans que rien ne dise pourquoi — un silence pire
+ * qu'un message, puisqu'il laisse croire que les morceaux manquants n'ont pas
+ * été importés.
+ */
 const PAGE_SIZE = 500;
 
 /**
@@ -152,6 +160,13 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
     reloadPlaylists();
   }, [reloadPlaylists]);
 
+  // Reste-t-il des morceaux à charger sous ceux qui sont affichés ?
+  //
+  // Seule la bibliothèque pagine : une playlist, un artiste ou une catégorie
+  // arrivent entiers, et leur taille est bornée par nature.
+  const [hasMore, setHasMore] = useState(false);
+  const loadingMore = useRef(false);
+
   // Contenu de la page courante. Une playlist générée fait exception : son
   // ordre vient du moteur et ne se recharge pas depuis la base.
   useEffect(() => {
@@ -187,6 +202,8 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       .then((loaded) => {
         if (!active) return;
         setTracks(loaded);
+        // Une tranche pleine laisse supposer qu'il y en a une autre derrière.
+        setHasMore(route.kind === "library" && loaded.length === PAGE_SIZE);
         // Les favoris se rafraîchissent au passage : chaque liste porte déjà
         // l'information, autant s'en servir plutôt que de la redemander.
         setLoved((previous) => {
@@ -206,6 +223,33 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       active = false;
     };
   }, [route, revision]);
+
+  /**
+   * Charge la tranche suivante de la bibliothèque.
+   *
+   * L'ordre de la requête — date d'ajout puis identifiant, tous deux
+   * décroissants — est **stable** : pagination par décalage sans risque de
+   * sauter une ligne ou d'en afficher deux fois.
+   *
+   * Le garde-fou n'est pas un état mais une référence : deux appels dans le
+   * même rendu verraient la même valeur d'état et déclencheraient deux
+   * requêtes pour la même tranche.
+   */
+  const loadMore = useCallback(() => {
+    if (!hasMore || loadingMore.current) return;
+    loadingMore.current = true;
+
+    void ipc
+      .listTracks(PAGE_SIZE, tracks.length)
+      .then((next) => {
+        setTracks((previous) => [...previous, ...next]);
+        setHasMore(next.length === PAGE_SIZE);
+      })
+      .catch((cause: unknown) => setError(String(cause)))
+      .finally(() => {
+        loadingMore.current = false;
+      });
+  }, [hasMore, tracks.length]);
 
   // Recherche différée.
   useEffect(() => {
@@ -537,6 +581,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       onOpenArtist={(id) => void openArtistOf(id)}
       onCorrect={setCorrecting}
       onMatch={setMatching}
+      {...(hasMore ? { onReachEnd: loadMore } : {})}
       onRemove={(id) => {
         void ipc
           .removeTrack(id)

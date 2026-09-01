@@ -1427,6 +1427,46 @@ elle ne choisit pas une identité, elle comble un vide.
 
 ---
 
+## ADR-052 — Une liste qui s'arrête sans le dire ment sur la bibliothèque
+
+**Contexte.** La bibliothèque chargeait cinq cents morceaux et s'arrêtait là. Avec 590
+morceaux importés, quatre-vingt-dix n'apparaissaient nulle part — sans message, sans bouton,
+sans rien. Le silence est ici pire qu'une erreur : il laisse croire que l'import a échoué.
+
+**Décision.** Cinq cents n'est plus un plafond mais un **pas**. Une sentinelle invisible en
+fin de liste demande la tranche suivante dès qu'elle approche du champ de vision, avec 400 px
+d'anticipation — le chargement ne se voit pas.
+
+L'ordre de la requête, `added_at DESC, id DESC`, est **stable** : la pagination par décalage
+ne peut ni sauter une ligne ni en montrer deux fois. Vérifié sur la bibliothèque réelle :
+500 + 90 = 590, aucun recouvrement.
+
+**Pourquoi un observateur d'intersection et non un `onScroll`.** Écouter le défilement
+obligerait la table à connaître le conteneur qui défile — une dépendance qui casserait au
+premier remaniement de la mise en page. L'observateur ne demande rien à personne.
+
+**Ce qui reste à faire.** Le rendu n'est pas virtualisé : au-delà de quelques milliers de
+lignes, le coût sera dans le DOM et non dans la base. Le jour venu, seule la table changera —
+la pagination, elle, est déjà en place.
+
+---
+
+## ADR-053 — Un problème résolu ne se fait pas confirmer
+
+**Contexte.** Le panneau des doublons propose « Ce ne sont pas des doublons » pour écarter un
+groupe légitime. Mais quand on retirait les morceaux un par un jusqu'à n'en laisser qu'un, le
+groupe restait affiché — et réclamait encore ce clic.
+
+**Décision.** Un groupe retombé à un seul morceau n'est plus un doublon : il disparaît de
+lui-même. La requête l'excluait déjà ; c'est l'état local, entre deux relectures, qui le
+gardait à l'écran. Or c'est cet état-là que l'utilisateur regarde.
+
+La règle vaut au-delà de ce panneau : **une question dont la réponse est devenue évidente ne
+doit plus être posée.** Demander confirmation d'un problème déjà réglé donne l'impression que
+l'application n'a pas compris ce qui vient de se passer.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

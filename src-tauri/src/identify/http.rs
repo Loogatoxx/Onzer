@@ -79,15 +79,57 @@ impl Service {
             .map_err(|error| OnzerError::Invalid(format!("{} : réponse illisible — {error}", self.name)))
     }
 
+    /// Comme `get_json`, mais avec un jeton porteur.
+    ///
+    /// Nécessaire pour les services qui exigent une authentification par
+    /// jeton — Spotify, notamment. Le jeton n'est jamais journalisé.
+    pub async fn get_json_authed<T: DeserializeOwned>(
+        &self,
+        url: &str,
+        bearer: &str,
+    ) -> Result<Option<T>> {
+        let Some(bytes) = self.fetch(url, Some(bearer)).await? else {
+            return Ok(None);
+        };
+
+        serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|error| OnzerError::Invalid(format!("{} : réponse illisible — {error}", self.name)))
+    }
+
     /// Récupère le corps brut d'une réponse, avec réessais.
     pub async fn get_bytes(&self, url: &str) -> Result<Option<Vec<u8>>> {
+        self.fetch(url, None).await
+    }
+
+    /// Le client HTTP sous-jacent, pour les rares appels que ce service ne
+    /// modélise pas — un `POST` d'obtention de jeton, par exemple.
+    ///
+    /// La cadence, elle, reste celle du service : l'appelant passe par
+    /// `throttle` avant d'émettre.
+    pub fn client(&self) -> &reqwest::Client {
+        &self.client
+    }
+
+    /// Attend son tour dans la cadence du service.
+    pub async fn throttle(&self) {
+        self.limiter.acquire().await;
+    }
+
+    /// Corps brut, avec réessais et jeton porteur facultatif.
+    async fn fetch(&self, url: &str, bearer: Option<&str>) -> Result<Option<Vec<u8>>> {
         let mut attempt = 0_u32;
 
         loop {
             attempt += 1;
             self.limiter.acquire().await;
 
-            let (outcome, retry_after, detail) = match self.client.get(url).send().await {
+            let mut request = self.client.get(url);
+            if let Some(token) = bearer {
+                request = request.bearer_auth(token);
+            }
+
+            let (outcome, retry_after, detail) = match request.send().await {
                 Ok(response) => {
                     let status = response.status();
 

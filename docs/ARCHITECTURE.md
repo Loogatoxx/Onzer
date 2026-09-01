@@ -978,6 +978,41 @@ compteur se remet à zéro au relâchement, sans quoi deux appuis distincts s'ad
 
 ---
 
+## ADR-033 — Onzer compare, il ne télécharge pas
+
+**Contexte.** L'utilisateur veut coller un lien de playlist Spotify et savoir ce qui manque
+dans sa bibliothèque, puis automatiser la récupération avec `spotdl`, l'outil qu'il utilise
+déjà.
+
+**La ligne que ce projet tient.** Elle a été posée bien plus tôt, quand la première demande
+était d'embarquer un téléchargeur : Onzer n'en embarque pas, n'en pilote pas, n'en exécute
+pas. Ce qu'il fait ici est un travail de **bibliothécaire** — lire une liste de titres, la
+confronter à ce qu'il possède, nommer les absents. La formule proposée pour le terminal
+assemble ce que l'utilisateur taperait autrement à la main, pour son propre outil ; il la
+copie, ou non.
+
+**Décision — l'API officielle.** La page publique d'une playlist contient bien la liste,
+noyée dans un bloc JSON. La lire reviendrait à écrire un analyseur qui casserait au premier
+changement de leur front-end, et à passer par la fenêtre quand une porte documentée existe.
+L'API demande des identifiants d'application, gratuits — même schéma qu'AcoustID :
+l'utilisateur fournit les siens, Onzer n'en distribue aucun.
+
+Le flux « client credentials » ne donne accès qu'aux playlists **publiques**. Onzer ne
+demande jamais de mot de passe et ne lit aucune donnée de compte.
+
+**Le rapprochement réutilise `find_by_tags`** — titre normalisé, artiste normalisé, durée à
+deux secondes près. C'est **la même** règle que le second filet du dédoublonnage à l'import :
+un morceau déclaré présent ici doit être exactement celui que l'import refuserait comme
+doublon. Deux règles distinctes finiraient par se contredire sous les yeux de l'utilisateur.
+
+**La boucle presque automatique.** Les liens manquants sont écrits dans un fichier, et la
+commande vise le **dossier de dépôt**. Ce qui est récupéré y atterrit ; dédoublonnage,
+identification et rangement se font ensuite tout seuls. `xargs` passe les liens en arguments
+et découpe lui-même : une commande écrite d'un bloc atteindrait la limite de longueur du
+shell sur une playlist un peu fournie.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

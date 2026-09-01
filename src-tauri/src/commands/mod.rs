@@ -14,4 +14,5 @@ pub mod library;
 pub mod playback;
 pub mod reco;
 pub mod stats;
+pub mod sync;
 pub mod system;

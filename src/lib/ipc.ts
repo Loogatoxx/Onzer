@@ -51,6 +51,33 @@ export interface TrackSummary {
   hasLyrics: boolean;
 }
 
+/** Miroir de `identify::spotify::SpotifyTrack`. */
+export interface SpotifyTrack {
+  title: string;
+  artists: string[];
+  album: string | null;
+  durationMs: number;
+  url: string;
+}
+
+/** Miroir de `commands::sync::PlaylistComparison`. */
+export interface PlaylistComparison {
+  playlistName: string;
+  total: number;
+  present: number;
+  missing: SpotifyTrack[];
+  /** Commande prête à coller dans un terminal. */
+  command: string;
+  listPath: string | null;
+}
+
+/** Miroir de `commands::sync::SpotifyStatus`. */
+export interface SpotifyStatus {
+  configured: boolean;
+  /** Aperçu masqué, du genre `a1b2••••••`. Le secret ne revient jamais. */
+  idHint: string | null;
+}
+
 /** Miroir de `commands::library::NearDuplicate`. */
 export interface NearDuplicate {
   id: number;
@@ -495,6 +522,19 @@ export const ipc = {
   /** Morceaux homonymes de durée voisine — deux versions, sans doute. */
   nearDuplicates: (): Promise<NearDuplicate[]> =>
     invoke<NearDuplicate[]>("near_duplicates"),
+
+  /**
+   * Compare une playlist Spotify publique à la bibliothèque.
+   *
+   * Onzer lit et compare. Il ne télécharge rien.
+   */
+  comparePlaylist: (url: string): Promise<PlaylistComparison> =>
+    invoke<PlaylistComparison>("compare_playlist", { url }),
+
+  spotifyStatus: (): Promise<SpotifyStatus> => invoke<SpotifyStatus>("spotify_status"),
+
+  setSpotifyCredentials: (clientId: string, clientSecret: string): Promise<void> =>
+    invoke<void>("set_spotify_credentials", { clientId, clientSecret }),
 
   analysisProgress: (): Promise<AnalysisProgress> =>
     invoke<AnalysisProgress>("analysis_progress"),

@@ -45,6 +45,7 @@ pub mod discover;
 pub mod musicbrainz;
 pub mod ratelimit;
 pub mod revise;
+pub mod spotify;
 pub mod tagger;
 pub mod verdict;
 pub mod worker;

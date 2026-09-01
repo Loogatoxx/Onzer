@@ -18,6 +18,7 @@ import { NowPlayingPanel, type PanelTab } from "@/features/player/NowPlayingPane
 import { LyricsView } from "@/features/player/LyricsView";
 import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
+import { SyncView } from "@/features/sync/SyncView";
 import { WrappedView } from "@/features/stats/WrappedView";
 import {
   formatDurationLong,
@@ -144,6 +145,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       || route.kind === "home"
       || route.kind === "artists"
       || route.kind === "lyrics"
+      || route.kind === "sync"
     ) {
       return;
     }
@@ -738,6 +740,10 @@ function Page(props: PageProps) {
         {props.children}
       </>
     );
+  }
+
+  if (route.kind === "sync") {
+    return <SyncView />;
   }
 
   if (route.kind === "lyrics") {

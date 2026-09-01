@@ -16,6 +16,8 @@ export type Route =
   | { kind: "generated" }
   /** Les paroles du morceau en cours, en pleine largeur. */
   | { kind: "lyrics" }
+  /** Comparer une playlist Spotify à la bibliothèque. */
+  | { kind: "sync" }
   /** Une catégorie d'ambiance, ouverte depuis l'accueil. */
   | { kind: "category"; key: string; name: string }
   | { kind: "playlist"; id: number; name: string };
@@ -86,6 +88,12 @@ export function Sidebar({
           label="Artistes"
           active={active === "artists" || active.startsWith("artist:")}
           onClick={() => onNavigate({ kind: "artists" })}
+        />
+        <NavItem
+          icon="sparkle"
+          label="Ce qui me manque"
+          active={active === "sync"}
+          onClick={() => onNavigate({ kind: "sync" })}
         />
         <NavItem
           icon="stats"
@@ -163,7 +171,7 @@ function NavItem({
   active,
   onClick,
 }: {
-  icon: "home" | "library" | "stats";
+  icon: "home" | "library" | "sparkle" | "stats";
   label: string;
   active: boolean;
   onClick: () => void;

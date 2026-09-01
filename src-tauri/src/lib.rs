@@ -268,8 +268,11 @@ pub fn run() {
             commands::collection::fetch_lyrics,
             commands::collection::fetch_missing_lyrics,
             commands::collection::lyrics_progress,
+            commands::collection::artwork_progress,
+            commands::collection::fetch_missing_artwork,
             commands::collection::suspect_tracks,
             commands::collection::restore_original_tags,
+            commands::collection::correct_track,
         ])
         .run(tauri::generate_context!())
         .expect("échec au lancement d'Onzer");

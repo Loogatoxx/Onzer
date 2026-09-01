@@ -8,8 +8,10 @@ import { ArtistsView } from "@/features/artists/ArtistsView";
 import { HomeView } from "@/features/home/HomeView";
 import { IdentifyPanel } from "@/features/identify/IdentifyPanel";
 import { SuspectPanel } from "@/features/identify/SuspectPanel";
+import { ArtworkBar } from "@/features/lyrics/ArtworkBar";
 import { LyricsBar } from "@/features/lyrics/LyricsBar";
 import { Artwork } from "@/features/library/Artwork";
+import { CorrectDialog } from "@/features/library/CorrectDialog";
 import { DuplicatePanel } from "@/features/library/DuplicatePanel";
 import { TrackTable } from "@/features/library/TrackTable";
 import { Sidebar, type Route } from "@/features/nav/Sidebar";
@@ -85,6 +87,11 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   const route: Route = stack[cursor] ?? { kind: "home" };
 
   const navigate = useCallback((next: Route) => {
+    // La recherche est une **surimpression**, pas une destination : tant qu'un
+    // terme est saisi, elle masque la page. Naviguer sans l'effacer donnait
+    // l'impression que la barre latérale ne répondait plus — il fallait vider
+    // le champ caractère par caractère pour retrouver l'application.
+    setQuery("");
     setStack((previous) => [...previous.slice(0, cursor + 1), next]);
     setCursor((previous) => previous + 1);
   }, [cursor]);
@@ -102,6 +109,8 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   const [summary, setSummary] = useState<ScanSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [panel, setPanel] = useState<PanelTab | "closed">("lyrics");
+  /** Morceau en cours de correction manuelle. */
+  const [correcting, setCorrecting] = useState<TrackSummary | null>(null);
 
   /** Incrémenté pour forcer un rechargement après une écriture. */
   const [revision, setRevision] = useState(0);
@@ -245,6 +254,11 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       }
 
       const state = playback.state;
+
+      if (event.code === "Escape") {
+        setQuery("");
+        return;
+      }
 
       // ⌘ est réservé à la navigation : tout le reste tient à une touche, sans
       // quoi on ne s'en sert jamais.
@@ -518,6 +532,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
         void ipc.enqueueTracks([id]).catch((cause: unknown) => setError(String(cause)));
       }}
       onOpenArtist={(id) => void openArtistOf(id)}
+      onCorrect={setCorrecting}
       onRemove={(id) => {
         void ipc
           .removeTrack(id)
@@ -577,6 +592,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           <TopBar
             query={query}
             onQuery={setQuery}
+            onEscape={() => setQuery("")}
             canGoBack={cursor > 0}
             canGoForward={cursor < stack.length - 1}
             onBack={() => setCursor((value) => Math.max(0, value - 1))}
@@ -685,6 +701,14 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           />
         )}
       </div>
+
+      {correcting !== null && (
+        <CorrectDialog
+          track={correcting}
+          onClose={() => setCorrecting(null)}
+          onCorrected={bump}
+        />
+      )}
 
       {playback.state !== null && (
         <PlayerBar
@@ -987,6 +1011,7 @@ function Page(props: PageProps) {
             isPlaying={props.isPlaying}
           />
           <LyricsBar />
+          <ArtworkBar />
         </div>
 
         <p className="mt-3 truncate font-mono text-[11px] text-ink-faint">

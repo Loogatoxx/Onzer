@@ -512,3 +512,232 @@ pub async fn restore_original_tags(state: State<'_, AppState>, track_id: i64) ->
     )
     .await
 }
+
+// ── Pochettes manquantes ────────────────────────────────────────────────────
+
+/// Vrai tant qu'une récupération de pochettes tourne.
+static ARTWORK_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Avancement de la récupération des pochettes.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtworkProgress {
+    pub with_artwork: i64,
+    pub total: i64,
+    pub running: bool,
+}
+
+#[tauri::command]
+pub async fn artwork_progress(state: State<'_, AppState>) -> Result<ArtworkProgress> {
+    let (with_artwork, total): (i64, i64) = sqlx::query_as(
+        "SELECT SUM(CASE WHEN al.artwork_hash IS NOT NULL AND al.artwork_hash <> ''
+                         THEN 1 ELSE 0 END),
+                COUNT(*)
+           FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE t.deleted_at IS NULL",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(ArtworkProgress {
+        with_artwork,
+        total,
+        running: ARTWORK_RUNNING.load(Ordering::Relaxed),
+    })
+}
+
+/// Va chercher les pochettes des morceaux qui n'en ont pas.
+///
+/// # Pourquoi cela ne passe pas par l'ouvrier d'identification
+///
+/// Celui-ci part de l'**empreinte acoustique**, et son verdict est définitif :
+/// un morceau marqué `not_found` ou `rejected` ne sera jamais repris. Or une
+/// pochette manquante n'a souvent rien à voir avec une empreinte introuvable —
+/// le morceau peut être parfaitement identifié et son album simplement dépourvu
+/// d'image dans la Cover Art Archive, ou n'avoir jamais eu d'album du tout.
+///
+/// Cette passe part donc du **texte** : artiste et titre, cherchés dans
+/// MusicBrainz, puis la pochette de la parution retenue. Elle n'écrit que
+/// l'image — jamais le titre ni l'artiste, qui ne sont pas ce qu'on répare ici.
+#[tauri::command]
+pub async fn fetch_missing_artwork(state: State<'_, AppState>) -> Result<i64> {
+    if ARTWORK_RUNNING.swap(true, Ordering::SeqCst) {
+        return Err(OnzerError::Invalid(
+            "une récupération est déjà en cours".to_string(),
+        ));
+    }
+
+    let pending: Vec<(i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT t.id, t.title,
+                (SELECT a.name FROM track_artists ta
+                   JOIN artists a ON a.id = ta.artist_id
+                  WHERE ta.track_id = t.id AND ta.role = 'main'
+                  ORDER BY ta.position LIMIT 1)
+           FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE t.deleted_at IS NULL
+            AND (al.artwork_hash IS NULL OR al.artwork_hash = '')
+          ORDER BY t.id",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let pool = state.pool.clone();
+    let paths = std::sync::Arc::clone(&state.paths);
+    let total = pending.len() as i64;
+
+    tauri::async_runtime::spawn(async move {
+        let clients = (
+            crate::identify::musicbrainz::MusicBrainzClient::new(),
+            crate::identify::coverart::CoverArtClient::new(),
+        );
+
+        let (Ok(musicbrainz), Ok(cover_art)) = clients else {
+            ARTWORK_RUNNING.store(false, Ordering::SeqCst);
+            return;
+        };
+
+        for (track_id, title, artist) in pending {
+            let Ok(hits) = musicbrainz.search(artist.as_deref(), &title).await else {
+                break; // service en difficulté : inutile d'insister
+            };
+
+            let Some(hit) = hits.into_iter().next() else {
+                continue;
+            };
+
+            let Ok(Some(metadata)) = musicbrainz.lookup(&hit.recording_mbid).await else {
+                continue;
+            };
+
+            let cover = cover_art
+                .fetch_front(
+                    metadata.release_mbid.as_deref(),
+                    metadata.release_group_mbid.as_deref(),
+                )
+                .await
+                .unwrap_or(None);
+
+            let Some(bytes) = cover else { continue };
+
+            let resolver = paths.read().await.clone();
+            if let Err(error) = attach_artwork(&pool, &resolver, track_id, &metadata, &bytes).await
+            {
+                tracing::warn!(track_id, %error, "pochette non attachée");
+            }
+        }
+
+        ARTWORK_RUNNING.store(false, Ordering::SeqCst);
+    });
+
+    Ok(total)
+}
+
+/// Range une pochette et la rattache au morceau.
+///
+/// Quand le morceau n'a pas d'album, on en crée un depuis les métadonnées
+/// trouvées : une pochette doit se rattacher à quelque chose, et l'album est ce
+/// que l'interface affiche.
+async fn attach_artwork(
+    pool: &sqlx::SqlitePool,
+    paths: &crate::core::PathResolver,
+    track_id: i64,
+    metadata: &crate::identify::musicbrainz::RecordingMetadata,
+    bytes: &[u8],
+) -> Result<()> {
+    let hash = crate::library::artwork::store(&paths.artwork_dir(), bytes)?;
+
+    crate::db::repository::attach_artwork(
+        pool,
+        track_id,
+        &hash,
+        metadata.album.as_deref(),
+        metadata.filing_artist(),
+        metadata.year,
+    )
+    .await
+}
+
+// ── Correction manuelle ─────────────────────────────────────────────────────
+
+/// Corrige à la main le titre, l'artiste et l'album d'un morceau.
+///
+/// # Pourquoi cette porte est nécessaire
+///
+/// L'identification acoustique se trompe, et pas seulement sur des cas
+/// tordus : un morceau nommé « Medecine » alors qu'il s'agit de « Ma go ». La
+/// conséquence se propage — les paroles récupérées sont celles du mauvais
+/// titre, la pochette aussi. Sans moyen de corriger, il faudrait sortir le
+/// fichier de la bibliothèque et le réimporter.
+///
+/// # Ce que la correction emporte avec elle
+///
+/// Les **paroles sont effacées**. Elles avaient été trouvées pour l'ancien
+/// titre : les garder laisserait le morceau afficher les paroles d'un autre,
+/// ce qui est précisément le symptôme qu'on répare. Elles seront reprises au
+/// prochain « Chercher en ligne », cette fois avec le bon nom.
+///
+/// L'état d'identification passe à `rejected` : sans cela, l'ouvrier
+/// reprendrait le morceau et réappliquerait la correspondance qu'on vient de
+/// corriger.
+#[tauri::command]
+pub async fn correct_track(
+    state: State<'_, AppState>,
+    track_id: i64,
+    title: String,
+    artist: Option<String>,
+    album: Option<String>,
+) -> Result<()> {
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        return Err(OnzerError::Invalid("le titre ne peut pas être vide".to_string()));
+    }
+
+    let artist = artist.map(|value| value.trim().to_string()).filter(|v| !v.is_empty());
+    let album = album.map(|value| value.trim().to_string()).filter(|v| !v.is_empty());
+
+    let relative_path: Option<String> =
+        sqlx::query_scalar("SELECT relative_path FROM tracks WHERE id = ?")
+            .bind(track_id)
+            .fetch_optional(&state.pool)
+            .await?;
+
+    // Le fichier d'abord : si le disque refuse, la base ne doit pas prétendre
+    // le contraire.
+    if let Some(relative_path) = relative_path {
+        let paths = state.paths.read().await.clone();
+        if let Ok(path) = importer::absolute_path(&paths, &relative_path) {
+            if path.is_file() {
+                let (titre, artiste, disque) = (title.clone(), artist.clone(), album.clone());
+                tokio::task::spawn_blocking(move || {
+                    crate::library::metadata::rewrite_identity(
+                        &path,
+                        &titre,
+                        artiste.as_deref(),
+                        disque.as_deref(),
+                    )
+                })
+                .await
+                .map_err(|error| OnzerError::Invalid(error.to_string()))??;
+            }
+        }
+    }
+
+    crate::db::repository::restore_identity(
+        &state.pool,
+        track_id,
+        &title,
+        artist.as_deref(),
+        album.as_deref(),
+    )
+    .await?;
+
+    // Les paroles appartenaient à l'ancien titre.
+    sqlx::query("UPDATE tracks SET lyrics = NULL WHERE id = ?")
+        .bind(track_id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(())
+}

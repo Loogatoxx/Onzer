@@ -3,6 +3,8 @@ import { Icon, IconButton } from "@/components/Icon";
 interface TopBarProps {
   query: string;
   onQuery: (query: string) => void;
+  /** Échap depuis le champ : la recherche se referme sans vider à la main. */
+  onEscape: () => void;
   canGoBack: boolean;
   canGoForward: boolean;
   onBack: () => void;
@@ -52,6 +54,12 @@ export function TopBar(props: TopBarProps) {
           type="search"
           value={props.query}
           onChange={(event) => props.onQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.currentTarget.blur();
+              props.onEscape();
+            }
+          }}
           placeholder="Titre, artiste ou album"
           className="h-10 w-full rounded-full bg-elevated pl-10 pr-9 text-sm text-ink placeholder:text-ink-faint focus:outline focus:outline-1 focus:outline-ink-faint"
         />

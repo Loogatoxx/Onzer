@@ -37,6 +37,8 @@ interface TrackTableProps {
   onOpenArtist: (trackId: number) => void;
   /** Retire de la bibliothèque. Le fichier n'est pas touché. */
   onRemove: (trackId: number) => void;
+  /** Ouvre la correction manuelle du titre, de l'artiste et de l'album. */
+  onCorrect: (track: TrackSummary) => void;
   /**
    * Favoris, tenus par la coquille.
    *
@@ -69,6 +71,7 @@ export function TrackTable({
   onEnqueue,
   onOpenArtist,
   onRemove,
+  onCorrect,
   loved,
   playlists,
   onAddToPlaylist,
@@ -115,6 +118,7 @@ export function TrackTable({
             onEnqueue={() => onEnqueue(track.id)}
             onOpenArtist={() => onOpenArtist(track.id)}
             onRemove={() => onRemove(track.id)}
+            onCorrect={() => onCorrect(track)}
             playlists={playlists}
             onAddToPlaylist={(playlistId) => onAddToPlaylist(playlistId, track.id)}
             {...(onRemoveAt === undefined
@@ -142,6 +146,7 @@ interface TrackRowProps {
   onEnqueue: () => void;
   onOpenArtist: () => void;
   onRemove: () => void;
+  onCorrect: () => void;
   playlists: PlaylistSummary[];
   onAddToPlaylist: (playlistId: number) => void;
   /** Fourni uniquement dans une playlist : retirer la ligne à cette position. */
@@ -168,6 +173,7 @@ function TrackRow({
   onEnqueue,
   onOpenArtist,
   onRemove,
+  onCorrect,
   playlists,
   onAddToPlaylist,
   onRemoveFromPlaylist,
@@ -281,6 +287,7 @@ function TrackRow({
           onEnqueue={onEnqueue}
           onOpenArtist={onOpenArtist}
           onRemove={onRemove}
+          onCorrect={onCorrect}
           {...(onRemoveFromPlaylist === undefined ? {} : { onRemoveFromPlaylist })}
         />
       </div>
@@ -304,6 +311,7 @@ function RowMenu({
   onEnqueue,
   onOpenArtist,
   onRemove,
+  onCorrect,
   onRemoveFromPlaylist,
 }: {
   track: TrackSummary;
@@ -315,6 +323,7 @@ function RowMenu({
   onEnqueue: () => void;
   onOpenArtist: () => void;
   onRemove: () => void;
+  onCorrect: () => void;
   onRemoveFromPlaylist?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -384,6 +393,10 @@ function RowMenu({
               Accéder à l'artiste
             </MenuItem>
           )}
+
+          <MenuItem icon="pencil" onClick={() => choose(onCorrect)}>
+            Corriger le titre
+          </MenuItem>
 
           {onRemoveFromPlaylist !== undefined && (
             <MenuItem icon="close" onClick={() => choose(onRemoveFromPlaylist)}>

@@ -116,6 +116,13 @@ export interface ArtistSummary {
   coverHash: string | null;
 }
 
+/** Miroir de `commands::collection::ArtworkProgress`. */
+export interface ArtworkProgress {
+  withArtwork: number;
+  total: number;
+  running: boolean;
+}
+
 /** Miroir de `commands::collection::LyricsProgress`. */
 export interface LyricsProgress {
   withLyrics: number;
@@ -664,6 +671,26 @@ export const ipc = {
 
   lyricsProgress: (): Promise<LyricsProgress> =>
     invoke<LyricsProgress>("lyrics_progress"),
+
+  artworkProgress: (): Promise<ArtworkProgress> =>
+    invoke<ArtworkProgress>("artwork_progress"),
+
+  /** Va chercher les pochettes manquantes. Retourne le nombre à traiter. */
+  fetchMissingArtwork: (): Promise<number> => invoke<number>("fetch_missing_artwork"),
+
+  /**
+   * Corrige à la main un morceau mal identifié.
+   *
+   * Les paroles sont effacées au passage : elles appartenaient à l'ancien
+   * titre, et les garder ferait afficher celles d'un autre morceau.
+   */
+  correctTrack: (
+    trackId: number,
+    title: string,
+    artist: string | null,
+    album: string | null,
+  ): Promise<void> =>
+    invoke<void>("correct_track", { trackId, title, artist, album }),
 
   /** Morceaux dont l'identification contredit les tags d'origine du fichier. */
   suspectTracks: (): Promise<SuspectTrack[]> =>

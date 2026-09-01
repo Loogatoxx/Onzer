@@ -607,6 +607,72 @@ pub async fn restore_identity(
     Ok(())
 }
 
+/// Rattache une pochette à un morceau.
+///
+/// # Pourquoi cela peut créer un album
+///
+/// Une pochette doit se rattacher à quelque chose, et c'est l'album que
+/// l'interface affiche. Un morceau rangé en single n'en a pas : sans cette
+/// création, l'image serait stockée sur le disque sans que personne ne la voie.
+///
+/// L'album n'est créé que si l'on connaît son nom. Sinon l'image est écartée —
+/// inventer un album « Sans titre » pour porter une pochette rendrait la
+/// bibliothèque moins lisible qu'elle ne l'était.
+pub async fn attach_artwork(
+    pool: &SqlitePool,
+    track_id: i64,
+    artwork_hash: &str,
+    album: Option<&str>,
+    artist: Option<&str>,
+    year: Option<u32>,
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let now = now_ms();
+
+    let existing: Option<i64> = sqlx::query_scalar("SELECT album_id FROM tracks WHERE id = ?")
+        .bind(track_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .flatten();
+
+    let album_id = match existing {
+        // L'album existe : on ne fait que lui donner son image.
+        Some(album_id) => {
+            sqlx::query("UPDATE albums SET artwork_hash = ? WHERE id = ?")
+                .bind(artwork_hash)
+                .bind(album_id)
+                .execute(&mut *tx)
+                .await?;
+            Some(album_id)
+        }
+        None => match album.map(str::trim).filter(|name| !name.is_empty()) {
+            Some(title) => {
+                let artist_id = match artist.map(str::trim).filter(|name| !name.is_empty()) {
+                    Some(name) => Some(upsert_artist(&mut tx, name, now).await?),
+                    None => None,
+                };
+
+                Some(
+                    upsert_album(&mut tx, title, artist_id, year, Some(artwork_hash), now)
+                        .await?,
+                )
+            }
+            None => None,
+        },
+    };
+
+    if let Some(album_id) = album_id {
+        sqlx::query("UPDATE tracks SET album_id = ? WHERE id = ?")
+            .bind(album_id)
+            .bind(track_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  Lecture
 // ════════════════════════════════════════════════════════════════════════════

@@ -267,7 +267,7 @@ pub fn run() {
             commands::collection::track_lyrics,
             commands::collection::set_track_lyrics,
             commands::collection::fetch_lyrics,
-            commands::collection::fetch_missing_lyrics,
+            commands::collection::sync_lyrics,
             commands::collection::lyrics_progress,
             commands::collection::artwork_progress,
             commands::collection::fetch_missing_artwork,

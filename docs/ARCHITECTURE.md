@@ -1625,6 +1625,47 @@ Un `.lrc` non synchronisé, lui, ne prend pas la place du tag : il n'apporterait
 
 ---
 
+## ADR-060 — La synchronisation était déjà dans les fichiers
+
+**Contexte.** L'ADR-057 corrigeait le décompte, l'ADR-058 la recherche : il ne restait plus,
+croyait-on, qu'à interroger LRCLIB pour mille trois cents morceaux. Un quart d'heure de
+requêtes réseau pour une bibliothèque qu'on venait de télécharger.
+
+**La découverte.** ID3 possède **deux** trames de paroles :
+
+| Trame | Contenu | Ce qu'Onzer lisait |
+|---|---|---|
+| `USLT` | Le texte, sans horodatage | ✅ |
+| `SYLT` | Le texte **horodaté**, ligne par ligne | ❌ |
+
+`ItemKey::Lyrics`, l'abstraction de lofty, désigne `USLT`. Onzer ne lisait donc que le texte
+brut — et concluait que les fichiers n'étaient pas synchronisés, alors que la synchronisation
+était là, dans la trame d'à côté, écrite par le téléchargeur.
+
+Mesuré sur quatre-vingts fichiers tirés au hasard : **cinquante portaient une trame `SYLT`**.
+Près des deux tiers de ce qu'on s'apprêtait à demander à un service public était déjà sur le
+disque de l'utilisateur.
+
+**Décision.** La passe de synchronisation va **du plus proche au plus lointain** :
+
+```text
+  1. trame SYLT du fichier      → gratuit, instantané, hors ligne
+  2. fichier .lrc posé à côté   → idem (ADR-059)
+  3. LRCLIB                     → pour ce qui reste, si autorisé
+```
+
+La première passe fonctionne **même quand la complétion en ligne est éteinte** : elle ne parle
+à personne, elle relit des fichiers que l'utilisateur possède. Et elle n'écrit qu'en base :
+réécrire ces paroles dans le fichier reviendrait à lui rendre ce qu'il vient de nous donner,
+en remaniant mille blocs de tags pour rien.
+
+**La leçon, qui dépasse les paroles.** Avant d'aller demander dehors, épuiser ce qu'on a chez
+soi. L'abstraction d'une bibliothèque — ici `ItemKey::Lyrics` — décrit ce que son auteur a
+jugé commun à tous les formats ; elle ne décrit pas ce que le fichier contient. Quand une
+donnée « manque » partout à la fois, se demander d'abord si on la cherche au bon endroit.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

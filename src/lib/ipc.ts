@@ -715,7 +715,14 @@ export const ipc = {
     invoke<Lyrics>("fetch_lyrics", { trackId }),
 
   /** Lance la récupération en lot. Retourne le nombre de morceaux à traiter. */
-  fetchMissingLyrics: (): Promise<number> => invoke<number>("fetch_missing_lyrics"),
+  /**
+   * Synchronise les paroles de toute la bibliothèque.
+   *
+   * Le disque d'abord — la trame `SYLT` des fichiers, ou un `.lrc` posé à
+   * côté — puis LRCLIB pour ce qui manque encore, et seulement si la
+   * complétion en ligne est active. La première passe ne parle à personne.
+   */
+  syncLyrics: (): Promise<number> => invoke<number>("sync_lyrics"),
 
   lyricsProgress: (): Promise<LyricsProgress> =>
     invoke<LyricsProgress>("lyrics_progress"),

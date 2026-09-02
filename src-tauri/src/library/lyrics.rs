@@ -22,6 +22,10 @@ use std::path::Path;
 
 use lofty::config::WriteOptions;
 use lofty::file::TaggedFileExt;
+use lofty::config::ParseOptions;
+use lofty::file::AudioFile;
+use lofty::id3::v2::{Frame, FrameFlags, FrameId, SynchronizedTextFrame, TimestampFormat};
+use lofty::mpeg::MpegFile;
 use lofty::prelude::{ItemKey, TagExt};
 use lofty::tag::Tag;
 use serde::Serialize;
@@ -195,6 +199,82 @@ fn is_metadata_tag(line: &str) -> bool {
 // import, et rien n'allait plus jamais relire les fichiers. Lire à la demande
 // supprime cette classe entière de problème.
 
+// ════════════════════════════════════════════════════════════════════════════
+//  Paroles synchronisées déjà présentes dans le fichier
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Lit la trame `SYLT` d'un fichier ID3, si elle existe.
+///
+/// # La découverte qui rend cette fonction indispensable
+///
+/// ID3 a **deux** trames pour les paroles :
+///
+/// | Trame | Contenu | Ce qu'Onzer lisait |
+/// |---|---|---|
+/// | `USLT` | Le texte, sans horodatage | ✅ |
+/// | `SYLT` | Le texte **horodaté**, ligne par ligne | ❌ |
+///
+/// `ItemKey::Lyrics` de lofty désigne `USLT` : Onzer ne lisait donc que le
+/// texte brut, et concluait que les fichiers n'avaient pas de synchronisation.
+///
+/// Or elle y était. Mesuré sur quatre-vingts fichiers tirés au hasard d'une
+/// bibliothèque téléchargée par deemix : **cinquante portaient une trame
+/// `SYLT`** — soit près des deux tiers de la synchronisation cherchée en
+/// ligne, déjà présente sur le disque, gratuite et instantanée.
+///
+/// C'est la leçon de l'ADR-032 sous une autre forme : avant d'aller demander
+/// dehors, regarder ce qu'on a déjà.
+pub fn read_synced_from_file(path: &Path) -> Option<String> {
+    // On lit le fichier comme un MPEG et non par la vue générique de lofty :
+    // celle-ci ramène les tags à un vocabulaire commun, où `SYLT` n'a pas
+    // d'équivalent et disparaît donc silencieusement. Il faut la trame elle-
+    // même, telle qu'elle est dans le fichier.
+    let mut file = std::fs::File::open(path).ok()?;
+    let mpeg = MpegFile::read_from(&mut file, ParseOptions::new()).ok()?;
+    let id3 = mpeg.id3v2()?;
+
+    let frame = id3.get(&FrameId::Valid(std::borrow::Cow::Borrowed("SYLT")))?;
+    let Frame::Binary(binary) = frame else {
+        return None;
+    };
+
+    let sylt = SynchronizedTextFrame::parse(&binary.data, FrameFlags::default()).ok()?;
+    to_lrc(&sylt)
+}
+
+/// Traduit une trame `SYLT` en texte `.lrc`.
+///
+/// Onzer manipule les paroles sous une seule forme — le `.lrc` — que son
+/// analyseur sait déjà lire et que l'utilisateur peut copier ailleurs. Faire
+/// entrer `SYLT` dans ce format, plutôt que d'ajouter une seconde
+/// représentation interne, évite d'avoir deux chemins à maintenir pour la même
+/// chose.
+fn to_lrc(frame: &SynchronizedTextFrame<'_>) -> Option<String> {
+    // Les horodatages en trames MPEG dépendent du débit du fichier : les
+    // convertir en millisecondes demanderait de décoder l'audio. Elles sont
+    // rarissimes, et une synchronisation fausse serait pire que pas de
+    // synchronisation du tout.
+    if frame.timestamp_format != TimestampFormat::MS {
+        return None;
+    }
+
+    let mut out = String::new();
+
+    for (at_ms, text) in &frame.content {
+        let text = text.trim_matches('\n').trim_matches('\r');
+        let (minutes, seconds, centiseconds) = (
+            at_ms / 60_000,
+            (at_ms % 60_000) / 1000,
+            (at_ms % 1000) / 10,
+        );
+
+        out.push_str(&format!("[{minutes:02}:{seconds:02}.{centiseconds:02}]{text}\n"));
+    }
+
+    let out = out.trim_end().to_string();
+    (!out.is_empty()).then_some(out)
+}
+
 /// Ce texte porte-t-il des horodatages ?
 ///
 /// # Pourquoi cette question a sa place ici
@@ -241,8 +321,13 @@ pub fn read_sidecar(path: &Path) -> Option<String> {
 ///
 /// `None` quand le fichier n'en porte pas — ce qui est le cas le plus fréquent.
 pub fn read_from_file(path: &Path) -> Result<Option<String>> {
-    // Le fichier posé à côté prime : s'il existe, c'est qu'il apporte ce que
-    // le tag ne sait pas porter.
+    // Ce qui est synchronisé passe devant, où qu'il se trouve : dans la trame
+    // `SYLT` du fichier d'abord, dans le `.lrc` posé à côté ensuite. Le texte
+    // brut du tag ne vient qu'à défaut.
+    if let Some(synced) = read_synced_from_file(path) {
+        return Ok(Some(synced));
+    }
+
     if let Some(sidecar) = read_sidecar(path) {
         if is_synced_text(&sidecar) {
             return Ok(Some(sidecar));
@@ -299,6 +384,27 @@ pub fn write_to_file(path: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Sonde manuelle : lit un vrai fichier de la bibliothèque.
+    ///
+    /// Ignorée par défaut — elle dépend d'un disque externe.
+    #[test]
+    #[ignore]
+    fn sonde_un_fichier_reel() {
+        let chemin = std::env::var("ONZER_SONDE").expect("ONZER_SONDE=<chemin>");
+        let found = read_synced_from_file(Path::new(&chemin));
+
+        match found {
+            Some(text) => {
+                assert!(is_synced_text(&text), "trouvé mais non synchronisé");
+                println!("--- {} lignes ---", text.lines().count());
+                for line in text.lines().take(4) {
+                    println!("{line}");
+                }
+            }
+            None => println!("aucune trame SYLT"),
+        }
+    }
 
     #[test]
     fn reconnait_des_paroles_synchronisees() {

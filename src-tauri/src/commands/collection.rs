@@ -258,15 +258,35 @@ pub async fn fetch_lyrics(state: State<'_, AppState>, track_id: i64) -> Result<L
     Ok(lyrics::parse(&found.raw))
 }
 
-/// Récupère en tâche de fond les paroles de tous les morceaux qui n'en ont pas.
+/// Synchronise les paroles de toute la bibliothèque.
 ///
 /// Retourne aussitôt : la cadence courtoise d'une requête par seconde rendrait
 /// l'attente insupportable sur une bibliothèque entière. L'avancement se lit
 /// avec `lyrics_progress`.
+///
+/// # Deux passes, dans cet ordre
+///
+/// ```text
+///   morceaux sans horodatage
+///        │
+///        ├─► 1. le disque   : trame SYLT du fichier, ou .lrc posé à côté
+///        │                    → gratuit, instantané, hors ligne
+///        │
+///        └─► 2. le réseau   : LRCLIB, pour ce que le disque n'avait pas
+///                             → seulement si la complétion en ligne est active
+/// ```
+///
+/// **L'ordre n'est pas une optimisation, c'est une correction.** Onzer allait
+/// interroger un service pour une information qui était déjà dans les
+/// fichiers : mesuré sur quatre-vingts morceaux d'une bibliothèque deemix,
+/// cinquante portaient leur synchronisation dans une trame `SYLT` que
+/// `ItemKey::Lyrics` ne désigne pas. Mille requêtes réseau pour rien.
+///
+/// La première passe fonctionne **même quand la complétion en ligne est
+/// éteinte** : elle ne parle à personne, elle relit des fichiers que
+/// l'utilisateur possède déjà.
 #[tauri::command]
-pub async fn fetch_missing_lyrics(state: State<'_, AppState>) -> Result<i64> {
-    crate::commands::preferences::ensure_online_completion(&state.pool).await?;
-
+pub async fn sync_lyrics(state: State<'_, AppState>) -> Result<i64> {
     if BATCH_RUNNING.swap(true, Ordering::SeqCst) {
         return Err(OnzerError::Invalid(
             "une récupération est déjà en cours".to_string(),
@@ -275,10 +295,10 @@ pub async fn fetch_missing_lyrics(state: State<'_, AppState>) -> Result<i64> {
 
     // Sont concernés les morceaux sans paroles **et** ceux dont les paroles
     // n'ont pas d'horodatage : les seconds sont invisibles pour qui ne
-    // regarde que la présence du texte, et c'est précisément le cas de toute
-    // une bibliothèque téléchargée par deemix.
-    let pending: Vec<i64> = sqlx::query_scalar(
-        "SELECT id FROM tracks
+    // regarde que la présence du texte, et c'est le cas de toute une
+    // bibliothèque téléchargée par deemix.
+    let pending: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, relative_path FROM tracks
           WHERE deleted_at IS NULL
             AND (lyrics IS NULL OR lyrics = '' OR lyrics NOT LIKE ?)
           ORDER BY id",
@@ -287,40 +307,75 @@ pub async fn fetch_missing_lyrics(state: State<'_, AppState>) -> Result<i64> {
     .fetch_all(&state.pool)
     .await?;
 
+    let online = crate::commands::preferences::online_completion(&state.pool).await?;
     let pool = state.pool.clone();
     let paths = std::sync::Arc::clone(&state.paths);
     let total = pending.len() as i64;
 
     tauri::async_runtime::spawn(async move {
-        for track_id in pending {
-            let Ok(Some(query)) = lyrics_query(&pool, track_id).await else {
-                continue;
-            };
+        let mut remaining = Vec::new();
 
-            let found = match lrclib() {
-                Ok(client) => client.fetch(&query).await,
-                Err(_) => break,
-            };
+        // ── Première passe : le disque ──────────────────────────────────
+        //
+        // Instantanée et gratuite. Mesuré sur quatre-vingts fichiers d'une
+        // bibliothèque deemix, cinquante portaient déjà leur synchronisation
+        // dans une trame `SYLT` que personne ne lisait.
+        for (track_id, relative_path) in pending {
+            let resolver = paths.read().await.clone();
+            let found = importer::absolute_path(&resolver, &relative_path)
+                .ok()
+                .filter(|path| path.is_file())
+                .and_then(|path| {
+                    tokio::task::block_in_place(|| lyrics::read_synced_from_file(&path))
+                });
 
             match found {
-                Ok(Some(found)) => {
-                    // Un texte brut ne remplace pas un texte brut : le morceau
-                    // en a déjà un, l'échanger contre un autre ne lui apporte
-                    // rien et réécrirait son fichier pour rien.
-                    if !found.synced && has_lyrics(&pool, track_id).await {
-                        continue;
-                    }
-
-                    let resolver = paths.read().await.clone();
-                    if let Err(error) = write_lyrics(&pool, &resolver, track_id, &found.raw).await {
-                        tracing::warn!(track_id, %error, "paroles non enregistrées");
+                Some(text) => {
+                    // Seule la base est mise à jour : ces paroles **viennent**
+                    // du fichier, les y réécrire ne lui apprendrait rien et
+                    // ferait remanier mille blocs de tags pour rien.
+                    if let Err(error) = store_lyrics(&pool, track_id, &text).await {
+                        tracing::warn!(track_id, %error, "paroles locales non enregistrées");
                     }
                 }
-                // Absentes de la base : c'est fréquent et normal.
-                Ok(None) => {}
-                Err(error) => {
-                    tracing::warn!(track_id, %error, "LRCLIB indisponible, lot interrompu");
-                    break;
+                None => remaining.push(track_id),
+            }
+        }
+
+        // ── Seconde passe : le réseau, pour ce qui reste ────────────────
+        if online {
+            for track_id in remaining {
+                let Ok(Some(query)) = lyrics_query(&pool, track_id).await else {
+                    continue;
+                };
+
+                let found = match lrclib() {
+                    Ok(client) => client.fetch(&query).await,
+                    Err(_) => break,
+                };
+
+                match found {
+                    Ok(Some(found)) => {
+                        // Un texte brut ne remplace pas un texte brut : le
+                        // morceau en a déjà un, l'échanger contre un autre
+                        // réécrirait son fichier pour rien.
+                        if !found.synced && has_lyrics(&pool, track_id).await {
+                            continue;
+                        }
+
+                        let resolver = paths.read().await.clone();
+                        if let Err(error) =
+                            write_lyrics(&pool, &resolver, track_id, &found.raw).await
+                        {
+                            tracing::warn!(track_id, %error, "paroles non enregistrées");
+                        }
+                    }
+                    // Absentes de la base : c'est fréquent et normal.
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(track_id, %error, "LRCLIB indisponible, lot interrompu");
+                        break;
+                    }
                 }
             }
         }
@@ -390,6 +445,20 @@ async fn lyrics_query(
 async fn persist_lyrics(state: &State<'_, AppState>, track_id: i64, raw: &str) -> Result<()> {
     let paths = state.paths.read().await.clone();
     write_lyrics(&state.pool, &paths, track_id, raw).await
+}
+
+/// Enregistre des paroles en base, sans toucher au fichier.
+///
+/// Réservé au cas où le fichier est déjà la source : le réécrire reviendrait à
+/// lui rendre ce qu'il vient de nous donner.
+async fn store_lyrics(pool: &sqlx::SqlitePool, track_id: i64, raw: &str) -> Result<()> {
+    sqlx::query("UPDATE tracks SET lyrics = ? WHERE id = ?")
+        .bind(raw)
+        .bind(track_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
 }
 
 /// Écrit des paroles dans le fichier puis en base.

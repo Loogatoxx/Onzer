@@ -84,11 +84,11 @@ export function LyricsBar() {
           disabled={progress.running}
           onClick={() => {
             setError(null);
-            void ipc.fetchMissingLyrics().catch((cause: unknown) => setError(String(cause)));
+            void ipc.syncLyrics().catch((cause: unknown) => setError(String(cause)));
           }}
           className="shrink-0 rounded-full bg-raised px-3 py-1 text-[11px] font-semibold text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
         >
-          {progress.running ? "En cours…" : plain > 0 ? "Synchroniser" : "Récupérer en ligne"}
+          {progress.running ? "En cours…" : "Synchroniser"}
         </button>
       </div>
 
@@ -105,11 +105,10 @@ export function LyricsBar() {
 
       {!progress.running && (
         <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
-          Onzer interroge LRCLIB avec l&apos;artiste, le titre et la durée, et
-          retient la version horodatée quand elle existe. Les paroles trouvées
-          sont écrites dans les fichiers : elles ne dépendront plus du réseau.
-          Un texte brut déjà présent n&apos;est jamais remplacé par un autre
-          texte brut.
+          Onzer regarde d&apos;abord dans les fichiers : beaucoup portent déjà
+          leur synchronisation dans une zone de tags que peu de lecteurs
+          lisent. Ce n&apos;est qu&apos;ensuite, et seulement si la complétion
+          en ligne est active, qu&apos;il interroge LRCLIB pour le reste.
         </p>
       )}
     </div>

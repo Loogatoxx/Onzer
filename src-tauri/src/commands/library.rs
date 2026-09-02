@@ -229,6 +229,75 @@ pub async fn offline_tracks(state: State<'_, AppState>) -> Result<Vec<String>> {
         .collect())
 }
 
+/// Ce qu'une reprise des fichiers écartés a donné.
+#[derive(Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RescueReport {
+    /// Morceaux hors ligne qui ont retrouvé leur fichier.
+    pub restored: u64,
+    /// Fichiers qui restent des doublons, laissés où ils sont.
+    pub kept: u64,
+}
+
+/// Repasse sur les fichiers mis de côté dans `_Inbox/_Doublons`.
+///
+/// # Pourquoi ils s'y sont accumulés
+///
+/// Un morceau hors ligne garde sa ligne en base. Le retéléchargement arrivait
+/// avec les mêmes tags, la détection de doublon le reconnaissait — et
+/// l'écartait. Le morceau restait grisé, son fichier finissait dans
+/// `_Doublons`, et plus rien ne pouvait les rapprocher. Quatre cent sept
+/// fichiers s'y étaient accumulés.
+///
+/// La règle est corrigée à l'import, mais **corriger un défaut ne répare pas
+/// ce qu'il a déjà écarté** (ADR-029). Cette passe rejoue donc l'import sur ce
+/// dossier : ce qui correspond à un morceau sans fichier le rejoint, le reste
+/// ne bouge pas.
+#[tauri::command]
+pub async fn rescue_set_aside(state: State<'_, AppState>) -> Result<RescueReport> {
+    let paths = state.paths.read().await.clone();
+    let root = paths
+        .library_root()
+        .ok_or_else(|| OnzerError::Invalid("aucune bibliothèque configurée".to_string()))?;
+
+    let aside = crate::ingest::inbox::inbox_path(root)
+        .join(crate::library::naming::INBOX_DUPLICATES_DIR);
+
+    let Ok(entries) = std::fs::read_dir(&aside) else {
+        return Ok(RescueReport::default());
+    };
+
+    let files: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| crate::library::importer::is_importable(path))
+        .collect();
+
+    let mut report = RescueReport::default();
+
+    for file in files {
+        match crate::library::importer::import_file(
+            &state.pool,
+            &paths,
+            &file,
+            crate::library::importer::FileHandling::Organize,
+            "rescue",
+        )
+        .await
+        {
+            Ok(crate::library::importer::ImportOutcome::Restored { .. })
+            | Ok(crate::library::importer::ImportOutcome::Imported { .. }) => report.restored += 1,
+            Ok(crate::library::importer::ImportOutcome::Duplicate { .. }) => report.kept += 1,
+            Err(error) => {
+                tracing::warn!(fichier = %file.display(), %error, "reprise impossible");
+                report.kept += 1;
+            }
+        }
+    }
+
+    Ok(report)
+}
+
 /// Retire un morceau de la bibliothèque.
 ///
 /// # Retirer n'est pas détruire

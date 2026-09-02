@@ -176,6 +176,12 @@ export interface RebuildReport {
   artists: number;
 }
 
+/** Ce qu'une reprise des fichiers écartés a donné. */
+export interface RescueReport {
+  restored: number;
+  kept: number;
+}
+
 /** Ce que le rattachement des `.lrc` a fait. */
 export interface AdoptionReport {
   adopted: number;
@@ -842,6 +848,14 @@ export const ipc = {
 
   /** Les morceaux dont le fichier manque, sous forme « Artiste - Titre ». */
   offlineTracks: (): Promise<string[]> => invoke<string[]>("offline_tracks"),
+
+  /**
+   * Repasse sur les fichiers écartés dans `_Inbox/_Doublons`.
+   *
+   * Ceux qui correspondent à un morceau sans fichier le rejoignent ; les
+   * vrais doublons ne bougent pas.
+   */
+  rescueSetAside: (): Promise<RescueReport> => invoke<RescueReport>("rescue_set_aside"),
 
   /** Combien de morceaux affichent encore un tiret à la place de leur album. */
   missingAlbums: (): Promise<AlbumProgress> => invoke<AlbumProgress>("missing_albums"),

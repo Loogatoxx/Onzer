@@ -100,6 +100,9 @@ where
 
         match importer::import_file(pool, paths, file, handling, origin).await {
             Ok(ImportOutcome::Imported { .. }) => summary.imported += 1,
+            // Un morceau qui retrouve son fichier compte comme un import : du
+            // point de vue de l'utilisateur, un titre grisé redevient jouable.
+            Ok(ImportOutcome::Restored { .. }) => summary.imported += 1,
             Ok(ImportOutcome::Duplicate { reason, .. }) => {
                 summary.duplicates += 1;
                 tracing::debug!(fichier = %name, reason, "doublon ignoré");

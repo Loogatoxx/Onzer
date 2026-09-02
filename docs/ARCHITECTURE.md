@@ -1728,6 +1728,35 @@ c'est aussi pourquoi ce bandeau reste visible quand la complétion en ligne est 
 
 ---
 
+## ADR-063 — Un morceau sans fichier n'est pas un doublon
+
+**Contexte.** 154 morceaux avaient perdu leur fichier. Retéléchargés et déposés au dépôt, ils
+arrivaient avec les mêmes tags — la détection de doublon les reconnaissait, et les **écartait**.
+
+Le résultat, du point de vue de l'utilisateur : « Été avec toi » reste grisé, injouable, sans
+qu'aucune action ne soit possible ; et le même titre apparaît **deux fois** dans le dossier des
+doublons. Quatre cent sept fichiers s'y étaient accumulés.
+
+**Décision.** Avant de conclure au doublon, on demande **au disque** si le morceau reconnu a
+encore son fichier. S'il ne l'a plus, l'import ne crée pas de ligne : il **rend son fichier à
+la ligne existante**.
+
+| | Nouvel import | Retrouvailles |
+|---|---|---|
+| Titre, artiste, album | nouveaux | **inchangés** |
+| Historique, favoris, playlists | vides | **conservés** |
+| Chemin, taille, empreintes | écrits | **réécrits** |
+
+**Pourquoi le disque et non `is_available`.** Cette colonne ne vaut que ce que vaut le dernier
+balayage. Se fier à elle écraserait le chemin d'un morceau parfaitement présent — le seul
+endroit de tout ce mécanisme où une erreur ferait perdre quelque chose.
+
+**Et les 407 déjà écartés.** Corriger une règle ne répare pas ce qu'elle a déjà fait
+(ADR-029). Un bouton « Reprendre les fichiers écartés » rejoue l'import sur `_Doublons` : ce
+qui correspond à un morceau sans fichier le rejoint, les vrais doublons ne bougent pas.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

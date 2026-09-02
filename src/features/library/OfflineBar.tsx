@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { CommandBox } from "@/features/sync/SyncView";
 import { Icon } from "@/components/Icon";
-import { ipc, type ExportedList } from "@/lib/ipc";
+import { ipc, type ExportedList, type RescueReport } from "@/lib/ipc";
 
 /**
  * Les morceaux dont le fichier a disparu.
@@ -23,6 +23,7 @@ export function OfflineBar({ count }: { count: number }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [rescue, setRescue] = useState<RescueReport | null>(null);
 
   if (count === 0) return null;
 
@@ -69,6 +70,38 @@ export function OfflineBar({ count }: { count: number }) {
           {busy ? "…" : "Exporter la liste"}
         </button>
       </div>
+
+      {/* Le retéléchargement d'un morceau hors ligne se faisait écarter comme
+          doublon : le fichier partait dans `_Doublons` et le morceau restait
+          grisé. La règle est corrigée à l'import, mais ce qui a déjà été
+          écarté doit être repris explicitement. */}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setError(null);
+          setRescue(null);
+          setBusy(true);
+          void ipc
+            .rescueSetAside()
+            .then(setRescue)
+            .catch((cause: unknown) => setError(String(cause)))
+            .finally(() => setBusy(false));
+        }}
+        className="mt-2 w-full rounded-full bg-raised/60 px-3 py-1 text-[11px] text-ink-faint transition-colors hover:text-ink disabled:opacity-40"
+      >
+        Reprendre les fichiers écartés
+      </button>
+
+      {rescue !== null && (
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
+          {rescue.restored} morceau{rescue.restored > 1 ? "x" : ""} ont
+          retrouvé leur fichier
+          {rescue.kept > 0 &&
+            `, ${rescue.kept} restent des doublons et n'ont pas bougé`}
+          .
+        </p>
+      )}
 
       {error !== null && <p className="mt-2 text-[11px] text-danger">{error}</p>}
 

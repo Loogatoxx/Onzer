@@ -734,6 +734,50 @@ pub async fn attach_artwork(
     Ok(())
 }
 
+/// Rend son fichier à un morceau qui l'avait perdu.
+///
+/// # Ce qui change, et ce qui ne change pas
+///
+/// Seule la **localisation** est réécrite : chemin, taille, empreintes, date de
+/// modification, disponibilité. Le titre, l'artiste, l'album, les paroles, les
+/// favoris, l'historique d'écoute et la place dans les playlists ne bougent
+/// pas — ce sont les mêmes, puisque c'est le même morceau.
+///
+/// C'est toute la différence avec un nouvel import, qui créerait une ligne
+/// neuve et laisserait l'ancienne grisée à côté.
+pub async fn reattach_file(
+    pool: &SqlitePool,
+    track_id: i64,
+    relative_path: &str,
+    file_size: i64,
+    content_hash: &str,
+    audio_hash: &str,
+    file_modified_at: Option<i64>,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE tracks
+            SET relative_path    = ?,
+                file_size        = ?,
+                content_hash     = ?,
+                audio_hash       = ?,
+                file_modified_at = ?,
+                is_available     = 1,
+                last_seen_at     = ?
+          WHERE id = ?",
+    )
+    .bind(relative_path)
+    .bind(file_size)
+    .bind(content_hash)
+    .bind(audio_hash)
+    .bind(file_modified_at)
+    .bind(now_ms())
+    .bind(track_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 /// Rattache un album à un morceau qui n'en avait pas, sans pochette.
 ///
 /// # Pourquoi ce jumeau de [`attach_artwork`]

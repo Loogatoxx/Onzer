@@ -138,6 +138,13 @@ async fn import_from_inbox(pool: &SqlitePool, paths: &PathResolver, file: &std::
         Ok(ImportOutcome::Imported { relative_path, .. }) => {
             tracing::info!(fichier = %name, destination = %relative_path, "import automatique");
         }
+        Ok(ImportOutcome::Restored { relative_path, .. }) => {
+            tracing::info!(
+                fichier = %name,
+                destination = %relative_path,
+                "morceau hors ligne retrouvé"
+            );
+        }
         Ok(ImportOutcome::Duplicate { reason, .. }) => {
             // Onzer ne détruit rien, mais laisser le fichier sur place le
             // condamne à être réexaminé à chaque démarrage — et c'est

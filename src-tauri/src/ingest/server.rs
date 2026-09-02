@@ -272,6 +272,15 @@ async fn import(
             relative_path: None,
             reason: Some(reason),
         },
+        ImportOutcome::Restored {
+            track_id,
+            relative_path,
+        } => ImportResponse {
+            outcome: "restored",
+            track_id,
+            relative_path: Some(relative_path),
+            reason: Some("le morceau avait perdu son fichier"),
+        },
     }))
 }
 

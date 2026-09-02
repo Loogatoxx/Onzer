@@ -35,6 +35,24 @@ pub enum ImportOutcome {
         existing_id: i64,
         reason: &'static str,
     },
+    /// Le morceau existait, mais son fichier avait disparu : celui-ci reprend
+    /// la place.
+    ///
+    /// # Pourquoi ce n'est pas un doublon
+    ///
+    /// Un morceau hors ligne garde sa ligne, son historique, ses favoris et sa
+    /// place dans les playlists — seul le fichier manque. Le retéléchargement
+    /// arrivait avec les mêmes tags et se faisait écarter comme doublon : le
+    /// morceau restait grisé, et son fichier finissait dans `_Doublons` sans
+    /// que rien ne puisse plus les rapprocher. Quatre cent sept fichiers s'y
+    /// étaient accumulés.
+    ///
+    /// Le morceau ne perd donc rien de ce qu'il était : il **retrouve son
+    /// fichier**.
+    Restored {
+        track_id: i64,
+        relative_path: String,
+    },
 }
 
 /// Comment traiter le fichier sur le disque.
@@ -93,6 +111,30 @@ pub async fn import_file_with_hint(
     }
 }
 
+/// Le fichier de ce morceau a-t-il disparu du disque ?
+///
+/// La question est posée au **disque**, pas à la colonne `is_available` : cette
+/// dernière ne vaut que ce que vaut le dernier balayage, et se tromper ici
+/// écraserait le chemin d'un morceau parfaitement présent.
+async fn file_missing(pool: &SqlitePool, paths: &PathResolver, track_id: i64) -> bool {
+    let relative_path: Option<String> =
+        sqlx::query_scalar("SELECT relative_path FROM tracks WHERE id = ? AND deleted_at IS NULL")
+            .bind(track_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+
+    match relative_path {
+        Some(relative_path) => match absolute_path(paths, &relative_path) {
+            Ok(path) => !path.is_file(),
+            Err(_) => true,
+        },
+        // Ligne supprimée ou introuvable : ce n'est pas un morceau à réparer.
+        None => false,
+    }
+}
+
 async fn import_inner(
     pool: &SqlitePool,
     paths: &PathResolver,
@@ -116,18 +158,31 @@ async fn import_inner(
     let content_hash = hash::content_hash(source)?;
     let audio_hash = audio_hash::audio_hash(source)?;
 
+    // Un doublon dont le fichier a disparu n'est pas un doublon : c'est un
+    // morceau qui attend le sien. `restore` retient ce cas et laisse l'import
+    // suivre son cours jusqu'au rangement.
+    let mut restore = None;
+
     if let Some(existing_id) = repository::find_by_audio_hash(pool, &audio_hash).await? {
-        return Ok(ImportOutcome::Duplicate {
-            existing_id,
-            reason: "même audio, tags différents",
-        });
+        if !file_missing(pool, paths, existing_id).await {
+            return Ok(ImportOutcome::Duplicate {
+                existing_id,
+                reason: "même audio, tags différents",
+            });
+        }
+        restore = Some(existing_id);
     }
 
-    if let Some(existing_id) = repository::find_by_content_hash(pool, &content_hash).await? {
-        return Ok(ImportOutcome::Duplicate {
-            existing_id,
-            reason: "fichier identique",
-        });
+    if restore.is_none() {
+        if let Some(existing_id) = repository::find_by_content_hash(pool, &content_hash).await? {
+            if !file_missing(pool, paths, existing_id).await {
+                return Ok(ImportOutcome::Duplicate {
+                    existing_id,
+                    reason: "fichier identique",
+                });
+            }
+            restore = Some(existing_id);
+        }
     }
 
     // ── 2. Métadonnées ──────────────────────────────────────────────────
@@ -141,18 +196,23 @@ async fn import_inner(
     let normalized_title = naming::normalize_key(&meta.title);
     let normalized_artist = meta.filing_artist().map(naming::normalize_key);
 
-    if let Some(existing_id) = repository::find_by_tags(
-        pool,
-        &normalized_title,
-        normalized_artist.as_deref(),
-        Some(meta.duration_ms),
-    )
-    .await?
-    {
-        return Ok(ImportOutcome::Duplicate {
-            existing_id,
-            reason: "même titre et même durée",
-        });
+    if restore.is_none() {
+        if let Some(existing_id) = repository::find_by_tags(
+            pool,
+            &normalized_title,
+            normalized_artist.as_deref(),
+            Some(meta.duration_ms),
+        )
+        .await?
+        {
+            if !file_missing(pool, paths, existing_id).await {
+                return Ok(ImportOutcome::Duplicate {
+                    existing_id,
+                    reason: "même titre et même durée",
+                });
+            }
+            restore = Some(existing_id);
+        }
     }
 
     // ── 4. Destination ──────────────────────────────────────────────────
@@ -197,6 +257,24 @@ async fn import_inner(
     });
 
     // ── 6. Base ─────────────────────────────────────────────────────────
+    if let Some(track_id) = restore {
+        repository::reattach_file(
+            pool,
+            track_id,
+            &relative_path,
+            file_size,
+            &content_hash,
+            &audio_hash,
+            file_modified_at,
+        )
+        .await?;
+
+        return Ok(ImportOutcome::Restored {
+            track_id,
+            relative_path,
+        });
+    }
+
     let track_id = repository::insert_track(
         pool,
         NewTrack {
@@ -419,6 +497,116 @@ fn prune_album_dir(dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn base() -> (tempfile::TempDir, SqlitePool, PathResolver) {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("onzer.db")).await.unwrap();
+        crate::db::migrate(&pool).await.unwrap();
+
+        let root = dir.path().join("Musique");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let mut paths = PathResolver::new(dir.path().join("data"));
+        paths.set_library_root(Some(root));
+        (dir, pool, paths)
+    }
+
+    #[tokio::test]
+    async fn un_morceau_sans_fichier_est_reconnu_comme_tel() {
+        // C'est la question qui décide entre « doublon » et « retrouvailles ».
+        let (_dir, pool, paths) = base().await;
+
+        let track_id: i64 = sqlx::query_scalar(
+            "INSERT INTO tracks (title, normalized_title, duration_ms, relative_path,
+                                 file_size, content_hash, format, added_at, source)
+             VALUES ('Été avec toi','ete avec toi',200000,'Adele/01.mp3',1,'h','mp3',0,'scan')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert!(
+            file_missing(&pool, &paths, track_id).await,
+            "le fichier n'existe pas sur le disque"
+        );
+
+        // Le même morceau, fichier présent cette fois.
+        let root = paths.library_root().unwrap();
+        std::fs::create_dir_all(root.join("Adele")).unwrap();
+        std::fs::write(root.join("Adele/01.mp3"), b"audio").unwrap();
+
+        assert!(!file_missing(&pool, &paths, track_id).await);
+    }
+
+    #[tokio::test]
+    async fn la_question_est_posee_au_disque_pas_a_la_colonne() {
+        // `is_available` ne vaut que ce que vaut le dernier balayage : s'y
+        // fier écraserait le chemin d'un morceau parfaitement présent.
+        let (_dir, pool, paths) = base().await;
+        let root = paths.library_root().unwrap().to_path_buf();
+
+        std::fs::create_dir_all(root.join("Adele")).unwrap();
+        std::fs::write(root.join("Adele/01.mp3"), b"audio").unwrap();
+
+        let track_id: i64 = sqlx::query_scalar(
+            "INSERT INTO tracks (title, normalized_title, duration_ms, relative_path,
+                                 file_size, content_hash, format, added_at, source, is_available)
+             VALUES ('x','x',1,'Adele/01.mp3',1,'h','mp3',0,'scan',0)
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert!(
+            !file_missing(&pool, &paths, track_id).await,
+            "la colonne dit absent, le disque dit présent : c'est le disque qui tranche"
+        );
+    }
+
+    #[tokio::test]
+    async fn le_morceau_garde_son_identite_en_retrouvant_son_fichier() {
+        // Ce qui distingue des retrouvailles d'un nouvel import : la ligne, son
+        // historique et ses playlists survivent.
+        let (_dir, pool, _paths) = base().await;
+
+        let track_id: i64 = sqlx::query_scalar(
+            "INSERT INTO tracks (title, normalized_title, duration_ms, relative_path,
+                                 file_size, content_hash, format, added_at, source,
+                                 is_available, is_loved, lyrics)
+             VALUES ('Été avec toi','ete avec toi',200000,'ancien.mp3',1,'vieux','mp3',0,'scan',
+                     0, 1, '[00:01.00]x')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        crate::db::repository::reattach_file(
+            &pool,
+            track_id,
+            "Adèle Castillon/01 - Été avec toi.mp3",
+            4242,
+            "neuf",
+            "audio-neuf",
+            Some(1),
+        )
+        .await
+        .unwrap();
+
+        let (chemin, dispo, aime, paroles): (String, bool, bool, Option<String>) =
+            sqlx::query_as("SELECT relative_path, is_available, is_loved, lyrics FROM tracks WHERE id = ?")
+                .bind(track_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        assert_eq!(chemin, "Adèle Castillon/01 - Été avec toi.mp3");
+        assert!(dispo, "le morceau redevient jouable");
+        assert!(aime, "le favori ne se perd pas");
+        assert_eq!(paroles.as_deref(), Some("[00:01.00]x"), "les paroles non plus");
+    }
 
     #[test]
     fn ignore_les_fichiers_appledouble() {

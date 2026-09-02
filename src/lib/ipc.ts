@@ -161,6 +161,13 @@ export interface WhisperStatus {
   total: number;
 }
 
+/** Ce que l'écran de premier lancement doit proposer. */
+export interface RootSuggestions {
+  roots: string[];
+  /** Un sélecteur de dossier natif est-il disponible ? Non sur Android. */
+  canBrowse: boolean;
+}
+
 export interface Preferences {
   /** Onzer peut-il proposer de compléter les métadonnées en ligne ? */
   onlineCompletion: boolean;
@@ -819,6 +826,10 @@ export const ipc = {
    */
   syncTrack: (trackId: number): Promise<Lyrics> =>
     invoke<Lyrics>("sync_track", { trackId }),
+
+  /** Les dossiers plausibles pour la bibliothèque, selon la machine. */
+  suggestedRoots: (): Promise<RootSuggestions> =>
+    invoke<RootSuggestions>("suggested_roots"),
 
   preferences: (): Promise<Preferences> => invoke<Preferences>("preferences"),
 

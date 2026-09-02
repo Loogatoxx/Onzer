@@ -106,3 +106,62 @@ pub fn retry_media_keys(app: tauri::AppHandle) -> MediaKeysStatus {
 
     media_keys_status()
 }
+
+// ── Où ranger la musique ────────────────────────────────────────────────────
+
+/// Ce que l'écran de premier lancement doit proposer.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RootSuggestions {
+    /// Dossiers proposés, du plus probable au moins probable.
+    pub roots: Vec<String>,
+    /// Un sélecteur de dossier natif est-il disponible ?
+    ///
+    /// Sur Android, non : le système ne donne pas de chemin de fichier, il
+    /// donne une autorisation d'accès à un arbre. Laisser le bouton visible
+    /// produisait un clic sans effet — le genre de détail qui fait douter de
+    /// tout le reste.
+    pub can_browse: bool,
+}
+
+/// Les dossiers plausibles pour la bibliothèque, selon la machine.
+#[tauri::command]
+pub fn suggested_roots() -> RootSuggestions {
+    #[cfg(target_os = "android")]
+    {
+        RootSuggestions {
+            // Les chemins publics d'Android, stables depuis dix ans.
+            roots: vec![
+                "/storage/emulated/0/Music".to_string(),
+                "/storage/emulated/0/Download".to_string(),
+            ],
+            can_browse: false,
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let mut roots = Vec::new();
+
+        // Le SSD externe d'abord, quand il est là : c'est la politique de
+        // stockage du projet, le volumineux ne va pas sur le disque interne.
+        let lexar = std::path::Path::new("/Volumes/Lexar/Musique");
+        if lexar.exists() {
+            roots.push(lexar.display().to_string());
+        }
+
+        if let Some(home) = std::env::var_os("HOME") {
+            roots.push(
+                std::path::Path::new(&home)
+                    .join("Music/Onzer")
+                    .display()
+                    .to_string(),
+            );
+        }
+
+        RootSuggestions {
+            roots,
+            can_browse: true,
+        }
+    }
+}

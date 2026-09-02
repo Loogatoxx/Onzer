@@ -226,6 +226,7 @@ pub fn run() {
             commands::system::app_status,
             commands::system::media_keys_status,
             commands::system::retry_media_keys,
+            commands::system::suggested_roots,
             commands::library::set_library_root,
             commands::library::import_folder,
             commands::library::list_tracks,

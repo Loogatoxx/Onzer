@@ -169,7 +169,11 @@ pub fn spawn(pool: SqlitePool, paths: Arc<RwLock<PathResolver>>) {
             // correctement taguée n'a rien à faire identifier — et l'ouvrier
             // qui tourne quand même consommerait du réseau pour reposer des
             // questions dont la réponse est dans les fichiers.
-            let autorise = crate::commands::preferences::online_completion(&pool)
+            //
+            // C'est **son** réglage, distinct de celui de la complétion :
+            // demander des paroles ne doit pas réveiller un ouvrier qui
+            // réécrit des titres.
+            let autorise = crate::commands::preferences::auto_identification(&pool)
                 .await
                 .unwrap_or(true);
 

@@ -143,6 +143,8 @@ export interface MetadataCandidate {
 export interface Preferences {
   /** Onzer peut-il proposer de compléter les métadonnées en ligne ? */
   onlineCompletion: boolean;
+  /** L'ouvrier d'identification acoustique tourne-t-il ? */
+  autoIdentification: boolean;
 }
 
 /** Ce que la remise à zéro a fait. */
@@ -763,6 +765,15 @@ export const ipc = {
    */
   setOnlineCompletion: (enabled: boolean): Promise<void> =>
     invoke<void>("set_online_completion", { enabled }),
+
+  /**
+   * Active ou éteint l'ouvrier d'identification acoustique.
+   *
+   * Réglage distinct de la complétion : demander des paroles ne doit pas
+   * réveiller un ouvrier qui réécrit des titres.
+   */
+  setAutoIdentification: (enabled: boolean): Promise<void> =>
+    invoke<void>("set_auto_identification", { enabled }),
 
   /**
    * Vide la bibliothèque pour la reconstruire depuis le dépôt.

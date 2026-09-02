@@ -286,6 +286,7 @@ pub fn run() {
             commands::metadata::candidate_preview,
             commands::preferences::preferences,
             commands::preferences::set_online_completion,
+            commands::preferences::set_auto_identification,
             commands::preferences::rebuild_library,
         ])
         .run(tauri::generate_context!())

@@ -45,11 +45,25 @@ use crate::AppState;
 /// Clé du réglage de complétion en ligne.
 pub const ONLINE_COMPLETION: &str = "online_completion";
 
+/// Clé du réglage d'identification automatique.
+///
+/// # Pourquoi il ne peut pas être le même
+///
+/// Les deux ont l'air d'une seule question — « Onzer a-t-il le droit d'aller
+/// en ligne ? » — mais ils répondent à des besoins opposés. Vouloir des
+/// paroles pour une bibliothèque déjà bien taguée est une demande courante ;
+/// vouloir qu'un ouvrier réécrive les titres de ces mêmes fichiers ne l'est
+/// pas. Les avoir liés faisait repartir l'identification acoustique au moment
+/// où l'on demandait des paroles — un effet de bord que rien n'annonçait.
+pub const AUTO_IDENTIFICATION: &str = "auto_identification";
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preferences {
     /// Onzer peut-il proposer de compléter les métadonnées en ligne ?
     pub online_completion: bool,
+    /// L'ouvrier d'identification acoustique tourne-t-il ?
+    pub auto_identification: bool,
 }
 
 /// L'état du réglage, actif par défaut.
@@ -74,11 +88,35 @@ pub async fn ensure_online_completion(pool: &sqlx::SqlitePool) -> Result<()> {
     ))
 }
 
+/// L'ouvrier d'identification a-t-il le droit de tourner ?
+pub async fn auto_identification(pool: &sqlx::SqlitePool) -> Result<bool> {
+    Ok(settings::get::<bool>(pool, AUTO_IDENTIFICATION)
+        .await?
+        .unwrap_or(true))
+}
+
+/// Refuse une identification quand le réglage est éteint.
+pub async fn ensure_auto_identification(pool: &sqlx::SqlitePool) -> Result<()> {
+    if auto_identification(pool).await? {
+        return Ok(());
+    }
+
+    Err(OnzerError::Invalid(
+        "l'identification automatique est désactivée dans les réglages".to_string(),
+    ))
+}
+
 #[tauri::command]
 pub async fn preferences(state: State<'_, AppState>) -> Result<Preferences> {
     Ok(Preferences {
         online_completion: online_completion(&state.pool).await?,
+        auto_identification: auto_identification(&state.pool).await?,
     })
+}
+
+#[tauri::command]
+pub async fn set_auto_identification(state: State<'_, AppState>, enabled: bool) -> Result<()> {
+    settings::set(&state.pool, AUTO_IDENTIFICATION, &enabled).await
 }
 
 #[tauri::command]

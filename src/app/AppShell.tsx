@@ -174,11 +174,15 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
    * disparaître les bandeaux sans redémarrage.
    */
   const [onlineCompletion, setOnlineCompletion] = useState(true);
+  const [autoIdentification, setAutoIdentification] = useState(true);
 
   useEffect(() => {
     void ipc
       .preferences()
-      .then((preferences) => setOnlineCompletion(preferences.onlineCompletion))
+      .then((preferences) => {
+        setOnlineCompletion(preferences.onlineCompletion);
+        setAutoIdentification(preferences.autoIdentification);
+      })
       .catch(() => undefined);
   }, [revision]);
   const loadingMore = useRef(false);
@@ -716,6 +720,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               onSeek={(position) => void playback.seek(position)}
               onReload={bump}
               onlineCompletion={onlineCompletion}
+              autoIdentification={autoIdentification}
               onGenerated={showGenerated}
               onError={setError}
               onRenamePlaylist={(id, name) => {
@@ -873,6 +878,8 @@ interface PageProps {
   onReload: () => void;
   /** Les outils de complétion en ligne sont-ils proposés ? */
   onlineCompletion: boolean;
+  /** L'identification acoustique est-elle proposée ? */
+  autoIdentification: boolean;
   onGenerated: (playlist: GeneratedPlaylist) => void;
   onError: (message: string) => void;
   onRenamePlaylist: (id: number, name: string) => void;
@@ -1116,7 +1123,7 @@ function Page(props: PageProps) {
             même morceau se repèrent sans rien demander à personne, et cette
             question-là reste valable même sur une bibliothèque impeccable. */}
         <div className="mt-3 space-y-2">
-          {props.onlineCompletion && (
+          {props.autoIdentification && (
             <>
               <IdentifyPanel />
               <SuspectPanel onRestored={props.onReload} />

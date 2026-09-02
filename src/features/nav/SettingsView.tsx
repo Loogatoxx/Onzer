@@ -20,16 +20,19 @@ export function SettingsView({ onChanged }: { onChanged: () => void }) {
     void ipc.preferences().then(setPreferences).catch(() => undefined);
   }, []);
 
-  async function toggle(enabled: boolean) {
+  async function toggle(key: keyof Preferences, enabled: boolean) {
+    if (preferences === null) return;
+
     setError(null);
-    setPreferences({ onlineCompletion: enabled });
+    setPreferences({ ...preferences, [key]: enabled });
 
     try {
-      await ipc.setOnlineCompletion(enabled);
+      if (key === "onlineCompletion") await ipc.setOnlineCompletion(enabled);
+      else await ipc.setAutoIdentification(enabled);
       onChanged();
     } catch (cause) {
       setError(String(cause));
-      setPreferences({ onlineCompletion: !enabled });
+      setPreferences(preferences);
     }
   }
 
@@ -45,16 +48,25 @@ export function SettingsView({ onChanged }: { onChanged: () => void }) {
       <div className="mt-8 max-w-2xl space-y-3">
         <Setting
           title="Compléter les métadonnées en ligne"
-          description="Identification acoustique, paroles, pochettes et albums manquants. À laisser allumé quand les fichiers arrivent mal tagués — à éteindre quand ils arrivent déjà complets, d'un service qui fournit ses métadonnées."
+          description="Paroles, pochettes et albums manquants. À laisser allumé quand les fichiers arrivent incomplets — à éteindre quand ils arrivent déjà complets, d'un service qui fournit ses métadonnées."
           checked={preferences?.onlineCompletion ?? true}
-          onChange={(value) => void toggle(value)}
+          onChange={(value) => void toggle("onlineCompletion", value)}
         />
 
-        {preferences !== null && !preferences.onlineCompletion && (
+        <Setting
+          title="Identification automatique"
+          description="L'ouvrier qui reconnaît les morceaux à l'oreille et réécrit leurs titres. Inutile sur des fichiers déjà correctement tagués — et c'est le seul outil qui modifie un titre sans qu'on le lui demande."
+          checked={preferences?.autoIdentification ?? true}
+          onChange={(value) => void toggle("autoIdentification", value)}
+        />
+
+        {preferences !== null && (!preferences.onlineCompletion || !preferences.autoIdentification) && (
           <p className="px-4 text-[12px] leading-relaxed text-ink-faint">
-            Les outils de complétion sont masqués et le cœur refuse de les
-            lancer. Rien n&apos;est perdu : rallumer l&apos;interrupteur les
-            remet exactement où ils étaient.
+            Ce qui est éteint disparaît de l&apos;interface, et le cœur refuse
+            de le lancer. Rien n&apos;est perdu : rallumer l&apos;interrupteur
+            remet l&apos;outil exactement où il était. La synchronisation des
+            paroles depuis les fichiers, elle, marche dans tous les cas —
+            elle ne parle à personne.
           </p>
         )}
 

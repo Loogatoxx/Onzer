@@ -69,14 +69,14 @@ pub async fn set_acoustid_key(state: State<'_, AppState>, key: String) -> Result
 /// Relance les morceaux dont l'identification avait échoué.
 #[tauri::command]
 pub async fn retry_identifications(state: State<'_, AppState>) -> Result<u64> {
-    crate::commands::preferences::ensure_online_completion(&state.pool).await?;
+    crate::commands::preferences::ensure_auto_identification(&state.pool).await?;
     worker::retry_failed(&state.pool).await
 }
 
 /// Remet toute la bibliothèque en file d'identification.
 #[tauri::command]
 pub async fn reidentify_library(state: State<'_, AppState>) -> Result<u64> {
-    crate::commands::preferences::ensure_online_completion(&state.pool).await?;
+    crate::commands::preferences::ensure_auto_identification(&state.pool).await?;
     worker::requeue_all(&state.pool).await
 }
 

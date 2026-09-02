@@ -15,7 +15,7 @@ use sqlx::SqlitePool;
 
 use crate::core::{now_ms, OnzerError, Result};
 
-use super::repository::TrackSummary;
+use super::repository::{TrackSummary, TRACK_COLUMNS};
 
 /// Une playlist, telle que la barre latérale l'affiche.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -180,21 +180,14 @@ pub async fn remove_at(pool: &SqlitePool, playlist_id: i64, position: i64) -> Re
 
 /// Morceaux d'une playlist, dans l'ordre.
 pub async fn tracks(pool: &SqlitePool, playlist_id: i64) -> Result<Vec<TrackSummary>> {
-    let rows = sqlx::query_as::<_, TrackSummary>(
-        "SELECT t.id, t.title,
-                (SELECT a.name FROM track_artists ta
-                   JOIN artists a ON a.id = ta.artist_id
-                  WHERE ta.track_id = t.id AND ta.role = 'main'
-                  ORDER BY ta.position LIMIT 1) AS artist,
-                al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-                t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
-                (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
+    let rows = sqlx::query_as::<_, TrackSummary>(&format!(
+        "SELECT {TRACK_COLUMNS}
            FROM playlist_tracks pt
            JOIN tracks t ON t.id = pt.track_id
       LEFT JOIN albums al ON al.id = t.album_id
           WHERE pt.playlist_id = ? AND t.deleted_at IS NULL
           ORDER BY pt.position",
-    )
+    ))
     .bind(playlist_id)
     .fetch_all(pool)
     .await?;
@@ -218,20 +211,13 @@ pub async fn toggle_loved(pool: &SqlitePool, track_id: i64) -> Result<bool> {
 
 /// Les favoris, du plus récemment ajouté au plus ancien.
 pub async fn loved(pool: &SqlitePool) -> Result<Vec<TrackSummary>> {
-    let rows = sqlx::query_as::<_, TrackSummary>(
-        "SELECT t.id, t.title,
-                (SELECT a.name FROM track_artists ta
-                   JOIN artists a ON a.id = ta.artist_id
-                  WHERE ta.track_id = t.id AND ta.role = 'main'
-                  ORDER BY ta.position LIMIT 1) AS artist,
-                al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-                t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
-                (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
+    let rows = sqlx::query_as::<_, TrackSummary>(&format!(
+        "SELECT {TRACK_COLUMNS}
            FROM tracks t
       LEFT JOIN albums al ON al.id = t.album_id
           WHERE t.is_loved = 1 AND t.deleted_at IS NULL
           ORDER BY t.added_at DESC",
-    )
+    ))
     .fetch_all(pool)
     .await?;
 

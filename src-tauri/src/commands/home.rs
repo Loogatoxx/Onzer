@@ -27,7 +27,7 @@ use sqlx::SqlitePool;
 use tauri::State;
 
 use crate::core::Result;
-use crate::db::repository::TrackSummary;
+use crate::db::repository::{TrackSummary, TRACK_COLUMNS};
 use crate::AppState;
 
 /// Nombre de morceaux dans la rangée « Reprendre l'écoute ».
@@ -117,15 +117,8 @@ fn local_hour() -> u32 {
 /// Les écoutes éclair sont exclues : un morceau zappé au bout de trois secondes
 /// n'est pas « ce que j'écoutais », c'est ce que j'ai refusé.
 async fn resume(pool: &SqlitePool) -> Result<Vec<TrackSummary>> {
-    let tracks = sqlx::query_as::<_, TrackSummary>(
-        "SELECT t.id, t.title,
-                (SELECT a.name FROM track_artists ta
-                   JOIN artists a ON a.id = ta.artist_id
-                  WHERE ta.track_id = t.id AND ta.role = 'main'
-                  ORDER BY ta.position LIMIT 1) AS artist,
-                al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-                t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
-                (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
+    let tracks = sqlx::query_as::<_, TrackSummary>(&format!(
+        "SELECT {TRACK_COLUMNS}
            FROM tracks t
       LEFT JOIN albums al ON al.id = t.album_id
           WHERE t.deleted_at IS NULL
@@ -133,7 +126,7 @@ async fn resume(pool: &SqlitePool) -> Result<Vec<TrackSummary>> {
                          WHERE e.track_id = t.id AND e.listened_ms >= 15000)
           ORDER BY (SELECT MAX(e.started_at) FROM play_events e WHERE e.track_id = t.id) DESC
           LIMIT ?",
-    )
+    ))
     .bind(RESUME_COUNT)
     .fetch_all(pool)
     .await?;

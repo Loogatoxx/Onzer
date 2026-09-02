@@ -19,7 +19,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::core::Result;
-use crate::db::repository::TrackSummary;
+use crate::db::repository::{TrackSummary, TRACK_COLUMNS};
 use crate::AppState;
 
 /// Un artiste, tel que la liste l'affiche.
@@ -77,22 +77,15 @@ pub async fn artist_tracks(
     state: State<'_, AppState>,
     artist_id: i64,
 ) -> Result<Vec<TrackSummary>> {
-    let tracks = sqlx::query_as::<_, TrackSummary>(
-        "SELECT t.id, t.title,
-                (SELECT a.name FROM track_artists ta2
-                   JOIN artists a ON a.id = ta2.artist_id
-                  WHERE ta2.track_id = t.id AND ta2.role = 'main'
-                  ORDER BY ta2.position LIMIT 1) AS artist,
-                al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-                t.relative_path, t.is_available, al.artwork_hash, t.is_loved,
-                t.added_at, (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
+    let tracks = sqlx::query_as::<_, TrackSummary>(&format!(
+        "SELECT {TRACK_COLUMNS}
            FROM track_artists ta
            JOIN tracks t ON t.id = ta.track_id AND t.deleted_at IS NULL
       LEFT JOIN albums al ON al.id = t.album_id
           WHERE ta.artist_id = ?
           GROUP BY t.id
           ORDER BY al.year DESC, al.title, t.disc_no, t.track_no, t.title",
-    )
+    ))
     .bind(artist_id)
     .fetch_all(&state.pool)
     .await?;

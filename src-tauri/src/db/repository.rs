@@ -793,6 +793,32 @@ pub async fn attach_album_only(
 //  Lecture
 // ════════════════════════════════════════════════════════════════════════════
 
+/// Projection commune à toutes les vues de morceaux.
+///
+/// # Pourquoi une constante et non six copies
+///
+/// Cette liste de colonnes était recopiée dans six requêtes — bibliothèque,
+/// playlists, artistes, catégories, accueil, recherche. Ajouter un champ à
+/// `TrackSummary` obligeait à les retrouver toutes ; en oublier une ne casse
+/// pas la compilation, mais fait **échouer la requête à l'exécution**, et la
+/// page concernée reste vide sans rien dire.
+///
+/// C'est exactement ce qui s'est produit en ajoutant `has_synced` : l'accueil,
+/// les playlists, les artistes et les catégories se sont tus d'un coup. Une
+/// seule source pour cette liste supprime la classe entière de défaut.
+///
+/// L'alias `t` désigne `tracks`, `al` désigne `albums` : toute requête qui
+/// utilise cette projection doit les fournir.
+pub const TRACK_COLUMNS: &str = "t.id, t.title,
+                (SELECT a.name FROM track_artists ta
+                   JOIN artists a ON a.id = ta.artist_id
+                  WHERE ta.track_id = t.id AND ta.role = 'main'
+                  ORDER BY ta.position LIMIT 1) AS artist,
+                al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
+                t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
+                (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics,
+                (t.lyrics LIKE '%[__:__%')               AS has_synced";
+
 /// Vue d'un morceau destinée à l'interface.
 #[derive(Debug, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -1003,6 +1029,86 @@ pub async fn record_import(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// La projection commune doit correspondre au type qu'elle remplit.
+    ///
+    /// Ce test attrape ce que le compilateur ne voit pas : une colonne
+    /// ajoutée à `TrackSummary` sans l'être à la requête ne casse rien à la
+    /// compilation, mais fait échouer la lecture **à l'exécution** — et la
+    /// page concernée reste vide sans rien dire.
+    #[tokio::test]
+    async fn la_projection_commune_remplit_le_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::connect(&dir.path().join("onzer.db")).await.unwrap();
+        crate::db::migrate(&pool).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO tracks (title, normalized_title, duration_ms, relative_path,
+                                 file_size, content_hash, format, added_at, source, lyrics)
+             VALUES ('Macarena','macarena',200000,'a.mp3',1,'h','mp3',0,'scan','[00:01.00]x')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let sql = format!(
+            "SELECT {TRACK_COLUMNS} FROM tracks t
+          LEFT JOIN albums al ON al.id = t.album_id
+              WHERE t.deleted_at IS NULL"
+        );
+
+        let rows = sqlx::query_as::<_, TrackSummary>(&sql)
+            .fetch_all(&pool)
+            .await
+            .expect("la projection doit correspondre à TrackSummary");
+
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].has_lyrics && rows[0].has_synced);
+    }
+
+    /// Personne ne redéclare la projection dans son coin.
+    ///
+    /// Six copies de cette liste de colonnes vivaient dans le code ; en
+    /// oublier une lors d'un ajout a rendu muets l'accueil, les playlists, les
+    /// artistes et les catégories d'un seul coup. Une constante ne protège que
+    /// si tout le monde s'en sert.
+    #[test]
+    fn aucune_requete_ne_recopie_la_projection() {
+        let racine = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut fautives = Vec::new();
+
+        parcourir(&racine, &mut |chemin, contenu| {
+            // La constante elle-même est la seule autorisée à la contenir.
+            if chemin.ends_with("db/repository.rs") {
+                return;
+            }
+            if contenu.contains("AS has_lyrics") {
+                fautives.push(chemin.display().to_string());
+            }
+        });
+
+        assert!(
+            fautives.is_empty(),
+            "ces fichiers recopient la projection au lieu d'utiliser TRACK_COLUMNS : {fautives:?}"
+        );
+    }
+
+    fn parcourir(dir: &std::path::Path, action: &mut impl FnMut(&std::path::Path, &str)) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                parcourir(&path, action);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                if let Ok(contenu) = std::fs::read_to_string(&path) {
+                    action(&path, &contenu);
+                }
+            }
+        }
+    }
 
     async fn base() -> (tempfile::TempDir, SqlitePool) {
         let dir = tempfile::tempdir().unwrap();

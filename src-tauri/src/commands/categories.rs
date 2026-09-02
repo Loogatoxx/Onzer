@@ -31,7 +31,7 @@ use sqlx::SqlitePool;
 use tauri::State;
 
 use crate::core::{OnzerError, Result};
-use crate::db::repository::TrackSummary;
+use crate::db::repository::{TrackSummary, TRACK_COLUMNS};
 use crate::identify::discover::{DiscoveryClient, Suggestion, TrackSuggestion};
 use crate::AppState;
 
@@ -247,14 +247,7 @@ fn tracks_sql(definition: &Definition) -> String {
     let order = if definition.top { "DESC" } else { "ASC" };
 
     format!(
-        "SELECT t.id, t.title,
-                (SELECT a.name FROM track_artists ta
-                   JOIN artists a ON a.id = ta.artist_id
-                  WHERE ta.track_id = t.id AND ta.role = 'main'
-                  ORDER BY ta.position LIMIT 1) AS artist,
-                al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-                t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
-                (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
+        "SELECT {TRACK_COLUMNS}
            FROM track_features f
            JOIN tracks t ON t.id = f.track_id AND t.deleted_at IS NULL
       LEFT JOIN albums al ON al.id = t.album_id

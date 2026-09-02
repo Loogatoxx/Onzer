@@ -47,8 +47,22 @@ export function HomeView({
   const [categories, setCategories] = useState<Category[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
+  /**
+   * Pourquoi l'accueil n'a rien pu montrer.
+   *
+   * L'erreur était avalée par un `catch` vide : quand la requête échouait,
+   * la page restait sur « Préparation… » indéfiniment, sans que rien ne dise
+   * pourquoi. Un défaut silencieux est un défaut qu'on ne peut pas corriger
+   * — l'utilisateur ne peut que constater que « ça ne marche pas ».
+   */
+  const [failure, setFailure] = useState<string | null>(null);
+
   const reload = useCallback(() => {
-    void ipc.home().then(setHome).catch(() => undefined);
+    setFailure(null);
+    void ipc
+      .home()
+      .then(setHome)
+      .catch((cause: unknown) => setFailure(String(cause)));
     void ipc.categories().then(setCategories).catch(() => undefined);
   }, []);
 
@@ -65,6 +79,22 @@ export function HomeView({
     } finally {
       setBusy(null);
     }
+  }
+
+  if (failure !== null) {
+    return (
+      <div className="px-6 py-16">
+        <p className="text-sm text-ink">L&apos;accueil n&apos;a pas pu se construire.</p>
+        <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-danger">{failure}</p>
+        <button
+          type="button"
+          onClick={reload}
+          className="mt-5 rounded-full bg-elevated px-4 py-2 text-[13px] font-semibold text-ink-muted transition-colors hover:text-ink"
+        >
+          Réessayer
+        </button>
+      </div>
+    );
   }
 
   if (home === null) {

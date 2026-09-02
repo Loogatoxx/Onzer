@@ -140,6 +140,19 @@ export interface MetadataCandidate {
   score: number;
 }
 
+export interface Preferences {
+  /** Onzer peut-il proposer de compléter les métadonnées en ligne ? */
+  onlineCompletion: boolean;
+}
+
+/** Ce que la remise à zéro a fait. */
+export interface RebuildReport {
+  tracks: number;
+  foldersSetAside: number;
+  albums: number;
+  artists: number;
+}
+
 export interface AlbumProgress {
   missing: number;
   running: boolean;
@@ -730,6 +743,26 @@ export const ipc = {
    */
   candidatePreview: (url: string): Promise<string | null> =>
     invoke<string | null>("candidate_preview", { url }),
+
+  preferences: (): Promise<Preferences> => invoke<Preferences>("preferences"),
+
+  /**
+   * Active ou éteint la complétion des métadonnées en ligne.
+   *
+   * Éteinte, l'interface se tait **et** le cœur refuse : un réglage qui ne
+   * tiendrait qu'à ce que l'on affiche ne serait qu'une décoration.
+   */
+  setOnlineCompletion: (enabled: boolean): Promise<void> =>
+    invoke<void>("set_online_completion", { enabled }),
+
+  /**
+   * Vide la bibliothèque pour la reconstruire depuis le dépôt.
+   *
+   * Les fichiers ne sont pas supprimés : ils sont déplacés dans `_Ancien`, à la
+   * racine, rangés comme ils l'étaient. L'historique d'écoute et les playlists
+   * survivent.
+   */
+  rebuildLibrary: (): Promise<RebuildReport> => invoke<RebuildReport>("rebuild_library"),
 
   /** Combien de morceaux affichent encore un tiret à la place de leur album. */
   missingAlbums: (): Promise<AlbumProgress> => invoke<AlbumProgress>("missing_albums"),

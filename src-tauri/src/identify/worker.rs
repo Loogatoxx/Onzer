@@ -164,6 +164,20 @@ pub fn spawn(pool: SqlitePool, paths: Arc<RwLock<PathResolver>>) {
                 continue;
             }
 
+            // Le réglage est relu à chaque tour, comme la clé : l'éteindre
+            // doit endormir l'ouvrier sans redémarrage. Une bibliothèque déjà
+            // correctement taguée n'a rien à faire identifier — et l'ouvrier
+            // qui tourne quand même consommerait du réseau pour reposer des
+            // questions dont la réponse est dans les fichiers.
+            let autorise = crate::commands::preferences::online_completion(&pool)
+                .await
+                .unwrap_or(true);
+
+            if !autorise {
+                tokio::time::sleep(IDLE_INTERVAL).await;
+                continue;
+            }
+
             // La clé est relue à chaque tour : l'utilisateur peut la saisir
             // pendant que l'application tourne, sans avoir à la redémarrer.
             let key: Option<String> = settings::get(&pool, API_KEY_SETTING).await.ok().flatten();

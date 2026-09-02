@@ -231,6 +231,7 @@ pub async fn lyrics_progress(state: State<'_, AppState>) -> Result<LyricsProgres
 /// se limite à l'artiste, au titre, à l'album et à la durée.
 #[tauri::command]
 pub async fn fetch_lyrics(state: State<'_, AppState>, track_id: i64) -> Result<Lyrics> {
+
     let query = lyrics_query(&state.pool, track_id).await?;
     let Some(query) = query else {
         return Ok(Lyrics::default());
@@ -254,6 +255,8 @@ pub async fn fetch_lyrics(state: State<'_, AppState>, track_id: i64) -> Result<L
 /// avec `lyrics_progress`.
 #[tauri::command]
 pub async fn fetch_missing_lyrics(state: State<'_, AppState>) -> Result<i64> {
+    crate::commands::preferences::ensure_online_completion(&state.pool).await?;
+
     if BATCH_RUNNING.swap(true, Ordering::SeqCst) {
         return Err(OnzerError::Invalid(
             "une récupération est déjà en cours".to_string(),
@@ -562,6 +565,8 @@ pub async fn artwork_progress(state: State<'_, AppState>) -> Result<ArtworkProgr
 /// l'image — jamais le titre ni l'artiste, qui ne sont pas ce qu'on répare ici.
 #[tauri::command]
 pub async fn fetch_missing_artwork(state: State<'_, AppState>) -> Result<i64> {
+    crate::commands::preferences::ensure_online_completion(&state.pool).await?;
+
     if ARTWORK_RUNNING.swap(true, Ordering::SeqCst) {
         return Err(OnzerError::Invalid(
             "une récupération est déjà en cours".to_string(),

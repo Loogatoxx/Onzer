@@ -23,6 +23,7 @@ import { LyricsView } from "@/features/player/LyricsView";
 import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
 import { ShortcutsView } from "@/features/nav/ShortcutsView";
+import { SettingsView } from "@/features/nav/SettingsView";
 import { SyncView } from "@/features/sync/SyncView";
 import { WrappedView } from "@/features/stats/WrappedView";
 import {
@@ -165,6 +166,21 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   // Seule la bibliothèque pagine : une playlist, un artiste ou une catégorie
   // arrivent entiers, et leur taille est bornée par nature.
   const [hasMore, setHasMore] = useState(false);
+
+  /**
+   * La complétion en ligne est-elle proposée ?
+   *
+   * Relue à chaque rechargement : l'éteindre depuis les réglages doit faire
+   * disparaître les bandeaux sans redémarrage.
+   */
+  const [onlineCompletion, setOnlineCompletion] = useState(true);
+
+  useEffect(() => {
+    void ipc
+      .preferences()
+      .then((preferences) => setOnlineCompletion(preferences.onlineCompletion))
+      .catch(() => undefined);
+  }, [revision]);
   const loadingMore = useRef(false);
 
   // Contenu de la page courante. Une playlist générée fait exception : son
@@ -178,6 +194,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       || route.kind === "lyrics"
       || route.kind === "sync"
       || route.kind === "shortcuts"
+      || route.kind === "settings"
     ) {
       return;
     }
@@ -698,6 +715,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               positionMs={playback.state?.positionMs ?? 0}
               onSeek={(position) => void playback.seek(position)}
               onReload={bump}
+              onlineCompletion={onlineCompletion}
               onGenerated={showGenerated}
               onError={setError}
               onRenamePlaylist={(id, name) => {
@@ -853,6 +871,8 @@ interface PageProps {
   onSeek: (positionMs: number) => void;
   /** Recharge la liste affichée après une correction de tags. */
   onReload: () => void;
+  /** Les outils de complétion en ligne sont-ils proposés ? */
+  onlineCompletion: boolean;
   onGenerated: (playlist: GeneratedPlaylist) => void;
   onError: (message: string) => void;
   onRenamePlaylist: (id: number, name: string) => void;
@@ -936,6 +956,10 @@ function Page(props: PageProps) {
 
   if (route.kind === "shortcuts") {
     return <ShortcutsView />;
+  }
+
+  if (route.kind === "settings") {
+    return <SettingsView onChanged={props.onReload} />;
   }
 
   if (route.kind === "lyrics") {
@@ -1088,18 +1112,31 @@ function Page(props: PageProps) {
           onError={props.onError}
         />
 
+        {/* Les doublons ne dépendent d'aucun service : deux exemplaires du
+            même morceau se repèrent sans rien demander à personne, et cette
+            question-là reste valable même sur une bibliothèque impeccable. */}
         <div className="mt-3 space-y-2">
-          <IdentifyPanel />
-          <SuspectPanel onRestored={props.onReload} />
+          {props.onlineCompletion && (
+            <>
+              <IdentifyPanel />
+              <SuspectPanel onRestored={props.onReload} />
+            </>
+          )}
+
           <DuplicatePanel
             onRemoved={props.onReload}
             onPlay={props.onPlayOne}
             currentTrackId={props.currentTrack?.trackId ?? null}
             isPlaying={props.isPlaying}
           />
-          <LyricsBar />
-          <ArtworkBar />
-          <AlbumBar />
+
+          {props.onlineCompletion && (
+            <>
+              <LyricsBar />
+              <ArtworkBar />
+              <AlbumBar />
+            </>
+          )}
         </div>
 
         <p className="mt-3 truncate font-mono text-[11px] text-ink-faint">

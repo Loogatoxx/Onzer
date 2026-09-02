@@ -217,6 +217,8 @@ static FILLING: AtomicBool = AtomicBool::new(false);
 /// corrigés à la main.
 #[tauri::command]
 pub async fn fill_missing_albums(state: State<'_, AppState>) -> Result<i64> {
+    crate::commands::preferences::ensure_online_completion(&state.pool).await?;
+
     if FILLING.swap(true, Ordering::SeqCst) {
         return Err(OnzerError::Invalid(
             "une complétion est déjà en cours".to_string(),

@@ -20,6 +20,8 @@ export type Route =
   | { kind: "sync" }
   /** L'aide-mémoire des raccourcis clavier. */
   | { kind: "shortcuts" }
+  /** Réglages et remise à zéro de la bibliothèque. */
+  | { kind: "settings" }
   /** Une catégorie d'ambiance, ouverte depuis l'accueil. */
   | { kind: "category"; key: string; name: string }
   | { kind: "playlist"; id: number; name: string };
@@ -164,16 +166,32 @@ export function Sidebar({
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={() => onNavigate({ kind: "shortcuts" })}
-        className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] transition-colors ${
-          active === "shortcuts" ? "text-ink" : "text-ink-faint hover:text-ink-muted"
-        }`}
-      >
-        <Icon name="check" size={13} />
-        Raccourcis clavier
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onNavigate({ kind: "shortcuts" })}
+          className={`flex flex-1 items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] transition-colors ${
+            active === "shortcuts" ? "text-ink" : "text-ink-faint hover:text-ink-muted"
+          }`}
+        >
+          <Icon name="check" size={13} />
+          Raccourcis clavier
+        </button>
+
+        <button
+          type="button"
+          title="Réglages"
+          aria-label="Réglages"
+          onClick={() => onNavigate({ kind: "settings" })}
+          className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
+            active === "settings" ? "text-ink" : "text-ink-faint hover:text-ink-muted"
+          }`}
+        >
+          {/* Faute d'un engrenage dans le jeu d'icônes, les trois points :
+              c'est le geste appris pour « le reste ». */}
+          <Icon name="more" size={15} />
+        </button>
+      </div>
     </aside>
   );
 }

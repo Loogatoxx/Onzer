@@ -284,6 +284,9 @@ pub fn run() {
             commands::metadata::missing_albums,
             commands::metadata::fill_missing_albums,
             commands::metadata::candidate_preview,
+            commands::preferences::preferences,
+            commands::preferences::set_online_completion,
+            commands::preferences::rebuild_library,
         ])
         .run(tauri::generate_context!())
         .expect("échec au lancement d'Onzer");

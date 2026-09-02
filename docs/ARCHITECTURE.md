@@ -1494,6 +1494,75 @@ rien à réparer. Un rapport qui crie tout le temps ne se lit plus.
 
 ---
 
+## ADR-055 — Un outil devenu inutile se range, il ne se jette pas
+
+**Contexte.** Onzer sait combler ce qui manque : identifier à l'oreille, chercher paroles,
+pochettes et albums. Ces outils ont été écrits pour une bibliothèque bâtie au fil de
+téléchargements approximatifs. Le jour où les fichiers arrivent déjà tagués et pochettés,
+les mêmes bandeaux deviennent du bruit — quatre encarts qui proposent de réparer ce qui n'est
+pas cassé.
+
+**Décision.** Un **réglage**, pas une suppression. Par défaut la complétion reste active,
+comme au premier jour : une application découverte par quelqu'un d'autre doit savoir réparer
+une bibliothèque en désordre, puisque c'est le cas le plus probable. Qui n'en a plus besoin
+l'éteint, et l'interface se tait.
+
+**Ce que le réglage éteint, et ce qu'il n'éteint pas.** Il gouverne ce qu'Onzer entreprend
+**de lui-même** : l'ouvrier d'identification et les passes qui traitent toute la bibliothèque
+d'un coup. Il ne touche pas aux gestes posés explicitement sur un morceau — « Chercher en
+ligne », « Chercher ailleurs ». Refuser ceux-là ne protégerait de rien : personne n'est
+sollicité, c'est l'utilisateur qui demande. **Le réglage fait taire une proposition, il ne
+confisque pas un outil.**
+
+**Le cœur refuse aussi.** Masquer un bouton n'empêche personne d'appeler la commande qu'il
+déclenche. Un réglage qui ne tient que par ce que l'on affiche n'est pas un réglage, c'est
+une décoration.
+
+---
+
+## ADR-056 — Marquer supprimé ne suffit pas quand la place doit être rendue
+
+**Contexte.** Remplacer toute une bibliothèque par de meilleurs fichiers suppose de vider
+l'ancienne. Le réflexe — marquer les lignes supprimées, comme partout ailleurs dans Onzer —
+échoue ici pour une raison précise :
+
+`tracks.relative_path` est **UNIQUE**, y compris pour une ligne marquée supprimée. Le même
+morceau retéléchargé retomberait sur `Damso/Ipséité/03 - Macarena.mp3`, et la base refuserait
+l'insertion. La bibliothèque paraîtrait vide, l'import échouerait, et rien n'expliquerait
+pourquoi.
+
+**Décision.** Les champs uniques des lignes écartées sont **neutralisés** :
+
+```text
+  relative_path : Damso/Ipséité/03 - Macarena.mp3  →  ancien:412
+  content_hash  : 9f3c…                            →  ancien:412
+  audio_hash    : 7a10…                            →  NULL
+```
+
+La place est rendue, et plus aucune de ces lignes ne peut être confondue avec un fichier réel
+par le dédoublonnage à l'import.
+
+**Ce qui survit.**
+
+| Donnée | Sort | Raison |
+|---|---|---|
+| Historique d'écoute | Conservé | C'est la matière des statistiques, et il ne se reconstitue pas |
+| Playlists — nom, image, description | Conservées | Ce sont des créations, pas des données de fichiers |
+| Contenu des playlists | Vidé | Ce qu'elles pointaient n'existe plus |
+| Fichiers audio | Mis de côté | Onzer ne détruit rien sur le disque (ADR-007) |
+
+**Pourquoi déplacer des dossiers et non des fichiers.** Six cents renommages là où une
+vingtaine suffisent — et sur le même volume, déplacer un dossier est instantané quel que soit
+son poids. Surtout, la hiérarchie est conservée : qui ouvre `_Ancien` dans le Finder retrouve
+sa bibliothèque telle qu'il l'avait laissée, et non six cents fichiers en vrac. Le dépôt
+`_Inbox` est épargné : c'est là que les nouveaux fichiers attendent.
+
+**L'ordre compte.** La base d'abord, le disque ensuite. Si le déplacement échoue à mi-chemin,
+la base est déjà cohérente et un nouvel import repartira proprement ; l'inverse laisserait des
+lignes pointant vers des fichiers absents.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

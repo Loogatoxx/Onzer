@@ -11,6 +11,7 @@ pub mod importer;
 pub mod lyrics;
 pub mod metadata;
 pub mod naming;
+pub mod rebuild;
 pub mod repair;
 pub mod scanner;
 

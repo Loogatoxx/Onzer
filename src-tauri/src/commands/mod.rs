@@ -13,6 +13,7 @@ pub mod identify;
 pub mod library;
 pub mod metadata;
 pub mod playback;
+pub mod preferences;
 pub mod reco;
 pub mod stats;
 pub mod sync;

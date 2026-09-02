@@ -47,7 +47,16 @@ export type IconName =
   | "folder"
   | "check"
   | "close"
-  | "panelRight";
+  | "panelRight"
+  /* Un pictogramme ne désigne qu'une chose. Ces quatre-là ont été ajoutés
+     parce qu'ils manquaient et qu'on en avait détourné d'autres : la roue
+     dentée servait de crayon, la file d'attente de playlist, et la
+     bibliothèque de « petites vignettes ». Un même dessin pour deux sens, et
+     l'utilisateur cesse de faire confiance aux dessins. */
+  | "settings"
+  | "playlist"
+  | "grid"
+  | "list";
 
 /** Formes pleines : réservées aux actions, jamais à la navigation. */
 const FILLED: ReadonlySet<IconName> = new Set<IconName>([
@@ -151,6 +160,35 @@ const PATHS: Record<IconName, React.ReactNode> = {
   pencil: <path d="M4 20h4L20 8l-4-4L4 16zM15 5l4 4" />,
   folder: <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
   check: <path d="m5 12.5 4.5 4.5L19 7" />,
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 8.4a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+    </>
+  ),
+  playlist: (
+    <>
+      <path d="M4 6h11M4 11h11M4 16h6" />
+      <path d="M17 17.5V11l4-1.2" />
+      <circle cx="15.4" cy="17.6" r="1.9" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+      <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+      <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+      <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+    </>
+  ),
+  list: (
+    <>
+      <path d="M9 6h11M9 12h11M9 18h11" />
+      <circle cx="4.6" cy="6" r="1.1" />
+      <circle cx="4.6" cy="12" r="1.1" />
+      <circle cx="4.6" cy="18" r="1.1" />
+    </>
+  ),
   close: <path d="m6 6 12 12M18 6 6 18" />,
   panelRight: (
     <>

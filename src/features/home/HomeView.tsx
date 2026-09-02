@@ -244,8 +244,11 @@ function ResumeGrid({
     // la largeur et tronquait le titre à « M.. ». Une largeur minimale garantit
     // qu'une carte reste lisible quel qu'en soit le nombre.
     <div
+      // 10 rem sur un téléphone : deux colonnes plutôt qu'une. Huit écoutes
+      // récentes empilées sur toute la largeur remplissaient l'accueil à elles
+      // seules, et repoussaient les mix hors de l'écran.
       className="mt-6 grid gap-2"
-      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(15rem, 1fr))" }}
+      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(10rem, 100%), 1fr))" }}
     >
       {tracks.map((track, index) => (
         <button

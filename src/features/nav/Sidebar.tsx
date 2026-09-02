@@ -23,6 +23,8 @@ export type Route =
   | { kind: "playing" }
   /** Un album, ouvert depuis la colonne d'une ligne. */
   | { kind: "album"; id: number; name: string; artist: string | null }
+  /** Le reste de l'application, sur écran étroit. */
+  | { kind: "more" }
   | { kind: "shortcuts" }
   /** Réglages et remise à zéro de la bibliothèque. */
   | { kind: "settings" }

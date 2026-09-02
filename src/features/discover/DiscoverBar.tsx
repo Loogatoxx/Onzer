@@ -46,7 +46,11 @@ export function DiscoverBar({ disabled, onGenerated, onError }: DiscoverBarProps
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div
+      // Centrés sur un écran étroit : deux boutons alignés à gauche sous un
+      // titre centré donnent une composition bancale.
+      className="flex flex-wrap items-center justify-center gap-2 sm:justify-start"
+    >
       <Pill
         icon="sparkle"
         label="Pour toi maintenant"

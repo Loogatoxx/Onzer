@@ -21,7 +21,7 @@ import { Artwork } from "./Artwork";
  * disparaît jamais.
  */
 const GRID =
-  "grid grid-cols-[1.75rem_minmax(0,1fr)_1.25rem_auto] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_auto] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_auto] items-center gap-4";
+  "grid grid-cols-[1.75rem_minmax(0,1fr)_1.25rem_3.25rem_auto] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_auto] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.25rem_auto] items-center gap-4";
 
 interface TrackTableProps {
   tracks: TrackSummary[];
@@ -189,11 +189,15 @@ export function TrackTable({
           onSort={onSort}
           className="hidden xl:block"
         />
-        <span className="flex justify-end pr-[4.5rem]">
+        {/* L'horloge est **dans** la colonne des durées, pas au-dessus du
+            bloc d'actions : elle annonce ces chiffres-là, elle doit tomber
+            dessus. */}
+        <span className="flex justify-center">
           <SortHeader column="duration" label="" sort={sort} onSort={onSort}>
             <Icon name="clock" size={15} />
           </SortHeader>
         </span>
+        <span aria-hidden />
       </div>
 
       <ul>
@@ -403,6 +407,11 @@ function TrackRow({
         {formatDate(track.addedAt)}
       </p>
 
+      {/* ── Durée ────────────────────────────────────────────────────── */}
+      <span className="numerals text-center text-[13px] text-ink-muted">
+        {formatDuration(track.durationMs)}
+      </span>
+
       {/* ── Actions ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-end gap-1">
         <button
@@ -410,18 +419,18 @@ function TrackRow({
           title={isLoved ? "Retirer des favoris" : "Ajouter aux favoris"}
           aria-label={isLoved ? "Retirer des favoris" : "Ajouter aux favoris"}
           onClick={onToggleLoved}
-          className={`flex h-8 w-8 items-center justify-center rounded-full transition-all ${
-            isLoved
-              ? "text-accent"
-              : "text-ink-faint opacity-0 hover:text-ink focus:opacity-100 group-hover:opacity-100"
+          // # Pourquoi le cœur ne se cache plus
+          //
+          // Il n'apparaissait qu'au survol. Sur un écran tactile, le survol
+          // n'existe pas : le cœur était donc **invisible**, et l'on découvrait
+          // les favoris en appuyant par hasard. Même sur un bureau, un contour
+          // gris se voit sans encombrer.
+          className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+            isLoved ? "text-accent" : "text-ink-faint/70 hover:text-ink"
           }`}
         >
           <Icon name={isLoved ? "heartFilled" : "heart"} size={16} />
         </button>
-
-        <span className="numerals w-11 text-right text-[13px] text-ink-muted">
-          {formatDuration(track.durationMs)}
-        </span>
 
         <RowMenu
           track={track}

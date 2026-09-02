@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Icon } from "@/components/Icon";
 
 /**
@@ -34,7 +36,14 @@ export function Pager({
   return (
     <nav
       aria-label="Pages de la bibliothèque"
-      className="flex flex-wrap items-center justify-center gap-1.5 px-6 py-8"
+      // # Pourquoi jamais de retour à la ligne
+      //
+      // La flèche « suivant » passait à la ligne dès que les numéros
+      // remplissaient la largeur, et se retrouvait seule en dessous. Une
+      // commande qui change de place selon le nombre de pages devient
+      // impossible à viser d'un geste appris. `flex-nowrap` la fige à droite,
+      // quoi qu'il arrive.
+      className="flex flex-nowrap items-center justify-center gap-1.5 overflow-x-auto px-6 py-8"
     >
       <Arrow
         label="Page précédente"
@@ -71,6 +80,8 @@ export function Pager({
         disabled={page >= pageCount - 1}
         onClick={() => onChange(page + 1)}
       />
+
+      <PageJump page={page} pageCount={pageCount} onChange={onChange} />
     </nav>
   );
 }
@@ -101,6 +112,56 @@ function Arrow({
 }
 
 /**
+ * Aller directement à une page.
+ *
+ * # Pourquoi il ne suffit pas d'afficher plus de numéros
+ *
+ * Vingt-et-une pages tiennent encore ; deux cents, non — et c'est là qu'aller
+ * au milieu devient pénible. Un champ où l'on écrit le numéro ne grandit pas
+ * avec la bibliothèque, contrairement à toute rangée de boutons.
+ */
+function PageJump({
+  page,
+  pageCount,
+  onChange,
+}: {
+  page: number;
+  pageCount: number;
+  onChange: (page: number) => void;
+}) {
+  const [draft, setDraft] = useState("");
+
+  if (pageCount < 6) return null;
+
+  const aller = () => {
+    const demandee = Number.parseInt(draft, 10);
+    setDraft("");
+
+    if (Number.isNaN(demandee)) return;
+    onChange(Math.min(pageCount, Math.max(1, demandee)) - 1);
+  };
+
+  return (
+    <span className="ml-2 flex shrink-0 items-center gap-1.5 text-[12px] text-ink-faint">
+      <span className="hidden sm:inline">sur {pageCount}</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={draft}
+        placeholder={String(page + 1)}
+        aria-label={`Aller à une page, entre 1 et ${pageCount}`}
+        onChange={(event) => setDraft(event.target.value.replace(/\D/g, ""))}
+        onBlur={aller}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        className="numerals h-8 w-12 rounded-full bg-elevated text-center text-[13px] text-ink placeholder:text-ink-faint focus:outline focus:outline-1 focus:outline-ink-faint"
+      />
+    </span>
+  );
+}
+
+/**
  * Les numéros à afficher, `null` marquant une coupure.
  *
  * Toujours la première, la dernière, et deux voisines de chaque côté de la
@@ -110,7 +171,11 @@ function Arrow({
 export function window(page: number, pageCount: number): (number | null)[] {
   const shown = new Set<number>([0, pageCount - 1]);
 
-  for (let offset = -2; offset <= 2; offset += 1) {
+  // Une seule voisine de chaque côté : sept numéros alignés sur un téléphone
+  // deviennent une rangée illisible, et l'on ne vise jamais « la page 9 »
+  // quand on en est à la 7 — on vise la suivante, ou une page lointaine, et
+  // celle-là se demande par son numéro.
+  for (let offset = -1; offset <= 1; offset += 1) {
     const candidate = page + offset;
     if (candidate >= 0 && candidate < pageCount) shown.add(candidate);
   }

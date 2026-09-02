@@ -23,7 +23,7 @@ const ONGLETS: { key: string; icon: IconName; label: string; route: Route }[] = 
   { key: "search", icon: "search", label: "Recherche", route: { kind: "library" } },
   { key: "library", icon: "library", label: "Bibliothèque", route: { kind: "library" } },
   { key: "artists", icon: "artist", label: "Artistes", route: { kind: "artists" } },
-  { key: "settings", icon: "more", label: "Réglages", route: { kind: "settings" } },
+  { key: "more", icon: "more", label: "Plus", route: { kind: "more" } },
 ];
 
 export function MobileTabs({

@@ -38,6 +38,9 @@ export function lineAt(lyrics: Lyrics, positionMs: number): number | null {
  * courante, recherche en ligne, saisie manuelle. Dupliquer cette logique
  * garantirait qu'une correction n'atteigne qu'un des deux.
  */
+/** Au-delà, on cesse d'attendre et on le dit. */
+const DELAI_RECHERCHE_MS = 15_000;
+
 export function useLyrics(trackId: number | null, positionMs: number) {
   const [lyrics, setLyrics] = useState<Lyrics | null>(null);
   const [editing, setEditing] = useState(false);
@@ -103,15 +106,28 @@ export function useLyrics(trackId: number | null, positionMs: number) {
     setSearching(true);
     setError(null);
 
+    // # Pourquoi une limite de temps
+    //
+    // Un service lent ou injoignable laissait le bouton sur « Recherche… »
+    // indéfiniment. Quinze secondes suffisent largement à LRCLIB quand il
+    // répond ; au-delà, ce n'est plus de l'attente, c'est du silence. Mieux
+    // vaut dire qu'on n'a pas trouvé que ne rien dire du tout.
+    const abandon = new Promise<never>((_, rejeter) =>
+      setTimeout(
+        () => rejeter(new Error("Paroles introuvables : le service n'a pas répondu.")),
+        DELAI_RECHERCHE_MS,
+      ),
+    );
+
     try {
-      const found = await ipc.fetchLyrics(trackId);
+      const found = await Promise.race([ipc.fetchLyrics(trackId), abandon]);
       if (found.synced.length === 0 && found.plain.length === 0) {
         setError("Aucune parole trouvée pour ce morceau.");
       } else {
         setLyrics(found);
       }
     } catch (cause) {
-      setError(String(cause));
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setSearching(false);
     }

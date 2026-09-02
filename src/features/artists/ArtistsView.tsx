@@ -45,10 +45,10 @@ function Disposition({
   valeur: Disposition;
   onChange: (valeur: Disposition) => void;
 }) {
-  const choix: { cle: Disposition; icone: "library" | "artist" | "queue"; titre: string }[] = [
+  const choix: { cle: Disposition; icone: "artist" | "grid" | "list"; titre: string }[] = [
     { cle: "grandes", icone: "artist", titre: "Grandes bulles" },
-    { cle: "petites", icone: "library", titre: "Petites bulles" },
-    { cle: "liste", icone: "queue", titre: "En liste" },
+    { cle: "petites", icone: "grid", titre: "Petites bulles" },
+    { cle: "liste", icone: "list", titre: "En liste" },
   ];
 
   return (

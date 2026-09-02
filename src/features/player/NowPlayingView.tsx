@@ -30,6 +30,8 @@ export function NowPlayingView({
   onOpenLyrics,
   onOpenArtist,
   onOpenAlbum,
+  onShuffle,
+  onRepeat,
 }: {
   state: PlaybackSnapshot;
   isLoved: boolean;
@@ -41,6 +43,8 @@ export function NowPlayingView({
   onOpenLyrics: () => void;
   onOpenArtist: () => void;
   onOpenAlbum: () => void;
+  onShuffle: (shuffle: boolean) => void;
+  onRepeat: () => void;
 }) {
   const track = state.current;
 
@@ -112,7 +116,23 @@ export function NowPlayingView({
       </div>
 
       {/* ── Commandes ────────────────────────────────────────────────── */}
-      <div className="mt-6 flex items-center justify-center gap-8">
+      <div className="mt-6 flex items-center justify-center gap-5">
+        {/* Aléatoire et répétition encadrent le transport, comme sur le
+            bureau : ce sont des **états** de la file, pas des actions, et les
+            mettre au même rang que « lire » les ferait déclencher par erreur.
+            Leur couleur dit s'ils sont actifs. */}
+        <button
+          type="button"
+          aria-label="Lecture aléatoire"
+          aria-pressed={state.shuffle}
+          onClick={() => onShuffle(!state.shuffle)}
+          className={`transition-colors ${
+            state.shuffle ? "text-accent" : "text-ink-faint hover:text-ink-muted"
+          }`}
+        >
+          <Icon name="shuffle" size={20} />
+        </button>
+
         <button
           type="button"
           aria-label="Morceau précédent"
@@ -140,6 +160,23 @@ export function NowPlayingView({
           className="text-ink-muted transition-colors hover:text-ink"
         >
           <Icon name="next" size={28} />
+        </button>
+
+        <button
+          type="button"
+          aria-label={
+            state.repeat === "off"
+              ? "Répéter"
+              : state.repeat === "all"
+                ? "Répéter la file"
+                : "Répéter ce morceau"
+          }
+          onClick={onRepeat}
+          className={`transition-colors ${
+            state.repeat === "off" ? "text-ink-faint hover:text-ink-muted" : "text-accent"
+          }`}
+        >
+          <Icon name={state.repeat === "one" ? "repeatOne" : "repeat"} size={20} />
         </button>
       </div>
 

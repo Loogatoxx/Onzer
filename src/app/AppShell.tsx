@@ -24,6 +24,11 @@ import type { SortColumn, TrackSort } from "@/features/library/TrackTable";
 import { MobileTabs } from "@/features/nav/MobileTabs";
 import { MiniPlayer } from "@/features/player/MiniPlayer";
 import { useIsMobile } from "@/lib/useIsMobile";
+import {
+  oublierRecherches,
+  recherchesRecentes,
+  retenirRecherche,
+} from "@/lib/recherchesRecentes";
 import { TopBar } from "@/features/nav/TopBar";
 import { NowPlayingPanel, type PanelTab } from "@/features/player/NowPlayingPanel";
 import { LyricsView } from "@/features/player/LyricsView";
@@ -32,6 +37,7 @@ import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
 import { ShortcutsView } from "@/features/nav/ShortcutsView";
 import { SettingsView } from "@/features/nav/SettingsView";
+import { MoreView } from "@/features/nav/MoreView";
 import { SyncView } from "@/features/sync/SyncView";
 import { WrappedView } from "@/features/stats/WrappedView";
 import {
@@ -208,7 +214,21 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
     );
   }, []);
 
+
   const searching = query.trim() !== "";
+
+  /**
+   * Retenir la recherche, une fois qu'elle a donné quelque chose.
+   *
+   * Pas à la frappe : « a », « ad », « adè » ne sont pas des recherches, ce
+   * sont les étapes d'une seule. On attend qu'elle aboutisse.
+   */
+  useEffect(() => {
+    if (!searching || results === null || results.length === 0) return;
+
+    const minuteur = setTimeout(() => retenirRecherche(query), 1200);
+    return () => clearTimeout(minuteur);
+  }, [searching, results, query]);
 
   /**
    * Les listes qui arrivent entières se trient ici.
@@ -288,6 +308,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   /** Le conteneur qui défile, pour le ramener en haut au changement de page. */
   const scroller = useRef<HTMLElement | null>(null);
 
+
   /**
    * Disposition étroite : onglets en bas, pas de barre latérale ni de panneau.
    *
@@ -298,6 +319,57 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
 
   /** Sur mobile, la recherche est un mode et non une page. */
   const [searchOpen, setSearchOpen] = useState(false);
+
+  /**
+   * Le geste « retour » d'Android remonte l'historique.
+   *
+   * # Ce qu'il faisait, et pourquoi c'était faux
+   *
+   * Le geste sortait de l'application, d'un coup, depuis n'importe où. Sur
+   * Android, il signifie « reviens en arrière » — pas « quitte ». Depuis une
+   * page de paroles, on se retrouvait sur son bureau sans comprendre.
+   *
+   * # Comment on l'intercepte sans plugin
+   *
+   * L'historique du navigateur. Chaque destination y pousse une entrée, et le
+   * geste déclenche `popstate` : on recule alors d'un cran dans notre propre
+   * pile. Quand il n'y a plus rien derrière, on laisse passer — et c'est bien
+   * l'application qui se ferme, cette fois au bon moment.
+   */
+  useEffect(() => {
+    if (!mobile) return;
+
+    const reculer = () => {
+      // Une recherche ouverte se ferme avant tout le reste : c'est la
+      // surimpression la plus proche de l'utilisateur.
+      if (searchOpen || query !== "") {
+        setQuery("");
+        setSearchOpen(false);
+        window.history.pushState(null, "");
+        return;
+      }
+
+      setCursor((position) => {
+        if (position <= 0) return position;
+        window.history.pushState(null, "");
+        return position - 1;
+      });
+    };
+
+    window.addEventListener("popstate", reculer);
+    return () => window.removeEventListener("popstate", reculer);
+  }, [mobile, searchOpen, query]);
+
+  /**
+   * Une entrée d'historique par destination.
+   *
+   * Sans elle, il n'y a rien à dépiler : le premier geste sortirait de
+   * l'application, exactement ce qu'on veut éviter.
+   */
+  useEffect(() => {
+    if (!mobile) return;
+    window.history.pushState(null, "");
+  }, [mobile, cursor, searchOpen]);
 
 
   /**
@@ -332,6 +404,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       || route.kind === "sync"
       || route.kind === "shortcuts"
       || route.kind === "settings"
+      || route.kind === "more"
     ) {
       return;
     }
@@ -869,9 +942,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
             // Sous le champ vide, la bibliothèque entière n'a rien à faire :
             // elle est à un onglet de là, et l'afficher ici laisse croire que
             // ce sont des résultats.
-            <p className="px-6 py-16 text-center text-[13px] leading-relaxed text-ink-faint">
-              Cherche un titre, un artiste ou un album.
-            </p>
+            <RecherchesRecentes onChoose={setQuery} />
           ) : searching ? (
             <>
               <SearchHeader query={query} count={shown.length} />
@@ -907,6 +978,8 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               positionMs={playback.state?.positionMs ?? 0}
               onSeek={(position) => void playback.seek(position)}
               onReload={bump}
+              onNavigate={navigate}
+              onCreatePlaylist={() => createPlaylist("Nouvelle playlist")}
               playback={
                 playback.state === null || current === null
                   ? null
@@ -921,6 +994,9 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
                       onOpenLyrics: () => openLyrics(),
                       onOpenArtist: () => void openArtistOf(current.trackId),
                       onOpenAlbum: () => void openAlbumOf(current.trackId),
+                      onShuffle: (shuffle: boolean) => void playback.toggleShuffle(shuffle),
+                      onRepeat: () =>
+                        void playback.cycleRepeat(playback.state?.repeat ?? "off"),
                     }
               }
               onlineCompletion={onlineCompletion}
@@ -1132,6 +1208,9 @@ interface PageProps {
   onSeek: (positionMs: number) => void;
   /** Recharge la liste affichée après une correction de tags. */
   onReload: () => void;
+  /** Navigation depuis la page « Plus ». */
+  onNavigate: (route: Route) => void;
+  onCreatePlaylist: () => void;
   /** Tout ce qu'il faut à l'écran de lecture, ou `null` si rien ne joue. */
   playback: React.ComponentProps<typeof NowPlayingView> | null;
   /** Les outils de complétion en ligne sont-ils proposés ? */
@@ -1155,8 +1234,73 @@ interface PageProps {
  * pas à une page « Playlist » demanderait à l'utilisateur de réapprendre la
  * même chose deux fois.
  */
+/**
+ * Le sélecteur de collection, au-dessus des listes de morceaux.
+ *
+ * # Pourquoi les mêmes destinations à deux endroits
+ *
+ * Les favoris et les playlists vivent dans la barre latérale sur le bureau, et
+ * derrière « Plus » sur téléphone. Les retrouver **au-dessus de la
+ * bibliothèque** ne fait pas doublon : c'est là qu'on se trouve quand l'envie
+ * vient de basculer de « tout » vers « ce que j'aime ». Une porte ne devient
+ * pas inutile parce qu'il en existe une autre ailleurs.
+ */
+function CollectionSwitch({
+  route,
+  playlists,
+  onNavigate,
+}: {
+  route: Route;
+  playlists: PlaylistSummary[];
+  onNavigate: (route: Route) => void;
+}) {
+  const onglets: { cle: string; label: string; route: Route }[] = [
+    { cle: "library", label: "Titres", route: { kind: "library" } },
+    { cle: "loved", label: "J'aime", route: { kind: "loved" } },
+    ...playlists.map((playlist) => ({
+      cle: `playlist:${playlist.id}`,
+      label: playlist.name,
+      route: { kind: "playlist" as const, id: playlist.id, name: playlist.name },
+    })),
+  ];
+
+  const actif = routeKey(route);
+
+  return (
+    <div className="flex gap-2 overflow-x-auto px-6 pb-1 pt-4">
+      {onglets.map((onglet) => (
+        <button
+          key={onglet.cle}
+          type="button"
+          aria-current={onglet.cle === actif ? "page" : undefined}
+          onClick={() => onNavigate(onglet.route)}
+          className={`shrink-0 rounded-full px-4 py-1.5 text-[13px] font-medium transition-colors ${
+            onglet.cle === actif
+              ? "bg-ink text-base"
+              : "bg-elevated text-ink-muted hover:text-ink"
+          }`}
+        >
+          {onglet.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Page(props: PageProps) {
   const { route, tracks } = props;
+
+  // Les trois pages qui listent « une collection à soi » partagent le même
+  // sélecteur : passer de l'une à l'autre est un geste courant, et redescendre
+  // dans un menu pour cela serait un détour.
+  const collection =
+    route.kind === "library" || route.kind === "loved" || route.kind === "playlist" ? (
+      <CollectionSwitch
+        route={route}
+        playlists={props.playlists}
+        onNavigate={props.onNavigate}
+      />
+    ) : null;
 
   const totalMs = useMemo(
     () => tracks.reduce((sum, track) => sum + track.durationMs, 0),
@@ -1198,6 +1342,7 @@ function Page(props: PageProps) {
   if (route.kind === "loved") {
     return (
       <>
+        {collection}
         <PageHeader
           eyebrow="Playlist"
           title="Titres likés"
@@ -1221,6 +1366,16 @@ function Page(props: PageProps) {
 
   if (route.kind === "shortcuts") {
     return <ShortcutsView />;
+  }
+
+  if (route.kind === "more") {
+    return (
+      <MoreView
+        playlists={props.playlists}
+        onNavigate={props.onNavigate}
+        onCreatePlaylist={props.onCreatePlaylist}
+      />
+    );
   }
 
   if (route.kind === "settings") {
@@ -1376,6 +1531,7 @@ function Page(props: PageProps) {
   // ── Bibliothèque ──────────────────────────────────────────────────────
   return (
     <>
+      {collection}
       <PageHeader
         eyebrow="Ta bibliothèque"
         title="Toute ta musique"
@@ -1647,13 +1803,78 @@ function ongletActif(route: Route, searchOpen: boolean): string {
     case "artists":
     case "artist":
       return "artists";
+    case "more":
     case "settings":
     case "shortcuts":
     case "sync":
-      return "settings";
+    case "stats":
+    case "loved":
+    case "playlist":
+      return "more";
     default:
       return "library";
   }
+}
+
+/**
+ * Ce qu'un champ de recherche vide a d'utile à proposer.
+ *
+ * # Pourquoi les précédentes plutôt que des suggestions
+ *
+ * Suggérer demanderait de deviner ; rappeler ne demande que de se souvenir. Et
+ * dans une bibliothèque qu'on a soi-même constituée, ce qu'on a cherché hier
+ * est le meilleur indice de ce qu'on cherche aujourd'hui.
+ */
+function RecherchesRecentes({ onChoose }: { onChoose: (terme: string) => void }) {
+  const [recentes, setRecentes] = useState<string[]>(() => recherchesRecentes());
+
+  if (recentes.length === 0) {
+    return (
+      <p className="px-6 py-16 text-center text-[13px] leading-relaxed text-ink-faint">
+        Cherche un titre, un artiste ou un album.
+      </p>
+    );
+  }
+
+  return (
+    <div className="px-4 pb-6 pt-2">
+      <div className="flex items-center justify-between px-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+          Recherches récentes
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            oublierRecherches();
+            setRecentes([]);
+          }}
+          className="text-[12px] text-ink-faint transition-colors hover:text-ink"
+        >
+          Effacer
+        </button>
+      </div>
+
+      <ul className="mt-1">
+        {recentes.map((terme) => (
+          <li key={terme}>
+            <button
+              type="button"
+              onClick={() => onChoose(terme)}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-elevated"
+            >
+              <span className="text-ink-faint">
+                <Icon name="clock" size={15} />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[15px] text-ink">{terme}</span>
+              <span className="text-ink-faint">
+                <Icon name="chevronRight" size={15} />
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /**

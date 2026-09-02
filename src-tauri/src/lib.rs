@@ -240,6 +240,7 @@ pub fn run() {
             commands::playback::enqueue_tracks,
             commands::library::remove_track,
             commands::library::offline_tracks,
+            commands::library::tracks_by_ids,
             commands::library::rescue_set_aside,
             commands::library::near_duplicates,
             commands::library::ignore_duplicate_group,

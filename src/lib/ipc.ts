@@ -537,6 +537,16 @@ export const ipc = {
   listTracks: (limit = 200, offset = 0): Promise<TrackSummary[]> =>
     invoke<TrackSummary[]>("list_tracks", { limit, offset }),
 
+  /**
+   * Les morceaux désignés, dans l'ordre demandé.
+   *
+   * Sert aux playlists générées : le moteur ne rend que des identifiants, et
+   * les habiller en piochant dans une page de bibliothèque perdait tout ce qui
+   * se trouvait au-delà.
+   */
+  tracksByIds: (ids: number[]): Promise<TrackSummary[]> =>
+    invoke<TrackSummary[]>("tracks_by_ids", { ids }),
+
   searchTracks: (query: string): Promise<TrackSummary[]> =>
     invoke<TrackSummary[]>("search_tracks", { query }),
 

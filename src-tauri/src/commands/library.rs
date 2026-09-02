@@ -229,6 +229,53 @@ pub async fn offline_tracks(state: State<'_, AppState>) -> Result<Vec<String>> {
         .collect())
 }
 
+/// Les morceaux désignés, dans l'ordre demandé.
+///
+/// # Pourquoi cette commande existe
+///
+/// Une playlist générée par le moteur ne donne que des identifiants ; il faut
+/// les habiller pour les afficher. Cela se faisait en demandant la première
+/// page de la bibliothèque et en y piochant — ce qui marchait tant que la page
+/// couvrait toute la bibliothèque, et **cassait silencieusement** dès qu'elle
+/// ne la couvrait plus : les morceaux au-delà disparaissaient de la playlist
+/// sans erreur ni message.
+///
+/// L'ordre du moteur est conservé : c'est lui qui porte le sens de la
+/// sélection, pas l'ordre d'ajout à la bibliothèque.
+#[tauri::command]
+pub async fn tracks_by_ids(
+    state: State<'_, AppState>,
+    ids: Vec<i64>,
+) -> Result<Vec<repository::TrackSummary>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = vec!["?"; ids.len()].join(",");
+    let sql = format!(
+        "SELECT {} FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE t.id IN ({placeholders}) AND t.deleted_at IS NULL",
+        repository::TRACK_COLUMNS
+    );
+
+    let mut query = sqlx::query_as::<_, repository::TrackSummary>(&sql);
+    for id in &ids {
+        query = query.bind(id);
+    }
+
+    let found = query.fetch_all(&state.pool).await?;
+
+    // Remise dans l'ordre demandé : `IN` ne le garantit pas.
+    let by_id: std::collections::HashMap<i64, repository::TrackSummary> =
+        found.into_iter().map(|track| (track.id, track)).collect();
+
+    Ok(ids
+        .into_iter()
+        .filter_map(|id| by_id.get(&id).cloned())
+        .collect())
+}
+
 /// Ce qu'une reprise des fichiers écartés a donné.
 #[derive(Debug, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

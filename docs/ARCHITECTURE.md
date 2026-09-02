@@ -1757,6 +1757,34 @@ qui correspond à un morceau sans fichier le rejoint, les vrais doublons ne boug
 
 ---
 
+## ADR-064 — Le coût avait changé de camp
+
+**Contexte.** L'ADR-052 avait supprimé le plafond de cinq cents morceaux par un chargement à
+la volée. La question de la **base** était réglée ; celle du **navigateur** ne l'était pas. À
+deux mille lignes réellement dessinées — chacune avec son menu, ses boutons et ses infobulles
+— le défilement saccade.
+
+**Décision.** Des pages de cent. Pas un compromis en attendant mieux : cent lignes tiennent
+largement plus d'un écran, se dessinent instantanément, et donnent un repère que le
+défilement infini n'offre jamais — « page 3 sur 21 » dit d'un coup d'œil où l'on est et ce
+qu'il reste.
+
+C'est la solution que le problème appelait. Virtualiser le rendu — ne dessiner que les lignes
+visibles d'une liste infinie — aurait ajouté un mécanisme délicat (hauteurs mesurées, ancrage
+du défilement, accessibilité du clavier) pour résoudre un problème que la pagination fait
+disparaître.
+
+**Le défaut que ce changement a révélé.** Les playlists générées habillaient leurs
+identifiants en piochant dans la première page de la bibliothèque. Tant que la page couvrait
+tout, cela marchait ; en la réduisant à cent, tout ce qui se trouvait au-delà aurait
+**disparu de la playlist sans erreur ni message**. La commande `tracks_by_ids` remplace ce
+détour : on demande les morceaux qu'on veut, dans l'ordre où on les veut.
+
+Une taille de page n'est jamais qu'un réglage d'affichage — sauf quand du code s'en sert
+comme d'une garantie de couverture.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

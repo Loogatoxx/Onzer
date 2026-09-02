@@ -44,13 +44,6 @@ interface TrackTableProps {
   /** Cale à l'oreille les paroles d'un morceau qui les a sans horodatage. */
   onSyncLyrics: (track: TrackSummary) => void;
   /**
-   * Appelé quand le bas de la liste approche.
-   *
-   * Fourni uniquement là où la liste est paginée — la bibliothèque. Ailleurs,
-   * tout est déjà chargé et il n'y a rien à demander.
-   */
-  onReachEnd?: () => void;
-  /**
    * Favoris, tenus par la coquille.
    *
    * `TrackSummary.isLoved` sert à les amorcer, mais ne peut pas rester la
@@ -85,7 +78,6 @@ export function TrackTable({
   onCorrect,
   onMatch,
   onSyncLyrics,
-  onReachEnd,
   loved,
   playlists,
   onAddToPlaylist,
@@ -145,45 +137,9 @@ export function TrackTable({
               : { reason: reasons.get(track.id) as string })}
           />
         ))}
-        {onReachEnd !== undefined && <EndSentinel onReach={onReachEnd} />}
       </ul>
     </div>
   );
-}
-
-/**
- * Sentinelle de fin de liste.
- *
- * # Pourquoi un observateur plutôt qu'un `onScroll`
- *
- * Écouter le défilement supposerait de connaître le conteneur qui défile — ce
- * que la table n'a pas à savoir, et qui changerait au premier remaniement de la
- * mise en page. Un observateur d'intersection ne demande rien : il signale que
- * cette ligne vide est entrée dans le champ, quel que soit ce qui l'a amenée
- * là.
- *
- * La marge de 400 px anticipe : la tranche suivante est demandée avant que le
- * bas de la liste ne soit atteint, et le chargement ne se voit pas.
- */
-function EndSentinel({ onReach }: { onReach: () => void }) {
-  const anchor = useRef<HTMLLIElement | null>(null);
-
-  useEffect(() => {
-    const element = anchor.current;
-    if (element === null) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) onReach();
-      },
-      { rootMargin: "400px" },
-    );
-
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [onReach]);
-
-  return <li ref={anchor} className="h-8" aria-hidden />;
 }
 
 interface TrackRowProps {

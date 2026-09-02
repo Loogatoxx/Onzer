@@ -864,7 +864,7 @@ pub const TRACK_COLUMNS: &str = "t.id, t.title,
                 (t.lyrics LIKE '%[__:__%')               AS has_synced";
 
 /// Vue d'un morceau destinée à l'interface.
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackSummary {
     pub id: i64,

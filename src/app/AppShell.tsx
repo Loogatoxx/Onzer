@@ -11,6 +11,7 @@ import { SuspectPanel } from "@/features/identify/SuspectPanel";
 import { ArtworkBar } from "@/features/lyrics/ArtworkBar";
 import { AlbumBar } from "@/features/library/AlbumBar";
 import { OfflineBar } from "@/features/library/OfflineBar";
+import { Pager } from "@/features/library/Pager";
 import { LyricsBar } from "@/features/lyrics/LyricsBar";
 import { ListenBar } from "@/features/lyrics/ListenBar";
 import { Artwork } from "@/features/library/Artwork";
@@ -56,15 +57,20 @@ function seekStep(repeats: number): number {
 const SEARCH_DEBOUNCE_MS = 200;
 
 /**
- * Taille d'une tranche de bibliothèque.
+ * Nombre de morceaux affichés d'un coup.
  *
- * Ce n'est plus un plafond mais un **pas** : la liste se complète d'elle-même
- * quand on approche du bas. Une bibliothèque de six cents morceaux s'arrêtait
- * visuellement à cinq cents, sans que rien ne dise pourquoi — un silence pire
- * qu'un message, puisqu'il laisse croire que les morceaux manquants n'ont pas
- * été importés.
+ * # Pourquoi des pages, et pourquoi cent
+ *
+ * Le chargement à la volée réglait la question de la base ; il laissait
+ * entière celle du **navigateur**. À deux mille lignes réellement dessinées —
+ * chacune avec son menu, ses boutons et ses infobulles — le défilement
+ * saccade, et c'est le rendu qui coûte, pas la requête.
+ *
+ * Cent lignes tiennent largement plus d'un écran, se dessinent
+ * instantanément, et donnent un repère que le défilement infini n'offre
+ * pas : on sait où l'on est et combien il reste.
  */
-const PAGE_SIZE = 500;
+const PAGE_SIZE = 100;
 
 /**
  * Coquille de l'application.
@@ -201,11 +207,16 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
     void ipc.libraryCounts().then(setCounts).catch(() => undefined);
   }, [revision]);
 
-  // Reste-t-il des morceaux à charger sous ceux qui sont affichés ?
-  //
-  // Seule la bibliothèque pagine : une playlist, un artiste ou une catégorie
-  // arrivent entiers, et leur taille est bornée par nature.
-  const [hasMore, setHasMore] = useState(false);
+  /**
+   * Page courante de la bibliothèque, à partir de zéro.
+   *
+   * Seule la bibliothèque pagine : une playlist, un artiste ou une catégorie
+   * arrivent entiers, leur taille étant bornée par nature.
+   */
+  const [page, setPage] = useState(0);
+
+  /** Le conteneur qui défile, pour le ramener en haut au changement de page. */
+  const scroller = useRef<HTMLElement | null>(null);
 
   /**
    * La complétion en ligne est-elle proposée ?
@@ -225,7 +236,6 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       })
       .catch(() => undefined);
   }, [revision]);
-  const loadingMore = useRef(false);
 
   // Contenu de la page courante. Une playlist générée fait exception : son
   // ordre vient du moteur et ne se recharge pas depuis la base.
@@ -255,7 +265,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
         case "artist":
           return ipc.artistTracks(route.id);
         default:
-          return ipc.listTracks(PAGE_SIZE);
+          return ipc.listTracks(PAGE_SIZE, page * PAGE_SIZE);
       }
     };
 
@@ -263,8 +273,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       .then((loaded) => {
         if (!active) return;
         setTracks(loaded);
-        // Une tranche pleine laisse supposer qu'il y en a une autre derrière.
-        setHasMore(route.kind === "library" && loaded.length === PAGE_SIZE);
+
         // Les favoris se rafraîchissent au passage : chaque liste porte déjà
         // l'information, autant s'en servir plutôt que de la redemander.
         setLoved((previous) => {
@@ -283,34 +292,19 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
     return () => {
       active = false;
     };
-  }, [route, revision]);
+  }, [route, revision, page]);
 
-  /**
-   * Charge la tranche suivante de la bibliothèque.
-   *
-   * L'ordre de la requête — date d'ajout puis identifiant, tous deux
-   * décroissants — est **stable** : pagination par décalage sans risque de
-   * sauter une ligne ou d'en afficher deux fois.
-   *
-   * Le garde-fou n'est pas un état mais une référence : deux appels dans le
-   * même rendu verraient la même valeur d'état et déclencheraient deux
-   * requêtes pour la même tranche.
-   */
-  const loadMore = useCallback(() => {
-    if (!hasMore || loadingMore.current) return;
-    loadingMore.current = true;
+  // Changer de destination remet à la première page : rester à la page 12
+  // d'une autre liste n'aurait aucun sens.
+  useEffect(() => {
+    setPage(0);
+  }, [route]);
 
-    void ipc
-      .listTracks(PAGE_SIZE, tracks.length)
-      .then((next) => {
-        setTracks((previous) => [...previous, ...next]);
-        setHasMore(next.length === PAGE_SIZE);
-      })
-      .catch((cause: unknown) => setError(String(cause)))
-      .finally(() => {
-        loadingMore.current = false;
-      });
-  }, [hasMore, tracks.length]);
+  // Et l'on remonte en haut : rester au milieu d'une liste qu'on vient de
+  // remplacer désoriente.
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: 0 });
+  }, [page, route]);
 
   // Recherche différée.
   useEffect(() => {
@@ -582,15 +576,12 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
 
     const ids = playlist.tracks.map((track) => track.trackId);
     void ipc
-      .listTracks(PAGE_SIZE)
-      .then((library) => {
-        // `listTracks` renvoie l'ordre de la bibliothèque, qui n'a rien à voir
-        // avec celui du moteur : on réordonne.
-        const byId = new Map(library.map((track) => [track.id, track]));
-        setTracks(ids.flatMap((id) => {
-          const found = byId.get(id);
-          return found === undefined ? [] : [found];
-        }));
+      // Par identifiants, et non en piochant dans une page de bibliothèque :
+      // tout ce qui se serait trouvé au-delà de la page disparaissait de la
+      // playlist sans le moindre message.
+      .tracksByIds(ids)
+      .then((found) => {
+        setTracks(found);
         navigate({ kind: "generated" });
       })
       .catch((cause: unknown) => setError(String(cause)));
@@ -643,7 +634,6 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       onCorrect={setCorrecting}
       onMatch={setMatching}
       onSyncLyrics={syncLyrics}
-      {...(hasMore ? { onReachEnd: loadMore } : {})}
       onRemove={(id) => {
         void ipc
           .removeTrack(id)
@@ -685,6 +675,23 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
     />
   );
 
+  // La pagination ne concerne que la bibliothèque : ailleurs, tout est déjà
+  // là. Elle disparaît aussi pendant une recherche, dont les résultats sont
+  // rendus entiers.
+  const paged =
+    route.kind === "library" && !searching ? (
+      <>
+        {table}
+        <Pager
+          page={page}
+          pageCount={Math.max(1, Math.ceil((counts?.tracks ?? 0) / PAGE_SIZE))}
+          onChange={setPage}
+        />
+      </>
+    ) : (
+      table
+    );
+
   return (
     <div className="flex h-full flex-col bg-base">
       {/* Les feux de circulation de macOS vivent ici : la fenêtre n'a pas de
@@ -699,7 +706,10 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           onCreatePlaylist={createPlaylist}
         />
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-xl bg-surface">
+        <main
+          ref={scroller}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-xl bg-surface"
+        >
           <TopBar
             query={query}
             onQuery={setQuery}
@@ -728,7 +738,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           {searching ? (
             <>
               <SearchHeader query={query} count={shown.length} />
-              {table}
+              {paged}
             </>
           ) : (
             <Page
@@ -811,7 +821,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
                   .catch((cause: unknown) => setError(String(cause)));
               }}
             >
-              {table}
+              {paged}
             </Page>
           )}
         </main>

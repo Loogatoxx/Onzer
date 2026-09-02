@@ -175,6 +175,69 @@ pub async fn listen_and_sync(state: State<'_, AppState>, transcribe_empty: bool)
     Ok(total)
 }
 
+/// Cale les paroles d'un seul morceau, à la demande.
+///
+/// # Pourquoi un chemin séparé de la passe complète
+///
+/// La passe traite des centaines de morceaux en tâche de fond, sans retour
+/// immédiat. Ici l'utilisateur regarde un morceau précis, souvent celui qu'il
+/// écoute : il attend un résultat, tout de suite, et veut le voir apparaître.
+///
+/// Le verrou reste commun : deux modèles en parallèle sur la même machine
+/// iraient deux fois moins vite chacun. Demander pendant qu'une passe tourne
+/// rend donc une erreur claire plutôt qu'une lenteur inexpliquée.
+#[tauri::command]
+pub async fn sync_track(state: State<'_, AppState>, track_id: i64) -> Result<lyrics::Lyrics> {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return Err(OnzerError::Invalid(
+            "une écoute est déjà en cours".to_string(),
+        ));
+    }
+
+    let outcome = sync_one(&state, track_id).await;
+    RUNNING.store(false, Ordering::SeqCst);
+    outcome
+}
+
+async fn sync_one(state: &State<'_, AppState>, track_id: i64) -> Result<lyrics::Lyrics> {
+    let model: Option<String> = settings::get(&state.pool, transcribe::MODEL_SETTING).await?;
+    let transcriber = transcribe::Transcriber::detect(model.as_deref())
+        .map_err(|missing| OnzerError::Invalid(explain(&missing)))?;
+
+    let row: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT relative_path, lyrics FROM tracks WHERE id = ?")
+            .bind(track_id)
+            .fetch_optional(&state.pool)
+            .await?;
+
+    let (relative_path, existing) =
+        row.ok_or_else(|| OnzerError::Invalid("morceau introuvable".to_string()))?;
+
+    let resolver = state.paths.read().await.clone();
+    let audio = importer::absolute_path(&resolver, &relative_path)?;
+
+    if !audio.is_file() {
+        return Err(OnzerError::Invalid(
+            "le fichier n'est pas là — le disque est-il branché ?".to_string(),
+        ));
+    }
+
+    let known = existing.filter(|text| !text.trim().is_empty());
+    let lrc = tokio::task::spawn_blocking(move || listen(&transcriber, &audio, known.as_deref()))
+        .await
+        .map_err(|error| OnzerError::Invalid(error.to_string()))??;
+
+    let lrc = lrc.ok_or_else(|| {
+        OnzerError::Invalid(
+            "le modèle n'a pas reconnu assez de mots pour caler ces paroles".to_string(),
+        )
+    })?;
+
+    write(&state.pool, &resolver, track_id, &lrc).await?;
+
+    Ok(lyrics::parse(&lrc))
+}
+
 /// Interrompt la passe après le morceau en cours.
 #[tauri::command]
 pub async fn stop_listening() -> Result<()> {

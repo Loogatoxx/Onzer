@@ -816,6 +816,11 @@ pub struct TrackSummary {
     /// Le contenu n'est pas renvoyé — sur une liste de trois cents lignes, cela
     /// représenterait des centaines de kilo-octets pour afficher une pastille.
     pub has_lyrics: bool,
+    /// Les paroles défilent-elles avec la musique ?
+    ///
+    /// Distinct de `has_lyrics` : un morceau peut porter son texte sans aucun
+    /// horodatage, et c'est là qu'on peut lui proposer de le caler.
+    pub has_synced: bool,
 }
 
 /// Liste les morceaux, du plus récemment ajouté au plus ancien.
@@ -839,7 +844,8 @@ pub async fn list_tracks(pool: &SqlitePool, limit: i64, offset: i64) -> Result<V
              al.artwork_hash,
              t.is_loved,
              t.added_at,
-             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
+             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics,
+             (t.lyrics LIKE '%[__:__%')                 AS has_synced
          FROM tracks t
          LEFT JOIN albums al ON al.id = t.album_id
          WHERE t.deleted_at IS NULL
@@ -873,7 +879,8 @@ pub async fn tracks_by_ids(pool: &SqlitePool, ids: &[i64]) -> Result<Vec<TrackSu
                ORDER BY ta.position LIMIT 1)          AS artist,
              al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
              t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
-             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
+             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics,
+             (t.lyrics LIKE '%[__:__%')                 AS has_synced
          FROM tracks t
          LEFT JOIN albums al ON al.id = t.album_id
          WHERE t.id IN ({placeholders}) AND t.deleted_at IS NULL"
@@ -915,7 +922,8 @@ pub async fn search_tracks(pool: &SqlitePool, query: &str, limit: i64) -> Result
                ORDER BY ta.position LIMIT 1)          AS artist,
              al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
              t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
-             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics
+             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics,
+             (t.lyrics LIKE '%[__:__%')                 AS has_synced
          FROM tracks_fts f
          JOIN tracks t ON t.id = f.track_id
          LEFT JOIN albums al ON al.id = t.album_id

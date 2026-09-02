@@ -117,6 +117,31 @@ export function useLyrics(trackId: number | null, positionMs: number) {
     }
   }, [trackId]);
 
+  /**
+   * Cale les paroles à l'oreille, sur ce morceau seulement.
+   *
+   * Une trentaine de secondes : le modèle écoute le morceau en entier. Le
+   * bouton reste donc désactivé pendant, avec son propre état — se contenter
+   * de `searching` mélangerait deux attentes qui n'ont ni la même durée ni la
+   * même explication.
+   */
+  const [syncing, setSyncing] = useState(false);
+
+  const sync = useCallback(async () => {
+    if (trackId === null) return;
+
+    setSyncing(true);
+    setError(null);
+
+    try {
+      setLyrics(await ipc.syncTrack(trackId));
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setSyncing(false);
+    }
+  }, [trackId]);
+
   const isEmpty =
     lyrics !== null && lyrics.synced.length === 0 && lyrics.plain.length === 0;
 
@@ -131,6 +156,8 @@ export function useLyrics(trackId: number | null, positionMs: number) {
     setDraft,
     error,
     searching,
+    syncing,
+    sync,
     save,
     search,
   };

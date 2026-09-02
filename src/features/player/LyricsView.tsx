@@ -100,14 +100,44 @@ export function LyricsView({ track, positionMs, onSeek }: LyricsViewProps) {
         )}
 
         {!state.editing && !state.isEmpty && state.lyrics !== null && (
-          <button
-            type="button"
-            onClick={() => state.setEditing(true)}
-            className="mt-10 flex items-center gap-2 text-[13px] text-ink-faint transition-colors hover:text-ink"
-          >
-            <Icon name="pencil" size={14} />
-            Modifier les paroles
-          </button>
+          <div className="mt-10 flex flex-wrap items-center gap-5">
+            {/* Le texte est là, les temps manquent : c'est ici, devant des
+                paroles qui ne défilent pas, que la proposition tombe juste. */}
+            {state.lyrics.synced.length === 0 && (
+              <button
+                type="button"
+                disabled={state.syncing}
+                onClick={() => void state.sync()}
+                className="flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-[13px] font-semibold text-base transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                <span className={state.syncing ? "animate-pulse" : ""}>
+                  <Icon name="sparkle" size={15} />
+                </span>
+                {state.syncing ? "Écoute en cours…" : "Caler les paroles"}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => state.setEditing(true)}
+              className="flex items-center gap-2 text-[13px] text-ink-faint transition-colors hover:text-ink"
+            >
+              <Icon name="pencil" size={14} />
+              Modifier les paroles
+            </button>
+          </div>
+        )}
+
+        {state.syncing && (
+          <p className="mt-4 max-w-xl text-[12px] leading-relaxed text-ink-faint">
+            Un modèle écoute le morceau sur ta machine — une trentaine de
+            secondes. Tes paroles ne changent pas : il ne fournit que la
+            minuterie.
+          </p>
+        )}
+
+        {state.error !== null && !state.isEmpty && (
+          <p className="mt-4 text-[13px] text-warn">{state.error}</p>
         )}
       </div>
     </div>

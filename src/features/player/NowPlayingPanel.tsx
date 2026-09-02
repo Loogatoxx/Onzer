@@ -287,14 +287,34 @@ function LyricsPane({
             </p>
           ))}
 
+      {/* Même proposition que sur la page en grand, au même endroit du
+          raisonnement : devant des paroles qui ne défilent pas. */}
+      {state.lyrics.synced.length === 0 && (
+        <button
+          type="button"
+          disabled={state.syncing}
+          onClick={() => void state.sync()}
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-elevated py-2 text-[12px] font-semibold text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
+        >
+          <span className={state.syncing ? "animate-pulse text-accent" : ""}>
+            <Icon name="sparkle" size={13} />
+          </span>
+          {state.syncing ? "Écoute en cours…" : "Caler les paroles"}
+        </button>
+      )}
+
       <button
         type="button"
         onClick={() => state.setEditing(true)}
-        className="mt-6 flex items-center gap-1.5 text-[12px] text-ink-faint transition-colors hover:text-ink"
+        className="mt-4 flex items-center gap-1.5 text-[12px] text-ink-faint transition-colors hover:text-ink"
       >
         <Icon name="pencil" size={13} />
         Modifier les paroles
       </button>
+
+      {state.error !== null && (
+        <p className="mt-3 text-[11px] leading-relaxed text-warn">{state.error}</p>
+      )}
     </div>
   );
 }

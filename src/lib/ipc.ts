@@ -49,6 +49,8 @@ export interface TrackSummary {
    * ferait des centaines de kilo-octets pour afficher une pastille.
    */
   hasLyrics: boolean;
+  /** Les paroles défilent-elles avec la musique ? */
+  hasSynced: boolean;
 }
 
 /** Miroir de `identify::spotdl::PlaylistTrack`. */
@@ -787,6 +789,14 @@ export const ipc = {
 
   /** Interrompt l'écoute après le morceau en cours. */
   stopListening: (): Promise<void> => invoke<void>("stop_listening"),
+
+  /**
+   * Cale les paroles d'un seul morceau, tout de suite.
+   *
+   * Compte une trentaine de secondes : le modèle écoute le morceau en entier.
+   */
+  syncTrack: (trackId: number): Promise<Lyrics> =>
+    invoke<Lyrics>("sync_track", { trackId }),
 
   preferences: (): Promise<Preferences> => invoke<Preferences>("preferences"),
 

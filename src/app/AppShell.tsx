@@ -125,6 +125,29 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   const [correcting, setCorrecting] = useState<TrackSummary | null>(null);
   const [matching, setMatching] = useState<TrackSummary | null>(null);
 
+  /**
+   * Morceau dont on cale les paroles, et ce que l'écoute a donné.
+   *
+   * Le modèle prend une trentaine de secondes : sans retour visible, le clic
+   * aurait l'air de n'avoir rien fait, et l'utilisateur cliquerait à nouveau.
+   */
+  const [syncing, setSyncing] = useState<TrackSummary | null>(null);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+
+  function syncLyrics(track: TrackSummary) {
+    setSyncing(track);
+    setSyncNote(null);
+
+    void ipc
+      .syncTrack(track.id)
+      .then(() => {
+        setSyncNote(`« ${track.title} » : paroles calées.`);
+        bump();
+      })
+      .catch((cause: unknown) => setSyncNote(String(cause)))
+      .finally(() => setSyncing(null));
+  }
+
   /** Incrémenté pour forcer un rechargement après une écriture. */
   const [revision, setRevision] = useState(0);
   const bump = useCallback(() => setRevision((value) => value + 1), []);
@@ -603,6 +626,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       onOpenArtist={(id) => void openArtistOf(id)}
       onCorrect={setCorrecting}
       onMatch={setMatching}
+      onSyncLyrics={syncLyrics}
       {...(hasMore ? { onReachEnd: loadMore } : {})}
       onRemove={(id) => {
         void ipc
@@ -806,6 +830,31 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
             setCorrecting(null);
           }}
         />
+      )}
+
+      {(syncing !== null || syncNote !== null) && (
+        <div className="fixed bottom-28 left-1/2 z-40 -translate-x-1/2 rounded-full bg-surface px-5 py-2.5 text-[13px] text-ink shadow-2xl shadow-black/50">
+          {syncing !== null ? (
+            <span className="flex items-center gap-2.5">
+              <span className="animate-pulse text-accent">
+                <Icon name="sparkle" size={15} />
+              </span>
+              Écoute de « {syncing.title} »…
+            </span>
+          ) : (
+            <span className="flex items-center gap-3">
+              {syncNote}
+              <button
+                type="button"
+                aria-label="Fermer"
+                onClick={() => setSyncNote(null)}
+                className="text-ink-faint transition-colors hover:text-ink"
+              >
+                <Icon name="close" size={14} />
+              </button>
+            </span>
+          )}
+        </div>
       )}
 
       {matching !== null && (

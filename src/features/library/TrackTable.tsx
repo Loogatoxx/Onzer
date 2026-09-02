@@ -41,6 +41,8 @@ interface TrackTableProps {
   onCorrect: (track: TrackSummary) => void;
   /** Ouvre la recherche dans les catalogues, quand l'empreinte a échoué. */
   onMatch: (track: TrackSummary) => void;
+  /** Cale à l'oreille les paroles d'un morceau qui les a sans horodatage. */
+  onSyncLyrics: (track: TrackSummary) => void;
   /**
    * Appelé quand le bas de la liste approche.
    *
@@ -82,6 +84,7 @@ export function TrackTable({
   onRemove,
   onCorrect,
   onMatch,
+  onSyncLyrics,
   onReachEnd,
   loved,
   playlists,
@@ -131,6 +134,7 @@ export function TrackTable({
             onRemove={() => onRemove(track.id)}
             onCorrect={() => onCorrect(track)}
             onMatch={() => onMatch(track)}
+            onSyncLyrics={() => onSyncLyrics(track)}
             playlists={playlists}
             onAddToPlaylist={(playlistId) => onAddToPlaylist(playlistId, track.id)}
             {...(onRemoveAt === undefined
@@ -196,6 +200,7 @@ interface TrackRowProps {
   onRemove: () => void;
   onCorrect: () => void;
   onMatch: () => void;
+  onSyncLyrics: () => void;
   playlists: PlaylistSummary[];
   onAddToPlaylist: (playlistId: number) => void;
   /** Fourni uniquement dans une playlist : retirer la ligne à cette position. */
@@ -224,6 +229,7 @@ function TrackRow({
   onRemove,
   onCorrect,
   onMatch,
+  onSyncLyrics,
   playlists,
   onAddToPlaylist,
   onRemoveFromPlaylist,
@@ -339,6 +345,7 @@ function TrackRow({
           onRemove={onRemove}
           onCorrect={onCorrect}
           onMatch={onMatch}
+          onSyncLyrics={onSyncLyrics}
           {...(onRemoveFromPlaylist === undefined ? {} : { onRemoveFromPlaylist })}
         />
       </div>
@@ -364,6 +371,7 @@ function RowMenu({
   onRemove,
   onCorrect,
   onMatch,
+  onSyncLyrics,
   onRemoveFromPlaylist,
 }: {
   track: TrackSummary;
@@ -377,6 +385,7 @@ function RowMenu({
   onRemove: () => void;
   onCorrect: () => void;
   onMatch: () => void;
+  onSyncLyrics: () => void;
   onRemoveFromPlaylist?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -454,6 +463,15 @@ function RowMenu({
           <MenuItem icon="search" onClick={() => choose(onMatch)}>
             Chercher ailleurs
           </MenuItem>
+
+          {/* Le morceau a son texte mais pas ses temps : c'est exactement le
+              cas que le modèle sait réparer, et le seul où la proposition a
+              un sens. */}
+          {track.hasLyrics && !track.hasSynced && (
+            <MenuItem icon="sparkle" onClick={() => choose(onSyncLyrics)}>
+              Caler les paroles
+            </MenuItem>
+          )}
 
           {onRemoveFromPlaylist !== undefined && (
             <MenuItem icon="close" onClick={() => choose(onRemoveFromPlaylist)}>

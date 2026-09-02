@@ -199,6 +199,13 @@ fn lrclib() -> Result<&'static LrcLibClient> {
 #[serde(rename_all = "camelCase")]
 pub struct LyricsProgress {
     pub with_lyrics: i64,
+    /// Morceaux dont les paroles portent des horodatages.
+    ///
+    /// Distinguer les deux n'est pas un détail d'affichage : une bibliothèque
+    /// téléchargée par deemix porte **toutes** ses paroles et **aucune**
+    /// synchronisation. Ne compter que « avec paroles » faisait déclarer le
+    /// travail terminé sur 1378 morceaux qui n'avaient jamais été regardés.
+    pub with_synced: i64,
     pub total: i64,
     /// Vrai tant qu'une récupération en lot tourne.
     pub running: bool,
@@ -209,16 +216,19 @@ static BATCH_RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
 pub async fn lyrics_progress(state: State<'_, AppState>) -> Result<LyricsProgress> {
-    let (with_lyrics, total): (i64, i64) = sqlx::query_as(
+    let (with_lyrics, with_synced, total): (i64, i64, i64) = sqlx::query_as(
         "SELECT SUM(CASE WHEN lyrics IS NOT NULL AND lyrics <> '' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN lyrics LIKE ? THEN 1 ELSE 0 END),
                 COUNT(*)
            FROM tracks WHERE deleted_at IS NULL",
     )
+    .bind(lyrics::SYNCED_LIKE)
     .fetch_one(&state.pool)
     .await?;
 
     Ok(LyricsProgress {
         with_lyrics,
+        with_synced,
         total,
         running: BATCH_RUNNING.load(Ordering::Relaxed),
     })
@@ -263,11 +273,17 @@ pub async fn fetch_missing_lyrics(state: State<'_, AppState>) -> Result<i64> {
         ));
     }
 
+    // Sont concernés les morceaux sans paroles **et** ceux dont les paroles
+    // n'ont pas d'horodatage : les seconds sont invisibles pour qui ne
+    // regarde que la présence du texte, et c'est précisément le cas de toute
+    // une bibliothèque téléchargée par deemix.
     let pending: Vec<i64> = sqlx::query_scalar(
         "SELECT id FROM tracks
-          WHERE (lyrics IS NULL OR lyrics = '') AND deleted_at IS NULL
+          WHERE deleted_at IS NULL
+            AND (lyrics IS NULL OR lyrics = '' OR lyrics NOT LIKE ?)
           ORDER BY id",
     )
+    .bind(lyrics::SYNCED_LIKE)
     .fetch_all(&state.pool)
     .await?;
 
@@ -288,6 +304,13 @@ pub async fn fetch_missing_lyrics(state: State<'_, AppState>) -> Result<i64> {
 
             match found {
                 Ok(Some(found)) => {
+                    // Un texte brut ne remplace pas un texte brut : le morceau
+                    // en a déjà un, l'échanger contre un autre ne lui apporte
+                    // rien et réécrirait son fichier pour rien.
+                    if !found.synced && has_lyrics(&pool, track_id).await {
+                        continue;
+                    }
+
                     let resolver = paths.read().await.clone();
                     if let Err(error) = write_lyrics(&pool, &resolver, track_id, &found.raw).await {
                         tracing::warn!(track_id, %error, "paroles non enregistrées");
@@ -311,6 +334,19 @@ pub async fn fetch_missing_lyrics(state: State<'_, AppState>) -> Result<i64> {
 /// Assemble la requête à partir de ce que la base sait du morceau.
 ///
 /// `None` quand le titre manque : sans lui, la recherche n'a aucun sens.
+/// Le morceau porte-t-il déjà des paroles ?
+async fn has_lyrics(pool: &sqlx::SqlitePool, track_id: i64) -> bool {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM tracks
+          WHERE id = ? AND lyrics IS NOT NULL AND lyrics <> ''",
+    )
+    .bind(track_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0)
+        > 0
+}
+
 async fn lyrics_query(
     pool: &sqlx::SqlitePool,
     track_id: i64,

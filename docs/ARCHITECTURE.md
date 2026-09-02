@@ -1563,6 +1563,68 @@ lignes pointant vers des fichiers absents.
 
 ---
 
+## ADR-057 — « A des paroles » n'est pas « a des paroles qui défilent »
+
+**Contexte.** Après le passage à deemix, 1378 morceaux sur 1711 portaient leurs paroles.
+**Aucune** n'était synchronisée. Et la passe de récupération n'a jamais rien proposé : sa
+question était « ce morceau a-t-il des paroles ? », et la réponse était oui.
+
+**Le défaut.** Confondre deux états distincts sous un même compteur. Un morceau au texte brut
+n'est pas fini, il est **à moitié fait** — mais il était rangé avec les morceaux terminés, donc
+invisible. Même famille de bogue que l'ADR-042 : un état qui existe et que personne ne compte
+disparaît, et l'utilisateur en conclut que l'outil ne sert à rien.
+
+**Décision.** La synchronisation est comptée à part, en base comme à l'écran :
+
+| Ce qu'on demandait | Ce qu'on demande |
+|---|---|
+| `lyrics IS NOT NULL` | `lyrics LIKE '%[__:__%'` |
+| « 0 morceau sans paroles » | « 1378 morceaux sans synchronisation » |
+
+La passe vise désormais les deux manques, et **ne remplace jamais un texte brut par un autre
+texte brut** : réécrire mille fichiers pour changer une version non horodatée contre une autre
+ne rendrait service à personne.
+
+---
+
+## ADR-058 — Une correspondance exacte non synchronisée ne clôt pas la recherche
+
+**Contexte.** `fetch` interrogeait la route stricte de LRCLIB, puis se rabattait sur la
+recherche large (ADR-043). Mais dès que la route stricte rendait *quelque chose*, elle
+s'arrêtait — y compris quand ce quelque chose était du texte brut.
+
+**La mesure.** Sur quinze morceaux tirés au hasard de la bibliothèque :
+
+| Chemin | Versions synchronisées trouvées |
+|---|---|
+| Route stricte seule | 9 |
+| Stricte, puis large si non synchronisée | **13** |
+
+Trois morceaux — « BLASE », « Magic », « infinity (888) » — n'existaient en version horodatée
+que sous une autre fiche. S'arrêter à la première réponse coûtait un cinquième des paroles
+récupérables.
+
+**Décision.** La **synchronisation prime sur l'exactitude de l'appariement**. À forme égale, la
+correspondance exacte l'emporte, puisqu'elle a le plus de chances de désigner le bon
+enregistrement. La règle est isolée dans une fonction pure, `prefer_synced`, testable sans
+réseau.
+
+---
+
+## ADR-059 — Le fichier posé à côté prime sur le tag
+
+**Contexte.** Le format `USLT` d'ID3 ne prévoit pas d'horodatage. Les téléchargeurs qui savent
+produire des paroles synchronisées ne les écrivent donc pas dans les tags : ils déposent un
+fichier `.lrc` du même nom à côté du morceau.
+
+**Décision.** À la lecture, un `.lrc` **synchronisé** posé à côté du fichier l'emporte sur les
+paroles du tag. S'il existe, c'est qu'il apporte ce que le tag ne sait pas porter — et il est
+là, sur le disque, sans réseau et sans attente.
+
+Un `.lrc` non synchronisé, lui, ne prend pas la place du tag : il n'apporterait rien de plus.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

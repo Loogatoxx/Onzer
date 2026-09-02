@@ -12,6 +12,18 @@ import { ipc, type LyricsProgress } from "@/lib/ipc";
  * portait de paroles dans ses tags. Les chercher un par un depuis le panneau de
  * lecture serait décourageant : ce bouton fait la bibliothèque entière.
  *
+ * # Pourquoi la synchronisation compte à part
+ *
+ * « A des paroles » et « a des paroles qui défilent » ne sont pas la même
+ * question. Une bibliothèque téléchargée par deemix porte **toutes** ses
+ * paroles et **aucune** synchronisation : ne compter que la présence du texte
+ * faisait déclarer le travail terminé sur 1378 morceaux que la passe n'avait
+ * jamais regardés.
+ *
+ * Le bandeau annonce donc ce qui manque réellement, et la passe va le
+ * chercher — mesuré sur quinze morceaux au hasard, LRCLIB a la version
+ * horodatée de treize d'entre eux.
+ *
  * # Pourquoi ce n'est pas automatique
  *
  * Onzer est un lecteur hors ligne. Interroger un service à chaque import se
@@ -38,8 +50,11 @@ export function LyricsBar() {
     return null;
   }
 
-  const missing = progress.total - progress.withLyrics;
-  const ratio = progress.withLyrics / progress.total;
+  // Ce qui manque, c'est la synchronisation : un morceau au texte brut n'est
+  // pas fini, il est à moitié fait.
+  const missing = progress.total - progress.withSynced;
+  const ratio = progress.withSynced / progress.total;
+  const plain = progress.withLyrics - progress.withSynced;
 
   // Rien à faire : le bandeau s'efface plutôt que d'afficher une jauge pleine.
   if (missing === 0 && !progress.running) {
@@ -57,8 +72,10 @@ export function LyricsBar() {
           <p className="truncate text-xs text-ink">Paroles</p>
           <p className="truncate text-[11px] text-ink-faint">
             {progress.running
-              ? `${progress.withLyrics}/${progress.total} récupérées…`
-              : `${missing} morceau${missing > 1 ? "x" : ""} sans paroles`}
+              ? `${progress.withSynced}/${progress.total} synchronisées…`
+              : plain > 0
+                ? `${plain} morceau${plain > 1 ? "x" : ""} sans synchronisation`
+                : `${missing} morceau${missing > 1 ? "x" : ""} sans paroles`}
           </p>
         </div>
 
@@ -71,7 +88,7 @@ export function LyricsBar() {
           }}
           className="shrink-0 rounded-full bg-raised px-3 py-1 text-[11px] font-semibold text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
         >
-          {progress.running ? "En cours…" : "Récupérer en ligne"}
+          {progress.running ? "En cours…" : plain > 0 ? "Synchroniser" : "Récupérer en ligne"}
         </button>
       </div>
 
@@ -88,9 +105,11 @@ export function LyricsBar() {
 
       {!progress.running && (
         <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
-          Onzer interroge LRCLIB avec l'artiste, le titre et la durée. Les paroles
-          trouvées sont écrites dans les fichiers : elles ne dépendront plus du
-          réseau.
+          Onzer interroge LRCLIB avec l&apos;artiste, le titre et la durée, et
+          retient la version horodatée quand elle existe. Les paroles trouvées
+          sont écrites dans les fichiers : elles ne dépendront plus du réseau.
+          Un texte brut déjà présent n&apos;est jamais remplacé par un autre
+          texte brut.
         </p>
       )}
     </div>

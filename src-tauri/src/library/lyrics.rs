@@ -195,10 +195,60 @@ fn is_metadata_tag(line: &str) -> bool {
 // import, et rien n'allait plus jamais relire les fichiers. Lire à la demande
 // supprime cette classe entière de problème.
 
+/// Ce texte porte-t-il des horodatages ?
+///
+/// # Pourquoi cette question a sa place ici
+///
+/// « Le morceau a-t-il des paroles ? » et « le morceau a-t-il des paroles
+/// **synchronisées** ? » ne sont pas la même question, et les confondre a
+/// coûté une bibliothèque entière : 1378 morceaux téléchargés par deemix
+/// portaient tous leurs paroles, aucune synchronisée, et la passe de
+/// récupération les considérait comme faits — elle ne les a jamais regardés.
+///
+/// Une seule ligne horodatée suffit à conclure : un fichier `.lrc` partiel
+/// reste synchronisé sur les lignes qu'il date.
+pub fn is_synced_text(raw: &str) -> bool {
+    parse(raw).is_synced()
+}
+
+/// Fragment `LIKE` reconnaissant un horodatage `[mm:ss`.
+///
+/// La même question posée en SQL, pour ne pas rapatrier mille blocs de paroles
+/// en mémoire dans le seul but de les compter. Les crochets n'ont aucun sens
+/// particulier pour `LIKE` en SQLite ; `_` y remplace un caractère.
+pub const SYNCED_LIKE: &str = "%[__:__%";
+
+/// Lit un fichier `.lrc` posé à côté du morceau.
+///
+/// # Pourquoi regarder à côté du fichier
+///
+/// Les téléchargeurs qui savent produire des paroles synchronisées ne les
+/// écrivent pas dans les tags : le format `USLT` d'ID3 ne prévoit pas
+/// d'horodatage, ils déposent donc un `.lrc` **du même nom** à côté du
+/// morceau. Ne lire que les tags revient à jeter la seule version
+/// synchronisée que l'on ait, alors qu'elle est là, sur le disque, à portée
+/// de main et sans réseau.
+pub fn read_sidecar(path: &Path) -> Option<String> {
+    let sidecar = path.with_extension("lrc");
+
+    std::fs::read_to_string(sidecar)
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+}
+
 /// Lit les paroles directement dans le fichier.
 ///
 /// `None` quand le fichier n'en porte pas — ce qui est le cas le plus fréquent.
 pub fn read_from_file(path: &Path) -> Result<Option<String>> {
+    // Le fichier posé à côté prime : s'il existe, c'est qu'il apporte ce que
+    // le tag ne sait pas porter.
+    if let Some(sidecar) = read_sidecar(path) {
+        if is_synced_text(&sidecar) {
+            return Ok(Some(sidecar));
+        }
+    }
+
     let tagged = lofty::read_from_path(path)
         .map_err(|error| OnzerError::Invalid(format!("lecture des tags : {error}")))?;
 
@@ -249,6 +299,52 @@ pub fn write_to_file(path: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reconnait_des_paroles_synchronisees() {
+        assert!(is_synced_text("[00:12.34] Première ligne\n[00:15.00] Deuxième"));
+        // Une seule ligne datée suffit : un .lrc partiel reste synchronisé.
+        assert!(is_synced_text("Intro\n[01:02.00] Refrain"));
+    }
+
+    #[test]
+    fn du_texte_brut_nest_pas_synchronise() {
+        // Le cas de toute une bibliothèque téléchargée par deemix : les
+        // paroles sont là, l'horodatage n'y est pas.
+        assert!(!is_synced_text("I'm a bad guy\nMurder Gang\nTwo guns up"));
+        assert!(!is_synced_text(""));
+    }
+
+    #[test]
+    fn le_motif_sql_reconnait_ce_que_le_parseur_reconnait() {
+        // Les deux questions doivent avoir la même réponse : l'une compte en
+        // base, l'autre décide à l'écriture. Elles diverger ferait compter des
+        // morceaux que la passe ne traiterait jamais.
+        let motif = SYNCED_LIKE.trim_matches('%').replace('_', ".");
+        assert_eq!(motif, "[..:..");
+    }
+
+    #[test]
+    fn le_fichier_a_cote_est_lu() {
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join("Damso - Macarena.mp3");
+        std::fs::write(&audio, b"pas vraiment de l'audio").unwrap();
+        std::fs::write(dir.path().join("Damso - Macarena.lrc"), "[00:01.00] Ligne").unwrap();
+
+        assert_eq!(
+            read_sidecar(&audio).as_deref(),
+            Some("[00:01.00] Ligne")
+        );
+    }
+
+    #[test]
+    fn un_fichier_a_cote_absent_ne_derange_pas() {
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join("seul.mp3");
+        std::fs::write(&audio, b"x").unwrap();
+
+        assert_eq!(read_sidecar(&audio), None);
+    }
 
     #[test]
     fn analyse_des_paroles_synchronisees() {

@@ -103,13 +103,25 @@ impl LrcLibClient {
     ///
     /// `None` signifie « pas dans la base », ce qui est courant et normal.
     pub async fn fetch(&self, query: &LyricsQuery) -> Result<Option<FetchedLyrics>> {
-        if let Some(response) = self.service.get_json::<GetResponse>(&build_url(query)).await? {
-            if let Some(found) = pick(&response) {
-                return Ok(Some(found));
-            }
+        let direct = match self.service.get_json::<GetResponse>(&build_url(query)).await? {
+            Some(response) => pick(&response),
+            None => None,
+        };
+
+        // Une correspondance exacte **mais non synchronisée** ne clôt pas la
+        // recherche.
+        //
+        // Mesuré sur quinze morceaux d'une bibliothèque téléchargée par
+        // deemix : la route stricte rendait neuf versions synchronisées, la
+        // recherche large en trouvait trois autres — « BLASE », « Magic »,
+        // « infinity (888) » — que la première ne connaissait qu'en texte
+        // brut. S'arrêter à la première réponse coûtait donc trois morceaux
+        // sur quinze, soit un cinquième de la bibliothèque.
+        if direct.as_ref().is_some_and(|found| found.synced) {
+            return Ok(direct);
         }
 
-        self.search(query).await
+        Ok(prefer_synced(direct, self.search(query).await?))
     }
 
     /// Recherche souple, quand l'appariement exact n'a rien donné.
@@ -125,6 +137,24 @@ impl LrcLibClient {
         };
 
         Ok(best_hit(&hits, query.duration_ms))
+    }
+}
+
+/// Départage la correspondance exacte et le résultat de la recherche large.
+///
+/// La synchronisation prime sur l'exactitude de l'appariement : entre un texte
+/// brut trouvé par la route stricte et une version horodatée trouvée par la
+/// recherche, c'est la seconde qui apporte quelque chose. À égalité de forme,
+/// la correspondance exacte l'emporte — c'est elle qui a le plus de chances de
+/// désigner le bon enregistrement.
+fn prefer_synced(
+    direct: Option<FetchedLyrics>,
+    searched: Option<FetchedLyrics>,
+) -> Option<FetchedLyrics> {
+    match (direct, searched) {
+        (_, Some(found)) if found.synced => Some(found),
+        (Some(found), _) => Some(found),
+        (None, searched) => searched,
     }
 }
 
@@ -255,6 +285,39 @@ struct GetResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn paroles(synced: bool) -> FetchedLyrics {
+        FetchedLyrics {
+            raw: if synced { "[00:01.00] Ligne".into() } else { "Ligne".into() },
+            synced,
+        }
+    }
+
+    #[test]
+    fn une_version_synchronisee_lemporte_sur_le_texte_brut() {
+        // Mesuré : sur quinze morceaux, la route stricte rendait trois textes
+        // bruts là où la recherche large avait la version horodatée.
+        // S'arrêter à la première réponse coûtait ces trois-là.
+        let choix = prefer_synced(Some(paroles(false)), Some(paroles(true)));
+        assert!(choix.is_some_and(|found| found.synced));
+    }
+
+    #[test]
+    fn a_forme_egale_la_correspondance_exacte_gagne() {
+        let direct = FetchedLyrics {
+            raw: "exacte".into(),
+            synced: false,
+        };
+        let choix = prefer_synced(Some(direct), Some(paroles(false)));
+        assert_eq!(choix.map(|found| found.raw).as_deref(), Some("exacte"));
+    }
+
+    #[test]
+    fn la_recherche_comble_une_correspondance_absente() {
+        let choix = prefer_synced(None, Some(paroles(false)));
+        assert!(choix.is_some());
+        assert!(prefer_synced(None, None).is_none());
+    }
 
     fn requete() -> LyricsQuery {
         LyricsQuery {

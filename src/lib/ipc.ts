@@ -167,6 +167,8 @@ export interface ArtworkProgress {
 /** Miroir de `commands::collection::LyricsProgress`. */
 export interface LyricsProgress {
   withLyrics: number;
+  /** Morceaux dont les paroles défilent avec la musique. */
+  withSynced: number;
   total: number;
   /** Vrai tant qu'une récupération en lot tourne. */
   running: boolean;

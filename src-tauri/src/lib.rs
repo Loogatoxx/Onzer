@@ -52,13 +52,29 @@ impl AppState {
     }
 }
 
+/// Point d'entrée de l'application.
+///
+/// # Pourquoi cette annotation
+///
+/// Sur un bureau, `main` appelle cette fonction. Sur Android il n'y a pas de
+/// `main` : c'est la machine virtuelle Java qui charge la bibliothèque native
+/// et cherche un symbole convenu. `mobile_entry_point` le produit — sans lui,
+/// l'édition de liens réussit et l'application ne démarre jamais.
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_tracing();
 
-    tauri::Builder::default()
+    // La chaîne est coupée ici pour laisser entrer un greffon qui n'existe pas
+    // partout : les raccourcis globaux n'ont pas d'équivalent sur mobile, où
+    // c'est le système qui possède les commandes de lecture.
+    let builder = tauri::Builder::default()
         // Sélecteur de dossier natif, pour choisir la racine de bibliothèque.
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init());
+
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+
+    builder
         .setup(|app| {
             // `app_data_dir` pointe vers ~/Library/Application Support/Onzer
             // sur macOS. On ne code jamais ce chemin en dur.
@@ -198,7 +214,11 @@ pub fn run() {
             });
 
             spawn_playback_loop(app.handle().clone());
-            register_media_keys(app.handle());
+            // Les touches multimédia n'existent que sur un bureau : sur
+            // mobile, ce sont les commandes du système qui pilotent la
+            // lecture, par un tout autre mécanisme.
+            #[cfg(desktop)]
+            crate::register_media_keys(app.handle());
 
             Ok(())
         })
@@ -379,6 +399,7 @@ fn spawn_album_revision(pool: SqlitePool, paths: Arc<RwLock<PathResolver>>) {
 /// Le raccourci global est donc le seul chemin. Sa contrepartie est assumée :
 /// il fonctionne même quand Onzer n'est pas au premier plan — ce qui est très
 /// exactement ce qu'on attend d'une touche de lecture.
+#[cfg(desktop)]
 pub fn register_media_keys(app: &tauri::AppHandle) {
     use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -422,6 +443,7 @@ pub fn register_media_keys(app: &tauri::AppHandle) {
 }
 
 /// Ce qu'une touche multimédia déclenche.
+#[cfg(desktop)]
 #[derive(Debug, Clone, Copy)]
 enum MediaAction {
     Toggle,
@@ -429,6 +451,7 @@ enum MediaAction {
     Previous,
 }
 
+#[cfg(desktop)]
 impl MediaAction {
     async fn run(self, app: &tauri::AppHandle) -> core::Result<()> {
         let state = app.state::<AppState>();

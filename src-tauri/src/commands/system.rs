@@ -94,6 +94,15 @@ pub fn media_keys_status() -> MediaKeysStatus {
 /// effet — le meilleur moyen de faire croire qu'il n'a pas marché.
 #[tauri::command]
 pub fn retry_media_keys(app: tauri::AppHandle) -> MediaKeysStatus {
+    // Sur mobile, il n'y a rien à réenregistrer : les commandes de lecture
+    // appartiennent au système. La commande existe quand même, pour que
+    // l'interface reste la même partout — elle répond simplement que tout va
+    // bien, ce qui est vrai.
+    #[cfg(desktop)]
     crate::register_media_keys(&app);
+
+    #[cfg(not(desktop))]
+    let _ = app;
+
     media_keys_status()
 }

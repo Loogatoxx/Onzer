@@ -1785,6 +1785,50 @@ comme d'une garantie de couverture.
 
 ---
 
+## ADR-065 — Android : le cœur passe, c'est le pourtour qui résiste
+
+**Contexte.** Le pari de l'architecture depuis le premier jour : un cœur Rust portable, une
+interface web, et rien de spécifique à macOS dans le métier. Première vérification réelle.
+
+**Ce que la compilation a dit.** Sur l'ensemble du cœur — base SQLite, scan, empreintes
+acoustiques, recommandation, statistiques, paroles, alignement, serveur d'import —
+**une seule erreur** : le greffon des raccourcis globaux, qui n'existe pas sur mobile. Même
+`rodio` et `cpal` compilent, ce dernier basculant tout seul sur AAudio, l'interface audio
+native d'Android.
+
+Le pari tient. Ce qui a résisté était ailleurs, et n'avait rien à voir avec le code.
+
+**Les quatre murs, dans l'ordre où ils sont tombés.**
+
+| Mur | Cause | Décision |
+|---|---|---|
+| `unresolved import tauri_plugin_global_shortcut` | Les touches multimédia n'existent pas sur mobile | Greffon et code derrière `#[cfg(desktop)]`, dépendance sous `[target.'cfg(not(android))']` |
+| `unable to find library -laaudio` | AAudio n'existe qu'à partir d'Android 8.0 | `minSdkVersion: 26` dans `tauri.conf.json` — le seul endroit qui pilote **à la fois** Gradle et le nom du lieur (`aarch64-linux-android26-clang`) |
+| `Unsupported class file major version 69` | Gradle 8.14 ne lit pas les classes d'un JDK 25 | JDK 21 installé dans `~/.jdks`, sans droits administrateur, et figé dans les scripts |
+| `Unable to delete … ._shrunk-classpath-snapshot.bin` | **exFAT** | Les sorties Gradle quittent le SSD |
+
+**Le dernier mérite d'être expliqué.** Le projet vit sur exFAT, seul format que macOS et
+Android partagent. exFAT ne connaît pas les attributs étendus : macOS les range dans des
+fichiers jumeaux `._quelquechose`, invisibles au Finder et bien réels pour tout le reste. Ils
+avaient déjà cassé `git push` ; ici ils cassaient Gradle de deux façons, en se faisant passer
+pour des classes et en refusant d'être supprimés.
+
+Les dossiers de compilation Gradle partent donc sur le volume APFS qui héberge déjà le cache
+Rust — même raisonnement, même endroit, et rien de ce qui s'y écrit n'est une source.
+
+**Ce qui reste local et non versionné.** `src-tauri/gen/` est généré et ignoré par git. Deux
+réglages y vivent, propres à cette machine, à réappliquer après un `tauri android init` :
+le chemin du JDK 21 dans `gradle.properties`, et la relocalisation des dossiers de sortie dans
+`build.gradle.kts` et `buildSrc/build.gradle.kts`. Le reste — niveau d'API compris — est dans
+`tauri.conf.json`, donc versionné.
+
+**Où l'on en est.** L'APK se construit. Ce qui vient ensuite est la partie que l'estimation
+annonçait comme la vraie : l'interface pensée pour un écran de téléphone, et surtout la
+lecture en arrière-plan, qui demande un service de premier plan Android et n'a aucun
+équivalent dans ce qui existe aujourd'hui.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

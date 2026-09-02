@@ -1891,6 +1891,61 @@ et c'était le risque annoncé dès l'estimation.
 
 ---
 
+## ADR-068 — Le son sort de Rust, le système croit qu'il vient de Kotlin
+
+**Contexte.** Sur Android, dès que l'écran s'éteint, le système considère une application
+inactive et se réserve le droit de la tuer. Rien dans le cœur Rust ne le regarde : le son
+sortait, mais rien ne garantissait qu'il survive à la mise en veille, et il n'apparaissait ni
+sur l'écran verrouillé, ni sur les écouteurs Bluetooth.
+
+**Décision.** Un **service de premier plan** portant une `MediaSession`. Il ne produit aucun
+son et ne détient aucun état : il **reflète** ce que Rust lui pousse, et **transmet** ce que
+l'utilisateur demande depuis l'extérieur.
+
+```text
+  Rust (le son)  ──► pousser(titre, artiste, en lecture, position)  ──► MediaSession
+                                                                            │
+  Rust (le son)  ◄──  natifBasculer() / natifSuivant() / natifPositionner  ◄┘
+```
+
+C'est la seule façon d'alimenter d'un coup l'écran verrouillé, les boutons d'écouteurs, la
+tuile du volet et les montres : le système interroge la session, pas la notification.
+
+**Trois pièges, tous silencieux.**
+
+| Symptôme | Cause |
+|---|---|
+| `ClassNotFoundException` sur une classe pourtant dans le `.dex` | `FindClass` depuis un fil attaché par Rust hérite du chargeur **système**, qui ne connaît que `java.*`. La classe est donc capturée dans `JNI_OnLoad`, seul moment où le chargeur de l'application est en vue |
+| La notification affichait l'état du morceau **précédent** | Le premier `pousser` ne trouve pas encore le service — le démarrer est asynchrone — et l'état était perdu. Il est désormais mis de côté et appliqué dès que le service existe |
+| Une classe Kotlin nouvellement écrite absente de l'APK | exFAT, encore : la granularité de ses horodatages trompe les contrôles d'obsolescence de Gradle |
+
+**Ce qui n'est pas poussé.** La position, quatre fois par seconde. La session porte une
+*vitesse* : à 1×, le système fait avancer le compteur lui-même. Republier la pochette à cette
+cadence ferait travailler la machine virtuelle pour un chiffre qu'elle sait déjà calculer.
+
+---
+
+## ADR-069 — Une même liste, deux dispositions, une seule grille
+
+**Contexte.** Sur 375 px, quatre colonnes — titre, album, ajout, durée — laissaient au titre
+une centaine de pixels. On lisait « Somewhere Only We K… » et rien d'autre.
+
+**Décision.** En dessous de 1024 px, la ligne se réduit au numéro, au titre et au menu ; les
+paroles et la durée descendent **sous le titre**. Au-dessus, les colonnes reprennent leur
+place — les masquer là où l'espace existe serait gâcher ce qu'on vient de gagner.
+
+Une seule grille, dont les colonnes changent au point de rupture : deux composants séparés
+auraient garanti qu'une correction n'atteigne qu'une des deux dispositions.
+
+**Ce que la version compacte a révélé.** Le cœur des favoris et le menu ne se montraient qu'au
+**survol**. Sur un écran tactile, le survol n'existe pas : ils étaient tout simplement
+invisibles, et l'on découvrait les favoris en appuyant par hasard.
+
+Et le clic sur le cœur lançait la lecture, faute d'arrêter la propagation : deux actions pour
+un geste, dont une qu'on n'avait pas demandée.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

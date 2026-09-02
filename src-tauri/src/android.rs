@@ -58,6 +58,22 @@ unsafe fn installer_le_contexte(raw: *mut RawJavaVM) -> Result<(), String> {
     let vm = JavaVM::from_raw(raw).map_err(|error| error.to_string())?;
     let mut env = vm.attach_current_thread().map_err(|error| error.to_string())?;
 
+    // # Pourquoi la classe est capturée maintenant
+    //
+    // `FindClass` ne trouve les classes de l'application que si le fil courant
+    // porte son chargeur de classes. C'est le cas ici — la machine virtuelle
+    // vient de charger notre bibliothèque — et **ce n'est plus le cas** sur un
+    // fil attaché depuis Rust : celui-là hérite du chargeur système, qui ne
+    // connaît que `java.*` et `android.*`.
+    //
+    // L'erreur est spectaculairement trompeuse : « ClassNotFoundException »
+    // pour une classe pourtant bien présente dans le `.dex`.
+    if let Ok(classe) = env.find_class("com/loogatoxx/onzer/PlaybackService") {
+        if let Ok(globale) = env.new_global_ref(&classe) {
+            let _ = SERVICE.set(globale);
+        }
+    }
+
     let application = application_courante(&mut env)?;
 
     // La référence globale doit survivre à cette fonction : `ndk_context` en
@@ -95,4 +111,196 @@ unsafe fn application_courante<'a>(env: &mut JNIEnv<'a>) -> Result<JObject<'a>, 
     }
 
     Ok(application)
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  La lecture, vue par le système
+// ════════════════════════════════════════════════════════════════════════════
+
+/// La poignée de l'application, pour que le service puisse commander.
+///
+/// Les fonctions appelées depuis Kotlin n'ont aucun contexte : elles arrivent
+/// sur un fil de la machine virtuelle, sans rien de Tauri autour. Cette
+/// référence est le seul moyen de retrouver le lecteur.
+static POIGNEE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+/// La classe du service, capturée au chargement de la bibliothèque.
+///
+/// Voir `installer_le_contexte` : c'est le seul moment où le chargeur de
+/// classes de l'application est en vue.
+static SERVICE: std::sync::OnceLock<jni::objects::GlobalRef> = std::sync::OnceLock::new();
+
+/// À appeler une fois au démarrage.
+pub fn retenir_la_poignee(app: tauri::AppHandle) {
+    let _ = POIGNEE.set(app);
+}
+
+/// Pousse l'état de lecture vers le service Android.
+///
+/// # Pourquoi la pochette en base64
+///
+/// Franchir la frontière JNI avec un tableau d'octets demande un
+/// `JByteArray`, sa copie et sa libération. Une chaîne fait le même travail
+/// pour quelques kilo-octets — et la vignette qu'on envoie en fait moins de
+/// trente. Le coût est invisible, le code est trois fois plus court.
+pub fn pousser_letat(
+    titre: &str,
+    artiste: &str,
+    en_lecture: bool,
+    position_ms: i64,
+    duree_ms: i64,
+    pochette_base64: &str,
+) {
+    if let Err(error) = pousser(titre, artiste, en_lecture, position_ms, duree_ms, pochette_base64)
+    {
+        // Le son continue sans la notification : c'est dégradé, pas cassé.
+        tracing::warn!(%error, "état de lecture non transmis au système");
+    }
+}
+
+fn pousser(
+    titre: &str,
+    artiste: &str,
+    en_lecture: bool,
+    position_ms: i64,
+    duree_ms: i64,
+    pochette_base64: &str,
+) -> Result<(), String> {
+    let contexte = ndk_context::android_context();
+    let vm = unsafe { JavaVM::from_raw(contexte.vm().cast()) }.map_err(|e| e.to_string())?;
+    let mut env = vm.attach_current_thread().map_err(|e| e.to_string())?;
+
+    let activite = unsafe { JObject::from_raw(contexte.context().cast()) };
+
+    let classe = SERVICE
+        .get()
+        .ok_or_else(|| "classe du service non capturée au chargement".to_string())?;
+
+    let titre = env.new_string(titre).map_err(|e| e.to_string())?;
+    let artiste = env.new_string(artiste).map_err(|e| e.to_string())?;
+    let pochette = env.new_string(pochette_base64).map_err(|e| e.to_string())?;
+
+    // La référence globale porte un `JObject` : il faut le présenter comme la
+    // classe qu'il est.
+    let classe = jni::objects::JClass::from(unsafe {
+        JObject::from_raw(classe.as_obj().as_raw())
+    });
+
+    env.call_static_method(
+        &classe,
+        "pousser",
+        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;ZJJLjava/lang/String;)V",
+        &[
+            (&activite).into(),
+            (&titre).into(),
+            (&artiste).into(),
+            jni::objects::JValue::Bool(u8::from(en_lecture)),
+            jni::objects::JValue::Long(position_ms),
+            jni::objects::JValue::Long(duree_ms),
+            (&pochette).into(),
+        ],
+    )
+    .map_err(|e| format!("appel de pousser : {e}"))?;
+
+    // Une exception Java laissée en suspens fait planter le prochain appel
+    // JNI, où qu'il ait lieu.
+    let _ = env.exception_clear();
+    Ok(())
+}
+
+/// Exécute une commande de lecture venue du système, puis publie l'état.
+///
+/// # Pourquoi tout passe par ici
+///
+/// Les quatre commandes ne diffèrent que par une ligne. Ce qui les entoure —
+/// retrouver la poignée, l'état, le lecteur, republier l'instantané — est
+/// identique, et c'est précisément la partie qu'on oublie : sans le dernier
+/// `emit`, l'interface continuerait d'afficher « en pause » alors que la
+/// notification vient de relancer la musique.
+fn commander<F>(action: F)
+where
+    F: for<'a> FnOnce(
+            &'a crate::audio::PlayerService,
+            &'a sqlx::SqlitePool,
+            &'a crate::core::PathResolver,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>
+        + Send
+        + 'static,
+{
+    let Some(app) = POIGNEE.get().cloned() else {
+        return;
+    };
+
+    tauri::async_runtime::spawn(async move {
+        let state = tauri::Manager::state::<crate::AppState>(&app);
+        let Ok(player) = state.player() else {
+            return;
+        };
+
+        let paths = state.paths.read().await.clone();
+        action(player, &state.pool, &paths).await;
+
+        let _ = tauri::Emitter::emit(
+            &app,
+            crate::commands::playback::STATE_EVENT,
+            player.snapshot().await,
+        );
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_loogatoxx_onzer_PlaybackService_natifBasculer(
+    _env: JNIEnv,
+    _classe: JObject,
+) {
+    commander(|player, _pool, _paths| Box::pin(async move { let _ = player.toggle().await; }));
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_loogatoxx_onzer_PlaybackService_natifSuivant(
+    _env: JNIEnv,
+    _classe: JObject,
+) {
+    commander(|player, pool, paths| {
+        Box::pin(async move {
+            let _ = player.next(pool, paths, false).await;
+        })
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_loogatoxx_onzer_PlaybackService_natifPrecedent(
+    _env: JNIEnv,
+    _classe: JObject,
+) {
+    commander(|player, pool, paths| {
+        Box::pin(async move {
+            let _ = player.previous(pool, paths).await;
+        })
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_loogatoxx_onzer_PlaybackService_natifPositionner(
+    _env: JNIEnv,
+    _classe: JObject,
+    position_ms: i64,
+) {
+    commander(move |player, _pool, _paths| {
+        Box::pin(async move {
+            let _ = player.seek(position_ms).await;
+        })
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_loogatoxx_onzer_PlaybackService_natifArreter(
+    _env: JNIEnv,
+    _classe: JObject,
+) {
+    commander(|player, pool, _paths| {
+        Box::pin(async move {
+            let _ = player.stop(pool).await;
+        })
+    });
 }

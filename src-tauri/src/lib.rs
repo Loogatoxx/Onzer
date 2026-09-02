@@ -233,6 +233,9 @@ pub fn run() {
                 player,
             });
 
+            #[cfg(target_os = "android")]
+            android::retenir_la_poignee(app.handle().clone());
+
             spawn_playback_loop(app.handle().clone());
             // Les touches multimédia n'existent que sur un bureau : sur
             // mobile, ce sont les commandes du système qui pilotent la
@@ -535,6 +538,9 @@ fn spawn_playback_loop(handle: tauri::AppHandle) {
             match player.tick(&state.pool, &paths).await {
                 Ok(true) => {
                     let _ = handle.emit(STATE_EVENT, player.snapshot().await);
+
+                    #[cfg(target_os = "android")]
+                    publier_vers_android(&handle, &player).await;
                 }
                 Ok(false) => {}
                 Err(error) => tracing::warn!(%error, "enchaînement interrompu"),
@@ -547,6 +553,15 @@ fn spawn_playback_loop(handle: tauri::AppHandle) {
 
             if tick.position_ms != last_tick.position_ms || tick.is_playing != last_tick.is_playing
             {
+                // Le système d'exploitation a besoin du morceau, pas de la
+                // position : republier la pochette quatre fois par seconde
+                // ferait travailler la machine virtuelle pour rien. On ne
+                // pousse qu'au changement de morceau ou d'état.
+                #[cfg(target_os = "android")]
+                if tick.is_playing != last_tick.is_playing {
+                    publier_vers_android(&handle, &player).await;
+                }
+
                 last_tick = tick;
                 let _ = handle.emit(TICK_EVENT, tick);
             }
@@ -563,4 +578,41 @@ fn init_tracing() {
         .unwrap_or_else(|_| EnvFilter::new("onzer_lib=debug,warn"));
 
     fmt().with_env_filter(filter).with_target(true).init();
+}
+
+/// Donne au système d'exploitation de quoi peupler l'écran verrouillé.
+///
+/// # Pourquoi la pochette est réduite ici
+///
+/// L'image rangée par Onzer fait jusqu'à mille pixels de côté. L'écran
+/// verrouillé n'en montre qu'une vignette, et la faire franchir la frontière
+/// JNI à taille réelle coûterait un mégaoctet à chaque morceau. On envoie la
+/// miniature, déjà produite pour l'interface.
+#[cfg(target_os = "android")]
+async fn publier_vers_android(handle: &tauri::AppHandle, player: &audio::PlayerService) {
+    let snapshot = player.snapshot().await;
+    let Some(current) = snapshot.current.as_ref() else {
+        return;
+    };
+
+    let state = handle.state::<AppState>();
+    let artwork_dir = state.paths.read().await.artwork_dir();
+
+    let pochette = current
+        .artwork_hash
+        .as_deref()
+        .map(|hash| library::artwork::thumbnail_path(&artwork_dir, hash))
+        .filter(|path| path.is_file())
+        .and_then(|path| std::fs::read(path).ok())
+        .map(|octets| library::artwork::encode_base64(&octets))
+        .unwrap_or_default();
+
+    android::pousser_letat(
+        &current.title,
+        current.artist.as_deref().unwrap_or(""),
+        snapshot.is_playing,
+        snapshot.position_ms,
+        snapshot.duration_ms,
+        &pochette,
+    );
 }

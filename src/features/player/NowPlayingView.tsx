@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Artwork } from "@/features/library/Artwork";
 import { useSeekGesture } from "./useSeekGesture";
@@ -35,6 +35,7 @@ export function NowPlayingView({
   onOpenAlbum,
   onShuffle,
   onRepeat,
+  onClose,
 }: {
   state: PlaybackSnapshot;
   isLoved: boolean;
@@ -48,9 +49,21 @@ export function NowPlayingView({
   onOpenAlbum: () => void;
   onShuffle: (shuffle: boolean) => void;
   onRepeat: () => void;
+  /** Referme l'écran, appelé par le glissement vers le bas. */
+  onClose: () => void;
 }) {
   const [agrandie, setAgrandie] = useState(false);
   const geste = useSeekGesture(state.positionMs, state.durationMs, onSeek);
+
+  /**
+   * Un glissement vers le bas referme l'écran.
+   *
+   * C'est le geste que tous les lecteurs de téléphone ont adopté pour cet
+   * écran-là, et le seul qui n'oblige pas à remonter le pouce jusqu'en haut.
+   * Le seuil est haut — cent vingt pixels — parce qu'un défilement vertical
+   * commence exactement de la même façon.
+   */
+  const depart = useRef<number | null>(null);
   const track = state.current;
 
   if (track === null) {
@@ -64,7 +77,21 @@ export function NowPlayingView({
   const ratio = state.durationMs > 0 ? state.positionMs / state.durationMs : 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col px-6 pb-10 pt-6" {...geste}>
+    <div
+      className="mx-auto flex w-full max-w-md flex-col px-6 pb-10 pt-6"
+      {...geste}
+      onPointerDown={(event) => {
+        depart.current = event.clientY;
+        geste.onPointerDown(event);
+      }}
+      onPointerUp={(event) => {
+        const origine = depart.current;
+        depart.current = null;
+        geste.onPointerUp(event);
+
+        if (origine !== null && event.clientY - origine > 120) onClose();
+      }}
+    >
       {/* # Toucher la pochette l'agrandit
           Elle est la seule image de l'application, et sur un téléphone elle
           reste bridée par la marge du texte. Un appui la met plein écran, sur

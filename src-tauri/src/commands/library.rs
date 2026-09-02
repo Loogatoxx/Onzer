@@ -278,6 +278,42 @@ pub async fn tracks_by_ids(
         .collect())
 }
 
+/// Un album de la bibliothèque, tel que la grille l'affiche.
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct AlbumSummary {
+    pub id: i64,
+    pub title: String,
+    pub artist: Option<String>,
+    pub year: Option<i64>,
+    pub track_count: i64,
+    pub artwork_hash: Option<String>,
+}
+
+/// Tous les albums, du plus fourni au moins fourni.
+///
+/// # Pourquoi ce classement
+///
+/// Alphabétique, la liste commencerait par les compilations d'un morceau
+/// glanées au fil des identifications. Par nombre de titres, elle commence par
+/// les albums qu'on possède vraiment — ceux qu'on cherche.
+#[tauri::command]
+pub async fn list_albums(state: State<'_, AppState>) -> Result<Vec<AlbumSummary>> {
+    Ok(sqlx::query_as::<_, AlbumSummary>(
+        "SELECT al.id, al.title,
+                (SELECT a.name FROM artists a WHERE a.id = al.album_artist_id) AS artist,
+                al.year,
+                COUNT(t.id) AS track_count,
+                al.artwork_hash
+           FROM albums al
+           JOIN tracks t ON t.album_id = al.id AND t.deleted_at IS NULL
+       GROUP BY al.id
+       ORDER BY track_count DESC, al.title COLLATE NOCASE",
+    )
+    .fetch_all(&state.pool)
+    .await?)
+}
+
 /// Les morceaux d'un album, dans l'ordre du disque.
 #[tauri::command]
 pub async fn album_tracks(

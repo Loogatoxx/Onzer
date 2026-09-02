@@ -89,6 +89,14 @@ interface TrackTableProps {
 }
 
 /** Les colonnes sur lesquelles une liste peut être triée. */
+/**
+ * Délai au-delà duquel un appui devient un appui long.
+ *
+ * 450 ms : au-dessous, un clic un peu appuyé ouvrirait le menu par surprise ;
+ * au-dessus, on croit que rien ne se passe et on relâche.
+ */
+const APPUI_LONG_MS = 450;
+
 export type SortColumn = "title" | "album" | "duration" | "added";
 
 export interface TrackSort {
@@ -300,6 +308,11 @@ function TrackRow({
 }: TrackRowProps) {
   const unavailable = !track.isAvailable;
 
+  /** Le menu, qu'on ouvre aux trois points ou d'un appui maintenu. */
+  const [menuOpen, setMenuOpen] = useState(false);
+  const minuteur = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const longPress = useRef(false);
+
   return (
     <li
       // # Un clic, pas deux
@@ -312,11 +325,39 @@ function TrackRow({
       // la propagation elles-mêmes.
       onClick={() => {
         if (unavailable) return;
+        // Un appui long vient de servir : ce clic est sa retombée, pas une
+        // intention. L'ignorer évite de lancer la lecture sous le menu qu'on
+        // vient d'ouvrir.
+        if (longPress.current) {
+          longPress.current = false;
+          return;
+        }
+
         // Relancer depuis le début un morceau déjà en cours n'est pas ce qu'on
         // demande en le touchant : on veut le **voir**.
         if (isCurrent) onOpenPlaying();
         else onPlay();
       }}
+      // # L'appui long ouvre le menu
+      //
+      // Viser trois points de seize pixels au bout d'une ligne est le geste le
+      // plus difficile de l'interface. Maintenir le doigt là où il est déjà
+      // n'en demande aucun — c'est ce que font tous les lecteurs de téléphone,
+      // et le menu contient exactement les mêmes actions.
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenuOpen(true);
+      }}
+      onPointerDown={() => {
+        longPress.current = false;
+        minuteur.current = setTimeout(() => {
+          longPress.current = true;
+          setMenuOpen(true);
+        }, APPUI_LONG_MS);
+      }}
+      onPointerUp={() => clearTimeout(minuteur.current)}
+      onPointerLeave={() => clearTimeout(minuteur.current)}
+      onPointerCancel={() => clearTimeout(minuteur.current)}
       className={`${GRID} group rounded-md px-3 py-2 transition-colors hover:bg-elevated ${
         isCurrent ? "bg-elevated/60" : ""
       } ${unavailable ? "opacity-40" : ""}`}
@@ -469,6 +510,8 @@ function TrackRow({
           onCorrect={onCorrect}
           onMatch={onMatch}
           onSyncLyrics={onSyncLyrics}
+          open={menuOpen}
+          onOpenChange={setMenuOpen}
           {...(onRemoveFromPlaylist === undefined ? {} : { onRemoveFromPlaylist })}
         />
       </div>
@@ -496,6 +539,8 @@ function RowMenu({
   onMatch,
   onSyncLyrics,
   onRemoveFromPlaylist,
+  open,
+  onOpenChange,
 }: {
   track: TrackSummary;
   isLoved: boolean;
@@ -510,8 +555,11 @@ function RowMenu({
   onMatch: () => void;
   onSyncLyrics: () => void;
   onRemoveFromPlaylist?: () => void;
+  /** L'ouverture appartient à la ligne : l'appui long la déclenche aussi. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const setOpen = onOpenChange;
   /** Deuxième clic exigé avant de retirer de la bibliothèque. */
   const [armed, setArmed] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
@@ -554,7 +602,7 @@ function RowMenu({
         size={16}
         onClick={(event) => {
           event.stopPropagation();
-          setOpen((value) => !value);
+          setOpen(!open);
         }}
         // Sur un écran tactile, ce qui ne se montre qu'au survol ne se montre
         // jamais. Le menu reste donc visible en compact.

@@ -170,6 +170,16 @@ export interface RootSuggestions {
   canBrowse: boolean;
 }
 
+/** Un album de la bibliothèque, tel que la grille l'affiche. */
+export interface AlbumSummary {
+  id: number;
+  title: string;
+  artist: string | null;
+  year: number | null;
+  trackCount: number;
+  artworkHash: string | null;
+}
+
 export interface Preferences {
   /** Comment l'accueil nomme l'utilisateur. Vide : il ne le nomme pas. */
   displayName: string;
@@ -559,6 +569,13 @@ export const ipc = {
    * les habiller en piochant dans une page de bibliothèque perdait tout ce qui
    * se trouvait au-delà.
    */
+  /** Les albums où un artiste apparaît, du plus récent au plus ancien. */
+  artistAlbums: (artistId: number): Promise<AlbumSummary[]> =>
+    invoke<AlbumSummary[]>("artist_albums", { artistId }),
+
+  /** Tous les albums, du plus fourni au moins fourni. */
+  listAlbums: (): Promise<AlbumSummary[]> => invoke<AlbumSummary[]>("list_albums"),
+
   /** Les morceaux d'un album, dans l'ordre du disque. */
   albumTracks: (albumId: number): Promise<TrackSummary[]> =>
     invoke<TrackSummary[]>("album_tracks", { albumId }),

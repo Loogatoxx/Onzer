@@ -10,6 +10,7 @@ import { IdentifyPanel } from "@/features/identify/IdentifyPanel";
 import { SuspectPanel } from "@/features/identify/SuspectPanel";
 import { ArtworkBar } from "@/features/lyrics/ArtworkBar";
 import { AlbumBar } from "@/features/library/AlbumBar";
+import { MaintenanceCard } from "@/features/library/MaintenanceCard";
 import { OfflineBar } from "@/features/library/OfflineBar";
 import { Pager } from "@/features/library/Pager";
 import { LyricsBar } from "@/features/lyrics/LyricsBar";
@@ -38,6 +39,9 @@ import { usePlayback } from "@/features/player/usePlayback";
 import { ShortcutsView } from "@/features/nav/ShortcutsView";
 import { SettingsView } from "@/features/nav/SettingsView";
 import { MoreView } from "@/features/nav/MoreView";
+import { AlbumsView } from "@/features/library/AlbumsView";
+import { AlbumRow } from "@/features/library/AlbumRow";
+import { PlaylistsView } from "@/features/library/PlaylistsView";
 import { SyncView } from "@/features/sync/SyncView";
 import { WrappedView } from "@/features/stats/WrappedView";
 import {
@@ -405,6 +409,8 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       || route.kind === "shortcuts"
       || route.kind === "settings"
       || route.kind === "more"
+      || route.kind === "albums"
+      || route.kind === "playlists"
     ) {
       return;
     }
@@ -997,6 +1003,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
                       onShuffle: (shuffle: boolean) => void playback.toggleShuffle(shuffle),
                       onRepeat: () =>
                         void playback.cycleRepeat(playback.state?.repeat ?? "off"),
+                      onClose: () => setCursor((position) => Math.max(0, position - 1)),
                     }
               }
               onlineCompletion={onlineCompletion}
@@ -1248,27 +1255,32 @@ interface PageProps {
  */
 function CollectionSwitch({
   route,
-  playlists,
   onNavigate,
 }: {
   route: Route;
-  playlists: PlaylistSummary[];
   onNavigate: (route: Route) => void;
 }) {
+  // Les quatre façons d'entrer dans sa propre collection. Elles ne changent
+  // pas avec le contenu : une bibliothèque sans playlist doit quand même dire
+  // que les playlists existent, sinon rien n'apprend qu'on peut en créer.
   const onglets: { cle: string; label: string; route: Route }[] = [
     { cle: "library", label: "Titres", route: { kind: "library" } },
     { cle: "loved", label: "J'aime", route: { kind: "loved" } },
-    ...playlists.map((playlist) => ({
-      cle: `playlist:${playlist.id}`,
-      label: playlist.name,
-      route: { kind: "playlist" as const, id: playlist.id, name: playlist.name },
-    })),
+    { cle: "albums", label: "Albums", route: { kind: "albums" } },
+    { cle: "playlists", label: "Playlists", route: { kind: "playlists" } },
   ];
 
-  const actif = routeKey(route);
+  const actif = onglets.some((onglet) => onglet.cle === routeKey(route))
+    ? routeKey(route)
+    : route.kind === "playlist"
+      ? "playlists"
+      : "";
 
   return (
-    <div className="flex gap-2 overflow-x-auto px-6 pb-1 pt-4">
+    // Le même dégradé que l'en-tête juste en dessous : posé sur le fond de
+    // base, le sélecteur formait une bande d'une autre couleur, comme collée
+    // par-dessus la page.
+    <div className="flex gap-2 overflow-x-auto bg-gradient-to-b from-elevated/70 to-elevated/40 px-6 pb-1 pt-4">
       {onglets.map((onglet) => (
         <button
           key={onglet.cle}
@@ -1295,12 +1307,12 @@ function Page(props: PageProps) {
   // sélecteur : passer de l'une à l'autre est un geste courant, et redescendre
   // dans un menu pour cela serait un détour.
   const collection =
-    route.kind === "library" || route.kind === "loved" || route.kind === "playlist" ? (
-      <CollectionSwitch
-        route={route}
-        playlists={props.playlists}
-        onNavigate={props.onNavigate}
-      />
+    route.kind === "library"
+    || route.kind === "loved"
+    || route.kind === "playlist"
+    || route.kind === "albums"
+    || route.kind === "playlists" ? (
+      <CollectionSwitch route={route} onNavigate={props.onNavigate} />
     ) : null;
 
   const totalMs = useMemo(
@@ -1369,6 +1381,39 @@ function Page(props: PageProps) {
     return <ShortcutsView />;
   }
 
+  if (route.kind === "albums") {
+    return (
+      <>
+        {collection}
+        <AlbumsView
+          onOpen={(album) =>
+            props.onNavigate({
+              kind: "album",
+              id: album.id,
+              name: album.title,
+              artist: album.artist,
+            })
+          }
+        />
+      </>
+    );
+  }
+
+  if (route.kind === "playlists") {
+    return (
+      <>
+        {collection}
+        <PlaylistsView
+          playlists={props.playlists}
+          onOpen={(playlist) =>
+            props.onNavigate({ kind: "playlist", id: playlist.id, name: playlist.name })
+          }
+          onCreate={props.onCreatePlaylist}
+        />
+      </>
+    );
+  }
+
   if (route.kind === "more") {
     return (
       <MoreView
@@ -1426,6 +1471,19 @@ function Page(props: PageProps) {
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
         />
+
+        <AlbumRow
+          artistId={route.id}
+          onOpen={(album) =>
+            props.onNavigate({
+              kind: "album",
+              id: album.id,
+              name: album.title,
+              artist: album.artist,
+            })
+          }
+        />
+
         {props.children}
       </>
     );
@@ -1571,10 +1629,11 @@ function Page(props: PageProps) {
           onError={props.onError}
         />
 
-        {/* Les doublons ne dépendent d'aucun service : deux exemplaires du
-            même morceau se repèrent sans rien demander à personne, et cette
-            question-là reste valable même sur une bibliothèque impeccable. */}
-        <div className="mt-3 space-y-2">
+        {/* Six bandeaux empilés faisaient un écran de défilement avant le
+            premier morceau. Ils vivent sous une seule porte, qui annonce
+            d'avance s'il y a quelque chose à faire. */}
+        <div className="mt-3">
+          <MaintenanceCard pending={props.counts?.unavailable ?? 0}>
           {props.autoIdentification && (
             <>
               <IdentifyPanel />
@@ -1602,6 +1661,7 @@ function Page(props: PageProps) {
           <ListenBar />
 
           <OfflineBar count={props.counts?.unavailable ?? 0} onChanged={props.onReload} />
+          </MaintenanceCard>
         </div>
 
         <p className="mt-3 truncate font-mono text-[11px] text-ink-faint">

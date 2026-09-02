@@ -92,3 +92,36 @@ pub async fn artist_tracks(
 
     Ok(tracks)
 }
+
+/// Les albums d'un artiste, du plus récent au plus ancien.
+///
+/// # Pourquoi partir de ses morceaux et non de `album_artist_id`
+///
+/// Un featuring range le morceau sous l'album d'un autre. Partir des morceaux
+/// où l'artiste **apparaît** donne donc la vraie liste de ce qu'on trouvera
+/// sur sa page — celle que l'utilisateur attend, et non celle du crédit
+/// principal.
+#[tauri::command]
+pub async fn artist_albums(
+    state: State<'_, AppState>,
+    artist_id: i64,
+) -> Result<Vec<crate::commands::library::AlbumSummary>> {
+    Ok(
+        sqlx::query_as::<_, crate::commands::library::AlbumSummary>(
+            "SELECT al.id, al.title,
+                    (SELECT a.name FROM artists a WHERE a.id = al.album_artist_id) AS artist,
+                    al.year,
+                    COUNT(DISTINCT t.id) AS track_count,
+                    al.artwork_hash
+               FROM albums al
+               JOIN tracks t ON t.album_id = al.id AND t.deleted_at IS NULL
+               JOIN track_artists ta ON ta.track_id = t.id
+              WHERE ta.artist_id = ?
+           GROUP BY al.id
+           ORDER BY al.year DESC, al.title COLLATE NOCASE",
+        )
+        .bind(artist_id)
+        .fetch_all(&state.pool)
+        .await?,
+    )
+}

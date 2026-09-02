@@ -23,6 +23,10 @@ export type Route =
   | { kind: "playing" }
   /** Un album, ouvert depuis la colonne d'une ligne. */
   | { kind: "album"; id: number; name: string; artist: string | null }
+  /** La grille de tous les albums. */
+  | { kind: "albums" }
+  /** La liste des playlists. */
+  | { kind: "playlists" }
   /** Le reste de l'application, sur écran étroit. */
   | { kind: "more" }
   | { kind: "shortcuts" }

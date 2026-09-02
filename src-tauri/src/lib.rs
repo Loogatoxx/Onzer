@@ -282,6 +282,7 @@ pub fn run() {
             commands::library::remove_track,
             commands::library::offline_tracks,
             commands::library::tracks_by_ids,
+            commands::library::album_tracks,
             commands::library::rescue_set_aside,
             commands::library::near_duplicates,
             commands::library::ignore_duplicate_group,
@@ -332,6 +333,7 @@ pub fn run() {
             commands::preferences::preferences,
             commands::preferences::set_online_completion,
             commands::preferences::set_auto_identification,
+            commands::preferences::set_display_name,
             commands::preferences::rebuild_library,
             commands::whisper::whisper_status,
             commands::whisper::listen_and_sync,
@@ -367,6 +369,17 @@ impl Drop for LeveAuRetour {
 /// Lance la révision des albums, si elle n'a pas déjà été appliquée.
 fn spawn_album_revision(pool: SqlitePool, paths: Arc<RwLock<PathResolver>>) {
     tauri::async_runtime::spawn(async move {
+        // La révision interroge MusicBrainz et **réécrit des albums** : c'est
+        // de l'identification automatique, quel que soit le nom qu'on lui
+        // donne. L'utilisateur qui a éteint l'interrupteur voyait pourtant ses
+        // albums changer au démarrage, sans rien avoir demandé.
+        if !commands::preferences::auto_identification(&pool)
+            .await
+            .unwrap_or(true)
+        {
+            return;
+        }
+
         let applied: Option<i64> = db::settings::get(&pool, db::settings::ALBUMS_REVISION)
             .await
             .ok()

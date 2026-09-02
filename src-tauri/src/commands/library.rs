@@ -119,11 +119,13 @@ pub async fn list_tracks(
     state: State<'_, AppState>,
     limit: Option<i64>,
     offset: Option<i64>,
+    sort: Option<repository::Sort>,
 ) -> Result<Vec<repository::TrackSummary>> {
     repository::list_tracks(
         &state.pool,
         limit.unwrap_or(200).clamp(1, 1000),
         offset.unwrap_or(0).max(0),
+        sort.unwrap_or_default(),
     )
     .await
 }
@@ -274,6 +276,26 @@ pub async fn tracks_by_ids(
         .into_iter()
         .filter_map(|id| by_id.get(&id).cloned())
         .collect())
+}
+
+/// Les morceaux d'un album, dans l'ordre du disque.
+#[tauri::command]
+pub async fn album_tracks(
+    state: State<'_, AppState>,
+    album_id: i64,
+) -> Result<Vec<repository::TrackSummary>> {
+    let sql = format!(
+        "SELECT {} FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE t.album_id = ? AND t.deleted_at IS NULL
+       ORDER BY t.disc_no, t.track_no, t.title",
+        repository::TRACK_COLUMNS
+    );
+
+    Ok(sqlx::query_as::<_, repository::TrackSummary>(&sql)
+        .bind(album_id)
+        .fetch_all(&state.pool)
+        .await?)
 }
 
 /// Ce qu'une reprise des fichiers écartés a donné.

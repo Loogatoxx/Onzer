@@ -43,6 +43,19 @@ interface TrackTableProps {
   onMatch: (track: TrackSummary) => void;
   /** Cale à l'oreille les paroles d'un morceau qui les a sans horodatage. */
   onSyncLyrics: (track: TrackSummary) => void;
+  /** Ouvre l'album du morceau. */
+  onOpenAlbum: (track: TrackSummary) => void;
+  /** Ouvre l'écran de lecture, quand on touche le morceau déjà en cours. */
+  onOpenPlaying: () => void;
+  /**
+   * Tri courant, quand la liste en accepte un.
+   *
+   * Absent — les recommandations, une playlist — l'en-tête ne se clique pas :
+   * l'ordre y **porte le sens** (c'est le moteur ou l'utilisateur qui l'a
+   * choisi), et le trier autrement le détruirait.
+   */
+  sort?: TrackSort;
+  onSort?: (column: SortColumn) => void;
   /**
    * Favoris, tenus par la coquille.
    *
@@ -65,6 +78,62 @@ interface TrackTableProps {
   emptyMessage?: string;
 }
 
+/** Les colonnes sur lesquelles une liste peut être triée. */
+export type SortColumn = "title" | "album" | "duration" | "added";
+
+export interface TrackSort {
+  column: SortColumn;
+  descending: boolean;
+}
+
+/**
+ * En-tête de colonne cliquable.
+ *
+ * # Pourquoi la flèche et pas seulement la couleur
+ *
+ * Savoir *qu'une* colonne trie ne dit pas dans quel sens. La flèche le montre,
+ * et le second clic l'inverse — c'est le geste que tout tableau a appris à
+ * faire depuis trente ans.
+ */
+function SortHeader({
+  column,
+  label,
+  sort,
+  onSort,
+  className = "",
+  children,
+}: {
+  column: SortColumn;
+  label: string;
+  sort: TrackSort | undefined;
+  onSort: ((column: SortColumn) => void) | undefined;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  if (onSort === undefined) {
+    return <span className={className}>{children ?? label}</span>;
+  }
+
+  const actif = sort?.column === column;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column)}
+      className={`flex items-center gap-1 text-left uppercase tracking-[0.14em] transition-colors hover:text-ink ${
+        actif ? "text-ink" : ""
+      } ${className}`}
+    >
+      {children ?? label}
+      {actif && (
+        <span className={sort?.descending === true ? "" : "rotate-180"}>
+          <Icon name="chevronDown" size={13} />
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function TrackTable({
   tracks,
   currentTrackId,
@@ -78,11 +147,15 @@ export function TrackTable({
   onCorrect,
   onMatch,
   onSyncLyrics,
+  onOpenAlbum,
+  onOpenPlaying,
   loved,
   playlists,
   onAddToPlaylist,
   onRemoveAt,
   reasons,
+  sort,
+  onSort,
   emptyMessage = "Rien à afficher ici.",
 }: TrackTableProps) {
   if (tracks.length === 0) {
@@ -97,15 +170,29 @@ export function TrackTable({
         className={`${GRID} sticky top-[64px] z-10 mb-1 border-b border-line bg-surface/85 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint backdrop-blur`}
       >
         <span className="text-center">#</span>
-        <span>Titre</span>
+        <SortHeader column="title" label="Titre" sort={sort} onSort={onSort} />
         {/* Colonne sans en-tête : « Paroles » écrit au-dessus d'une pastille
             large d'un caractère déborderait sur le titre. L'icône se comprend
             au survol, où elle porte son infobulle. */}
         <span aria-label="Paroles" />
-        <span className="hidden lg:block">Album</span>
-        <span className="hidden xl:block">Ajouté</span>
+        <SortHeader
+          column="album"
+          label="Album"
+          sort={sort}
+          onSort={onSort}
+          className="hidden lg:block"
+        />
+        <SortHeader
+          column="added"
+          label="Ajouté"
+          sort={sort}
+          onSort={onSort}
+          className="hidden xl:block"
+        />
         <span className="flex justify-end pr-[4.5rem]">
-          <Icon name="clock" size={15} />
+          <SortHeader column="duration" label="" sort={sort} onSort={onSort}>
+            <Icon name="clock" size={15} />
+          </SortHeader>
         </span>
       </div>
 
@@ -127,6 +214,8 @@ export function TrackTable({
             onCorrect={() => onCorrect(track)}
             onMatch={() => onMatch(track)}
             onSyncLyrics={() => onSyncLyrics(track)}
+            onOpenAlbum={() => onOpenAlbum(track)}
+            onOpenPlaying={onOpenPlaying}
             playlists={playlists}
             onAddToPlaylist={(playlistId) => onAddToPlaylist(playlistId, track.id)}
             {...(onRemoveAt === undefined
@@ -157,6 +246,8 @@ interface TrackRowProps {
   onCorrect: () => void;
   onMatch: () => void;
   onSyncLyrics: () => void;
+  onOpenAlbum: () => void;
+  onOpenPlaying: () => void;
   playlists: PlaylistSummary[];
   onAddToPlaylist: (playlistId: number) => void;
   /** Fourni uniquement dans une playlist : retirer la ligne à cette position. */
@@ -186,6 +277,8 @@ function TrackRow({
   onCorrect,
   onMatch,
   onSyncLyrics,
+  onOpenAlbum,
+  onOpenPlaying,
   playlists,
   onAddToPlaylist,
   onRemoveFromPlaylist,
@@ -195,8 +288,20 @@ function TrackRow({
 
   return (
     <li
-      onDoubleClick={() => {
-        if (!unavailable) onPlay();
+      // # Un clic, pas deux
+      //
+      // Le double-clic vient du bureau, où une liste sert autant à
+      // sélectionner qu'à ouvrir. Ici on ne sélectionne rien : on écoute. Et
+      // sur un écran tactile, le double-clic n'existe simplement pas.
+      //
+      // Les zones qui font autre chose — nom d'artiste, album, menu — arrêtent
+      // la propagation elles-mêmes.
+      onClick={() => {
+        if (unavailable) return;
+        // Relancer depuis le début un morceau déjà en cours n'est pas ce qu'on
+        // demande en le touchant : on veut le **voir**.
+        if (isCurrent) onOpenPlaying();
+        else onPlay();
       }}
       className={`${GRID} group rounded-md px-3 py-2 transition-colors hover:bg-elevated ${
         isCurrent ? "bg-elevated/60" : ""
@@ -238,7 +343,23 @@ function TrackRow({
             {track.title}
           </p>
           <p className="truncate text-[13px] text-ink-muted">
-            {track.artist ?? "Artiste inconnu"}
+            {track.artist === null ? (
+              "Artiste inconnu"
+            ) : (
+              // Le nom d'un artiste est une porte : c'est ce qu'on attend de
+              // lui partout ailleurs, et le lire sans pouvoir y aller donne
+              // l'impression d'une impasse.
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenArtist();
+                }}
+                className="truncate transition-colors hover:text-ink hover:underline"
+              >
+                {track.artist}
+              </button>
+            )}
             {unavailable && <span className="ml-2 text-warn">hors ligne</span>}
           </p>
           {reason !== undefined && (
@@ -261,7 +382,20 @@ function TrackRow({
 
       {/* ── Album ────────────────────────────────────────────────────── */}
       <p className="hidden min-w-0 truncate text-[13px] text-ink-muted lg:block">
-        {track.album ?? "—"}
+        {track.album === null ? (
+          "—"
+        ) : (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenAlbum();
+            }}
+            className="max-w-full truncate transition-colors hover:text-ink hover:underline"
+          >
+            {track.album}
+          </button>
+        )}
       </p>
 
       {/* ── Date d'ajout ─────────────────────────────────────────────── */}

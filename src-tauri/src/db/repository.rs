@@ -858,7 +858,7 @@ pub const TRACK_COLUMNS: &str = "t.id, t.title,
                    JOIN artists a ON a.id = ta.artist_id
                   WHERE ta.track_id = t.id AND ta.role = 'main'
                   ORDER BY ta.position LIMIT 1) AS artist,
-                al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
+                al.title AS album, t.album_id, t.year, t.track_no, t.duration_ms, t.format,
                 t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
                 (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics,
                 (t.lyrics LIKE '%[__:__%')               AS has_synced";
@@ -871,6 +871,9 @@ pub struct TrackSummary {
     pub title: String,
     pub artist: Option<String>,
     pub album: Option<String>,
+    /// Pour ouvrir la page de l'album : son nom ne suffit pas à le désigner,
+    /// deux albums homonymes existent.
+    pub album_id: Option<i64>,
     pub year: Option<i64>,
     pub track_no: Option<i64>,
     pub duration_ms: i64,
@@ -894,40 +897,91 @@ pub struct TrackSummary {
 }
 
 /// Liste les morceaux, du plus récemment ajouté au plus ancien.
-pub async fn list_tracks(pool: &SqlitePool, limit: i64, offset: i64) -> Result<Vec<TrackSummary>> {
-    let tracks = sqlx::query_as::<_, TrackSummary>(
-        "SELECT
-             t.id,
-             t.title,
-             -- L'artiste principal, choisi par sa position dans le crédit.
-             (SELECT a.name FROM track_artists ta
-                JOIN artists a ON a.id = ta.artist_id
-               WHERE ta.track_id = t.id AND ta.role = 'main'
-               ORDER BY ta.position LIMIT 1)          AS artist,
-             al.title                                 AS album,
-             t.year,
-             t.track_no,
-             t.duration_ms,
-             t.format,
-             t.relative_path,
-             t.is_available,
-             al.artwork_hash,
-             t.is_loved,
-             t.added_at,
-             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics,
-             (t.lyrics LIKE '%[__:__%')                 AS has_synced
-         FROM tracks t
-         LEFT JOIN albums al ON al.id = t.album_id
-         WHERE t.deleted_at IS NULL
-         ORDER BY t.added_at DESC, t.id DESC
-         LIMIT ? OFFSET ?",
-    )
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await?;
+pub async fn list_tracks(
+    pool: &SqlitePool,
+    limit: i64,
+    offset: i64,
+    sort: Sort,
+) -> Result<Vec<TrackSummary>> {
+    let sql = format!(
+        "SELECT {TRACK_COLUMNS}
+           FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE t.deleted_at IS NULL
+       ORDER BY {}
+          LIMIT ? OFFSET ?",
+        sort.clause()
+    );
+
+    let tracks = sqlx::query_as::<_, TrackSummary>(&sql)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?;
 
     Ok(tracks)
+}
+
+/// Comment ordonner une liste de morceaux.
+///
+/// # Pourquoi le tri se fait en base et non à l'écran
+///
+/// La bibliothèque s'affiche par pages de cent (ADR-064). Trier ce qui est
+/// affiché ne trierait que ces cent-là : « ordre alphabétique » rendrait une
+/// page rangée au milieu d'un tout qui ne l'est pas — plus déroutant que pas
+/// de tri du tout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sort {
+    pub column: SortColumn,
+    /// Ordre décroissant : Z→A, du plus long au plus court, du plus récent.
+    pub descending: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SortColumn {
+    /// Ordre d'entrée dans la bibliothèque : le défaut, et le seul qui ne
+    /// prétende rien.
+    Added,
+    Title,
+    Artist,
+    Album,
+    Duration,
+}
+
+impl Default for Sort {
+    fn default() -> Self {
+        Self {
+            column: SortColumn::Added,
+            descending: true,
+        }
+    }
+}
+
+impl Sort {
+    /// La clause `ORDER BY` correspondante.
+    ///
+    /// Aucune donnée de l'utilisateur n'entre ici : les colonnes sont un jeu
+    /// fermé, et le sens de tri un booléen. C'est ce qui rend l'interpolation
+    /// dans la requête sans danger.
+    fn clause(self) -> String {
+        let sens = if self.descending { "DESC" } else { "ASC" };
+
+        let critere = match self.column {
+            SortColumn::Added => "t.added_at",
+            // `COLLATE NOCASE` : sans lui, « Zaho » précède « adele », l'ordre
+            // ASCII plaçant toutes les majuscules avant les minuscules.
+            SortColumn::Title => "t.title COLLATE NOCASE",
+            SortColumn::Artist => "artist COLLATE NOCASE",
+            SortColumn::Album => "album COLLATE NOCASE",
+            SortColumn::Duration => "t.duration_ms",
+        };
+
+        // Départage stable : deux morceaux de même durée doivent toujours
+        // sortir dans le même ordre, sans quoi la page change à chaque appel.
+        format!("{critere} {sens}, t.id DESC")
+    }
 }
 
 /// Charge des morceaux par identifiant, **en préservant l'ordre demandé**.
@@ -941,19 +995,10 @@ pub async fn tracks_by_ids(pool: &SqlitePool, ids: &[i64]) -> Result<Vec<TrackSu
 
     let placeholders = std::iter::repeat_n("?", ids.len()).collect::<Vec<_>>().join(",");
     let sql = format!(
-        "SELECT
-             t.id, t.title,
-             (SELECT a.name FROM track_artists ta
-                JOIN artists a ON a.id = ta.artist_id
-               WHERE ta.track_id = t.id AND ta.role = 'main'
-               ORDER BY ta.position LIMIT 1)          AS artist,
-             al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-             t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
-             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics,
-             (t.lyrics LIKE '%[__:__%')                 AS has_synced
-         FROM tracks t
-         LEFT JOIN albums al ON al.id = t.album_id
-         WHERE t.id IN ({placeholders}) AND t.deleted_at IS NULL"
+        "SELECT {TRACK_COLUMNS}
+           FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE t.id IN ({placeholders}) AND t.deleted_at IS NULL"
     );
 
     let mut query = sqlx::query_as::<_, TrackSummary>(&sql);
@@ -983,24 +1028,17 @@ pub async fn search_tracks(pool: &SqlitePool, query: &str, limit: i64) -> Result
         return Ok(Vec::new());
     }
 
-    let tracks = sqlx::query_as::<_, TrackSummary>(
-        "SELECT
-             t.id, t.title,
-             (SELECT a.name FROM track_artists ta
-                JOIN artists a ON a.id = ta.artist_id
-               WHERE ta.track_id = t.id AND ta.role = 'main'
-               ORDER BY ta.position LIMIT 1)          AS artist,
-             al.title AS album, t.year, t.track_no, t.duration_ms, t.format,
-             t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
-             (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics,
-             (t.lyrics LIKE '%[__:__%')                 AS has_synced
-         FROM tracks_fts f
-         JOIN tracks t ON t.id = f.track_id
-         LEFT JOIN albums al ON al.id = t.album_id
-         WHERE tracks_fts MATCH ? AND t.deleted_at IS NULL
-         ORDER BY rank
-         LIMIT ?",
-    )
+    let sql = format!(
+        "SELECT {TRACK_COLUMNS}
+           FROM tracks_fts f
+           JOIN tracks t ON t.id = f.track_id
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE tracks_fts MATCH ? AND t.deleted_at IS NULL
+       ORDER BY rank
+          LIMIT ?"
+    );
+
+    let tracks = sqlx::query_as::<_, TrackSummary>(&sql)
     .bind(terms)
     .bind(limit)
     .fetch_all(pool)
@@ -1121,12 +1159,18 @@ mod tests {
         let racine = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut fautives = Vec::new();
 
+        // Le motif est assemblé à l'exécution : écrit d'un seul tenant, il
+        // apparaîtrait dans ce fichier de test et s'y dénoncerait lui-même.
+        let marqueur = format!("AS has_{}", "lyrics");
+
         parcourir(&racine, &mut |chemin, contenu| {
-            // La constante elle-même est la seule autorisée à la contenir.
-            if chemin.ends_with("db/repository.rs") {
-                return;
-            }
-            if contenu.contains("AS has_lyrics") {
+            // Une seule occurrence est permise dans ce fichier : la constante
+            // elle-même. L'exempter entièrement avait laissé passer deux
+            // requêtes écrites à la main juste en dessous — et c'est
+            // exactement ce que ce test devait attraper.
+            let permises = usize::from(chemin.ends_with("db/repository.rs"));
+
+            if contenu.matches(marqueur.as_str()).count() > permises {
                 fautives.push(chemin.display().to_string());
             }
         });

@@ -23,6 +23,55 @@ import { ipc, type ArtistSummary } from "@/lib/ipc";
  * ne télécharge pas de portraits : cela supposerait d'aller les chercher chez
  * un tiers pour un ornement, et d'en gérer le cache.
  */
+/** Les dispositions possibles de la grille d'artistes. */
+type Disposition = "grandes" | "petites" | "liste";
+
+const CLE_DISPOSITION = "onzer.artistes.disposition";
+
+/**
+ * Le sélecteur de disposition.
+ *
+ * # Pourquoi trois et pas deux
+ *
+ * Quatre cents artistes en grandes bulles font défiler longtemps ; en liste,
+ * on lit vite mais on ne reconnaît plus les visages. Les petites bulles sont
+ * le compromis, et personne ne peut décider à la place de l'autre lequel des
+ * trois lui convient.
+ */
+function Disposition({
+  valeur,
+  onChange,
+}: {
+  valeur: Disposition;
+  onChange: (valeur: Disposition) => void;
+}) {
+  const choix: { cle: Disposition; icone: "library" | "artist" | "queue"; titre: string }[] = [
+    { cle: "grandes", icone: "artist", titre: "Grandes bulles" },
+    { cle: "petites", icone: "library", titre: "Petites bulles" },
+    { cle: "liste", icone: "queue", titre: "En liste" },
+  ];
+
+  return (
+    <div className="flex items-center gap-1 rounded-full bg-elevated p-1">
+      {choix.map((option) => (
+        <button
+          key={option.cle}
+          type="button"
+          title={option.titre}
+          aria-label={option.titre}
+          aria-pressed={valeur === option.cle}
+          onClick={() => onChange(option.cle)}
+          className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+            valeur === option.cle ? "bg-raised text-ink" : "text-ink-faint hover:text-ink-muted"
+          }`}
+        >
+          <Icon name={option.icone} size={15} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ArtistsView({
   onOpen,
 }: {
@@ -30,6 +79,32 @@ export function ArtistsView({
 }) {
   const [artists, setArtists] = useState<ArtistSummary[] | null>(null);
   const [query, setQuery] = useState("");
+
+  /**
+   * Comment on veut les voir.
+   *
+   * Le choix est retenu d'une visite à l'autre : c'est une préférence, pas une
+   * décision qu'on veut reprendre à chaque fois. Il vit dans le navigateur
+   * plutôt qu'en base — perdre l'affichage préféré ne coûte qu'un clic, et il
+   * n'a rien à faire dans la bibliothèque de quelqu'un.
+   */
+  const [disposition, setDisposition] = useState<Disposition>(() => {
+    try {
+      const retenu = localStorage.getItem(CLE_DISPOSITION);
+      if (retenu === "liste" || retenu === "petites" || retenu === "grandes") return retenu;
+    } catch {
+      // Navigation privée, stockage refusé : la valeur par défaut suffit.
+    }
+    return "grandes";
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CLE_DISPOSITION, disposition);
+    } catch {
+      // Sans mémoire, le choix ne dure que la session. Ce n'est pas grave.
+    }
+  }, [disposition]);
 
   useEffect(() => {
     void ipc.listArtists().then(setArtists).catch(() => setArtists([]));
@@ -58,6 +133,8 @@ export function ArtistsView({
           </p>
         </div>
 
+        <Disposition valeur={disposition} onChange={setDisposition} />
+
         {/* Filtre local, et non la recherche générale : on cherche ici parmi
             des noms qu'on possède, pas dans tout le catalogue. */}
         <div className="relative">
@@ -78,10 +155,41 @@ export function ArtistsView({
         <p className="py-16 text-center text-sm text-ink-muted">
           Aucun artiste ne correspond à « {query.trim()} ».
         </p>
+      ) : disposition === "liste" ? (
+        <ul className="mt-6">
+          {shown.map((artist) => (
+            <li key={artist.id}>
+              <button
+                type="button"
+                onClick={() => onOpen(artist)}
+                className="flex w-full items-center gap-4 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface"
+              >
+                <Artwork hash={artist.coverHash} className="h-12 w-12 shrink-0 rounded-full" />
+
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-medium text-ink">
+                    {artist.name}
+                  </span>
+                  <span className="numerals block text-[12px] text-ink-faint">
+                    {artist.trackCount} titre{artist.trackCount > 1 ? "s" : ""}
+                  </span>
+                </span>
+
+                <span className="shrink-0 text-ink-faint">
+                  <Icon name="chevronRight" size={16} />
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       ) : (
         <div
           className="mt-6 grid gap-4"
-          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(10rem, 1fr))" }}
+          style={{
+            gridTemplateColumns: `repeat(auto-fill, minmax(${
+              disposition === "grandes" ? "10rem" : "6.5rem"
+            }, 1fr))`,
+          }}
         >
           {shown.map((artist) => (
             <button

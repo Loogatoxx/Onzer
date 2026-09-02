@@ -19,13 +19,15 @@ import { CorrectDialog } from "@/features/library/CorrectDialog";
 import { MatchDialog } from "@/features/library/MatchDialog";
 import { DuplicatePanel } from "@/features/library/DuplicatePanel";
 import { TrackTable } from "@/features/library/TrackTable";
-import { Sidebar, type Route } from "@/features/nav/Sidebar";
+import { Sidebar, routeKey, type Route } from "@/features/nav/Sidebar";
+import type { SortColumn, TrackSort } from "@/features/library/TrackTable";
 import { MobileTabs } from "@/features/nav/MobileTabs";
 import { MiniPlayer } from "@/features/player/MiniPlayer";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { TopBar } from "@/features/nav/TopBar";
 import { NowPlayingPanel, type PanelTab } from "@/features/player/NowPlayingPanel";
 import { LyricsView } from "@/features/player/LyricsView";
+import { NowPlayingView } from "@/features/player/NowPlayingView";
 import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
 import { ShortcutsView } from "@/features/nav/ShortcutsView";
@@ -144,6 +146,24 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   const [syncing, setSyncing] = useState<TrackSummary | null>(null);
   const [syncNote, setSyncNote] = useState<string | null>(null);
 
+  /**
+   * Ouvre l'album d'un morceau connu par son seul identifiant.
+   *
+   * La file de lecture ne porte pas l'album : il faut le demander à la base,
+   * comme on le fait déjà pour l'artiste.
+   */
+  async function openAlbumOf(trackId: number) {
+    const [track] = await ipc.tracksByIds([trackId]);
+    if (track?.albumId == null) return;
+
+    navigate({
+      kind: "album",
+      id: track.albumId,
+      name: track.album ?? "Album",
+      artist: track.artist,
+    });
+  }
+
   function syncLyrics(track: TrackSummary) {
     setSyncing(track);
     setSyncNote(null);
@@ -168,8 +188,55 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   const repeats = useRef(0);
 
   const importing = progress !== null;
+  /**
+   * Tri courant de la bibliothèque.
+   *
+   * `null` : l'ordre d'entrée, celui qui ne prétend rien. La bibliothèque
+   * étant paginée, le tri se fait **en base** — trier les cent lignes
+   * affichées rendrait une page rangée au milieu d'un tout qui ne l'est pas.
+   * Les listes qui arrivent entières se trient à l'écran, plus bas.
+   */
+  const [sort, setSort] = useState<TrackSort | null>(null);
+
+  /** Un clic sur une colonne : on la prend, ou on l'inverse. */
+  const toggleSort = useCallback((column: SortColumn) => {
+    setPage(0);
+    setSort((courant) =>
+      courant?.column === column
+        ? { column, descending: !courant.descending }
+        : { column, descending: column === "added" },
+    );
+  }, []);
+
   const searching = query.trim() !== "";
-  const shown = searching ? (results ?? []) : tracks;
+
+  /**
+   * Les listes qui arrivent entières se trient ici.
+   *
+   * La bibliothèque, elle, est triée par la base : elle est paginée, et cent
+   * lignes rangées au milieu de deux mille qui ne le sont pas seraient pires
+   * que pas de tri.
+   */
+  const shown = useMemo(() => {
+    const liste = searching ? (results ?? []) : tracks;
+    if (sort === null || route.kind === "library") return liste;
+
+    const sens = sort.descending ? -1 : 1;
+    const texte = (value: string | null) => (value ?? "").toLocaleLowerCase("fr");
+
+    return [...liste].sort((gauche, droite) => {
+      switch (sort.column) {
+        case "title":
+          return sens * texte(gauche.title).localeCompare(texte(droite.title), "fr");
+        case "album":
+          return sens * texte(gauche.album).localeCompare(texte(droite.album), "fr");
+        case "duration":
+          return sens * (gauche.durationMs - droite.durationMs);
+        default:
+          return sens * (gauche.addedAt - droite.addedAt);
+      }
+    });
+  }, [searching, results, tracks, sort, route.kind]);
 
   /** Le morceau en cours. Dérivé tôt : les raccourcis clavier s'en servent. */
   const current = playback.state?.current ?? null;
@@ -232,6 +299,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   /** Sur mobile, la recherche est un mode et non une page. */
   const [searchOpen, setSearchOpen] = useState(false);
 
+
   /**
    * La complétion en ligne est-elle proposée ?
    *
@@ -260,6 +328,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       || route.kind === "home"
       || route.kind === "artists"
       || route.kind === "lyrics"
+      || route.kind === "playing"
       || route.kind === "sync"
       || route.kind === "shortcuts"
       || route.kind === "settings"
@@ -278,8 +347,10 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           return ipc.categoryTracks(route.key);
         case "artist":
           return ipc.artistTracks(route.id);
+        case "album":
+          return ipc.albumTracks(route.id);
         default:
-          return ipc.listTracks(PAGE_SIZE, page * PAGE_SIZE);
+          return ipc.listTracks(PAGE_SIZE, page * PAGE_SIZE, sort ?? undefined);
       }
     };
 
@@ -306,7 +377,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
     return () => {
       active = false;
     };
-  }, [route, revision, page]);
+  }, [route, revision, page, sort]);
 
   // Changer de destination remet à la première page : rester à la page 12
   // d'une autre liste n'aurait aucun sens.
@@ -648,6 +719,19 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       onCorrect={setCorrecting}
       onMatch={setMatching}
       onSyncLyrics={syncLyrics}
+      {...(sort === null ? {} : { sort })}
+      onSort={toggleSort}
+      onOpenPlaying={() => navigate({ kind: "playing" })}
+      onOpenAlbum={(track) => {
+        if (track.albumId !== null) {
+          navigate({
+            kind: "album",
+            id: track.albumId,
+            name: track.album ?? "Album",
+            artist: track.artist,
+          });
+        }
+      }}
       onRemove={(id) => {
         void ipc
           .removeTrack(id)
@@ -707,12 +791,34 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
     );
 
   return (
-    <div className="flex h-full flex-col bg-base">
+    <div
+      className="flex h-full flex-col bg-base"
+      // L'application se dessine sous la barre d'état — c'est ce qui permet à
+      // la couleur de fond de la remplir plutôt que de laisser une bande
+      // noire. Encore faut-il que le contenu, lui, commence en dessous.
+      style={mobile ? { paddingTop: "env(safe-area-inset-top)" } : undefined}
+    >
       {/* Les feux de circulation de macOS vivent ici : la fenêtre n'a pas de
           barre de titre, il faut donc lui réserver sa bande de glissement.
           Un téléphone n'a ni fenêtre ni feux — la bande n'y serait qu'un vide
           de neuf pixels en haut de l'écran. */}
       {!mobile && <div className="drag-region h-9 shrink-0" />}
+
+      {/* Les bandeaux flottent **au-dessus** de la page.
+          Insérés dans le flux, ils poussaient tout le contenu vers le bas à
+          chaque import, et disparaissaient dès qu'on changeait de page — au
+          moment précis où l'on voulait savoir où en était le transfert. */}
+      <Banners
+        progress={progress}
+        summary={summary}
+        error={error ?? playback.error}
+        mobile={mobile}
+        onDismissSummary={() => setSummary(null)}
+        onDismissError={() => {
+          setError(null);
+          playback.dismissError();
+        }}
+      />
 
       <div className={`flex min-h-0 flex-1 ${mobile ? "" : "gap-2 px-2"}`}>
         {!mobile && (
@@ -756,18 +862,17 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           />
           )}
 
-          <Banners
-            progress={progress}
-            summary={summary}
-            error={error ?? playback.error}
-            onDismissSummary={() => setSummary(null)}
-            onDismissError={() => {
-              setError(null);
-              playback.dismissError();
-            }}
-          />
-
-          {searching ? (
+          {/* La clé change à chaque destination : c'est ce qui fait rejouer
+              l'animation d'entrée, React remontant alors le sous-arbre. */}
+          <div key={routeKey(route)} className="page-entree">
+          {mobile && searchOpen && !searching ? (
+            // Sous le champ vide, la bibliothèque entière n'a rien à faire :
+            // elle est à un onglet de là, et l'afficher ici laisse croire que
+            // ce sont des résultats.
+            <p className="px-6 py-16 text-center text-[13px] leading-relaxed text-ink-faint">
+              Cherche un titre, un artiste ou un album.
+            </p>
+          ) : searching ? (
             <>
               <SearchHeader query={query} count={shown.length} />
               {paged}
@@ -802,6 +907,22 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               positionMs={playback.state?.positionMs ?? 0}
               onSeek={(position) => void playback.seek(position)}
               onReload={bump}
+              playback={
+                playback.state === null || current === null
+                  ? null
+                  : {
+                      state: playback.state,
+                      isLoved: loved.has(current.trackId),
+                      onToggle: () => void playback.toggle(),
+                      onNext: () => void playback.next(),
+                      onPrevious: () => void playback.previous(),
+                      onSeek: (position: number) => void playback.seek(position),
+                      onToggleLoved: () => void toggleLoved(current.trackId),
+                      onOpenLyrics: () => openLyrics(),
+                      onOpenArtist: () => void openArtistOf(current.trackId),
+                      onOpenAlbum: () => void openAlbumOf(current.trackId),
+                    }
+              }
               onlineCompletion={onlineCompletion}
               autoIdentification={autoIdentification}
               onGenerated={showGenerated}
@@ -856,6 +977,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               {paged}
             </Page>
           )}
+          </div>
         </main>
 
         {!mobile && panel !== "closed" && current !== null && (
@@ -930,7 +1052,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               state={playback.state}
               onToggle={() => void playback.toggle()}
               onNext={() => void playback.next()}
-              onOpen={() => openLyrics()}
+              onOpen={() => navigate({ kind: "playing" })}
             />
           )}
 
@@ -1010,6 +1132,8 @@ interface PageProps {
   onSeek: (positionMs: number) => void;
   /** Recharge la liste affichée après une correction de tags. */
   onReload: () => void;
+  /** Tout ce qu'il faut à l'écran de lecture, ou `null` si rien ne joue. */
+  playback: React.ComponentProps<typeof NowPlayingView> | null;
   /** Les outils de complétion en ligne sont-ils proposés ? */
   onlineCompletion: boolean;
   /** L'identification acoustique est-elle proposée ? */
@@ -1103,6 +1227,18 @@ function Page(props: PageProps) {
     return <SettingsView onChanged={props.onReload} />;
   }
 
+  if (route.kind === "playing") {
+    if (props.playback === null) {
+      return (
+        <p className="px-6 py-20 text-center text-sm text-ink-muted">
+          Lance un morceau pour le voir ici.
+        </p>
+      );
+    }
+
+    return <NowPlayingView {...props.playback} />;
+  }
+
   if (route.kind === "lyrics") {
     return (
       <LyricsView
@@ -1129,6 +1265,31 @@ function Page(props: PageProps) {
               <CoverTile name="artist" />
             ) : (
               <Artwork hash={route.coverHash} className="h-40 w-40 rounded-full sm:h-52 sm:w-52" />
+            )
+          }
+          onPlay={play}
+          {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+        />
+        {props.children}
+      </>
+    );
+  }
+
+  if (route.kind === "album") {
+    return (
+      <>
+        <PageHeader
+          eyebrow={route.artist ?? "Album"}
+          title={route.name}
+          meta={meta}
+          cover={
+            tracks[0]?.artworkHash == null ? (
+              <CoverTile name="library" />
+            ) : (
+              <Artwork
+                hash={tracks[0].artworkHash}
+                className="h-40 w-40 rounded-lg sm:h-52 sm:w-52"
+              />
             )
           }
           onPlay={play}
@@ -1348,25 +1509,56 @@ function SearchHeader({ query, count }: { query: string; count: number }) {
 //  Bandeaux
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Les nouvelles passagères : import en cours, bilan, erreur.
+ *
+ * # Pourquoi elles flottent
+ *
+ * Dans le flux de la page, elles poussaient tout le contenu vers le bas à
+ * chaque import — la liste sautait, la position de défilement se perdait — et
+ * elles disparaissaient au premier changement de page, c'est-à-dire au moment
+ * où l'on voulait justement suivre le transfert.
+ *
+ * # Pourquoi le bilan s'efface tout seul
+ *
+ * « 2351 importés » est une nouvelle, pas un état. Une fois lue, elle n'a plus
+ * rien à dire et n'a aucune raison d'attendre un clic. L'erreur, elle, reste :
+ * on ne fait pas disparaître un problème au bout de dix secondes.
+ */
 function Banners({
   progress,
   summary,
   error,
+  mobile,
   onDismissSummary,
   onDismissError,
 }: {
   progress: ScanProgress | null;
   summary: ScanSummary | null;
   error: string | null;
+  mobile: boolean;
   onDismissSummary: () => void;
   onDismissError: () => void;
 }) {
+  useEffect(() => {
+    if (summary === null) return;
+
+    const minuteur = setTimeout(onDismissSummary, 10_000);
+    return () => clearTimeout(minuteur);
+  }, [summary, onDismissSummary]);
+
+  if (progress === null && summary === null && error === null) return null;
+
   return (
-    <>
+    <div
+      className={`pointer-events-none fixed left-1/2 z-50 w-full max-w-lg -translate-x-1/2 space-y-2 px-3 ${
+        mobile ? "top-[calc(env(safe-area-inset-top)+0.75rem)]" : "top-12"
+      }`}
+    >
       {progress !== null && <ProgressBar progress={progress} />}
 
       {summary !== null && (
-        <div className="mx-4 mt-2 rounded-lg bg-elevated px-4 py-3">
+        <div className="pointer-events-auto rounded-2xl bg-elevated px-4 py-3 shadow-2xl shadow-black/50">
           <div className="flex items-start justify-between gap-4 text-[13px] text-ink-muted">
             <div>
               <p>
@@ -1403,7 +1595,7 @@ function Banners({
       )}
 
       {error !== null && (
-        <div className="mx-4 mt-2 flex items-start justify-between gap-4 rounded-lg bg-danger/10 px-4 py-3">
+        <div className="pointer-events-auto flex items-start justify-between gap-4 rounded-2xl bg-danger/15 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur-sm">
           <p className="text-[13px] leading-relaxed text-danger">{error}</p>
           <button
             type="button"
@@ -1414,7 +1606,7 @@ function Banners({
           </button>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -1422,7 +1614,7 @@ function ProgressBar({ progress }: { progress: ScanProgress }) {
   const ratio = progress.total === 0 ? 0 : progress.processed / progress.total;
 
   return (
-    <div className="mx-4 mt-2 rounded-lg bg-elevated px-4 py-3">
+    <div className="pointer-events-auto rounded-2xl bg-elevated px-4 py-3 shadow-2xl shadow-black/50">
       <div className="h-1 overflow-hidden rounded-full bg-raised">
         <div
           className="h-full rounded-full bg-ink transition-[width] duration-150"

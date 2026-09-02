@@ -19,6 +19,10 @@ export type Route =
   /** Comparer une playlist Spotify à la bibliothèque. */
   | { kind: "sync" }
   /** L'aide-mémoire des raccourcis clavier. */
+  /** L'écran de lecture : pochette, infos, commandes. */
+  | { kind: "playing" }
+  /** Un album, ouvert depuis la colonne d'une ligne. */
+  | { kind: "album"; id: number; name: string; artist: string | null }
   | { kind: "shortcuts" }
   /** Réglages et remise à zéro de la bibliothèque. */
   | { kind: "settings" }
@@ -30,6 +34,7 @@ export function routeKey(route: Route): string {
   if (route.kind === "playlist") return `playlist:${route.id}`;
   if (route.kind === "category") return `category:${route.key}`;
   if (route.kind === "artist") return `artist:${route.id}`;
+  if (route.kind === "album") return `album:${route.id}`;
   return route.kind;
 }
 

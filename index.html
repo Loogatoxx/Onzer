@@ -2,7 +2,13 @@
 <html lang="fr" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` étend la page sous la barre d'état et la barre de
+         gestes ; sans lui, `env(safe-area-inset-*)` vaut toujours zéro et il
+         n'y a aucun moyen de savoir où ces barres s'arrêtent. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+    />
     <title>Onzer</title>
   </head>
   <body>

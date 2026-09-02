@@ -46,6 +46,18 @@ export function SettingsView({ onChanged }: { onChanged: () => void }) {
       </h1>
 
       <div className="mt-8 max-w-2xl space-y-3">
+        <NameSetting
+          value={preferences?.displayName ?? ""}
+          onSave={(name) => {
+            if (preferences === null) return;
+            setPreferences({ ...preferences, displayName: name });
+            void ipc
+              .setDisplayName(name)
+              .then(onChanged)
+              .catch((cause: unknown) => setError(String(cause)));
+          }}
+        />
+
         <Setting
           title="Compléter les métadonnées en ligne"
           description="Paroles, pochettes et albums manquants. À laisser allumé quand les fichiers arrivent incomplets — à éteindre quand ils arrivent déjà complets, d'un service qui fournit ses métadonnées."
@@ -74,6 +86,56 @@ export function SettingsView({ onChanged }: { onChanged: () => void }) {
       </div>
 
       <RebuildSection onDone={onChanged} />
+    </div>
+  );
+}
+
+/**
+ * Le prénom employé par l'accueil.
+ *
+ * # Pourquoi il est facultatif
+ *
+ * « Bonsoir Carlos » n'est chaleureux que si c'est bien son nom. Le demander
+ * avant de laisser entrer serait une formalité de plus ; l'inventer serait
+ * pire. Vide, l'accueil dit simplement « Bonsoir ».
+ */
+function NameSetting({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (name: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [known, setKnown] = useState(value);
+
+  // La valeur arrive après le premier rendu : on s'aligne dessus tant que
+  // l'utilisateur n'a rien tapé.
+  if (value !== known) {
+    setKnown(value);
+    setDraft(value);
+  }
+
+  return (
+    <div className="rounded-xl bg-surface p-4">
+      <p className="text-[14px] font-medium text-ink">Ton prénom</p>
+      <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">
+        Employé par l&apos;accueil : « Bonsoir {draft.trim() === "" ? "…" : draft.trim()} ».
+        Laisse vide pour qu&apos;il dise seulement « Bonsoir ».
+      </p>
+
+      <input
+        type="text"
+        value={draft}
+        spellCheck={false}
+        placeholder="Carlos"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => onSave(draft.trim())}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        className="mt-3 h-10 w-full max-w-xs rounded-lg bg-base px-3 text-sm text-ink placeholder:text-ink-faint focus:outline focus:outline-1 focus:outline-accent"
+      />
     </div>
   );
 }

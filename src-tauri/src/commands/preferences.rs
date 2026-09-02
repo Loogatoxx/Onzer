@@ -45,6 +45,9 @@ use crate::AppState;
 /// Clé du réglage de complétion en ligne.
 pub const ONLINE_COMPLETION: &str = "online_completion";
 
+/// Clé du prénom affiché dans l'accueil.
+pub const DISPLAY_NAME: &str = "display_name";
+
 /// Clé du réglage d'identification automatique.
 ///
 /// # Pourquoi il ne peut pas être le même
@@ -60,6 +63,8 @@ pub const AUTO_IDENTIFICATION: &str = "auto_identification";
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preferences {
+    /// Comment l'accueil doit nommer l'utilisateur. Vide : il ne le nomme pas.
+    pub display_name: String,
     /// Onzer peut-il proposer de compléter les métadonnées en ligne ?
     pub online_completion: bool,
     /// L'ouvrier d'identification acoustique tourne-t-il ?
@@ -106,9 +111,23 @@ pub async fn ensure_auto_identification(pool: &sqlx::SqlitePool) -> Result<()> {
     ))
 }
 
+/// Le prénom enregistré, ou une chaîne vide.
+pub async fn display_name(pool: &sqlx::SqlitePool) -> Result<String> {
+    Ok(settings::get::<String>(pool, DISPLAY_NAME)
+        .await?
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn set_display_name(state: State<'_, AppState>, name: String) -> Result<()> {
+    // Un nom vide n'est pas une erreur : c'est le choix de ne pas être nommé.
+    settings::set(&state.pool, DISPLAY_NAME, &name.trim().to_string()).await
+}
+
 #[tauri::command]
 pub async fn preferences(state: State<'_, AppState>) -> Result<Preferences> {
     Ok(Preferences {
+        display_name: display_name(&state.pool).await?,
         online_completion: online_completion(&state.pool).await?,
         auto_identification: auto_identification(&state.pool).await?,
     })

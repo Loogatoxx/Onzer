@@ -32,6 +32,8 @@ export interface TrackSummary {
   title: string;
   artist: string | null;
   album: string | null;
+  /** Pour ouvrir la page de l'album : deux albums peuvent porter le même nom. */
+  albumId: number | null;
   year: number | null;
   trackNo: number | null;
   durationMs: number;
@@ -169,6 +171,8 @@ export interface RootSuggestions {
 }
 
 export interface Preferences {
+  /** Comment l'accueil nomme l'utilisateur. Vide : il ne le nomme pas. */
+  displayName: string;
   /** Onzer peut-il proposer de compléter les métadonnées en ligne ? */
   onlineCompletion: boolean;
   /** L'ouvrier d'identification acoustique tourne-t-il ? */
@@ -541,8 +545,12 @@ export const ipc = {
   importFolder: (folder: string): Promise<ScanSummary> =>
     invoke<ScanSummary>("import_folder", { folder }),
 
-  listTracks: (limit = 200, offset = 0): Promise<TrackSummary[]> =>
-    invoke<TrackSummary[]>("list_tracks", { limit, offset }),
+  listTracks: (
+    limit = 200,
+    offset = 0,
+    sort?: { column: string; descending: boolean },
+  ): Promise<TrackSummary[]> =>
+    invoke<TrackSummary[]>("list_tracks", { limit, offset, sort: sort ?? null }),
 
   /**
    * Les morceaux désignés, dans l'ordre demandé.
@@ -551,6 +559,10 @@ export const ipc = {
    * les habiller en piochant dans une page de bibliothèque perdait tout ce qui
    * se trouvait au-delà.
    */
+  /** Les morceaux d'un album, dans l'ordre du disque. */
+  albumTracks: (albumId: number): Promise<TrackSummary[]> =>
+    invoke<TrackSummary[]>("album_tracks", { albumId }),
+
   tracksByIds: (ids: number[]): Promise<TrackSummary[]> =>
     invoke<TrackSummary[]>("tracks_by_ids", { ids }),
 
@@ -850,6 +862,10 @@ export const ipc = {
    */
   setAutoIdentification: (enabled: boolean): Promise<void> =>
     invoke<void>("set_auto_identification", { enabled }),
+
+  /** Le prénom que l'accueil emploie. Vide pour ne pas être nommé. */
+  setDisplayName: (name: string): Promise<void> =>
+    invoke<void>("set_display_name", { name }),
 
   /**
    * Vide la bibliothèque pour la reconstruire depuis le dépôt.

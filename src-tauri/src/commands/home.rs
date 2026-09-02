@@ -79,7 +79,7 @@ pub async fn home(state: State<'_, AppState>) -> Result<Home> {
     let pool = &state.pool;
 
     Ok(Home {
-        greeting: greeting(local_hour()),
+        greeting: greeting(local_hour(), &crate::commands::preferences::display_name(pool).await?),
         resume: resume(pool).await?,
         shelves: vec![
             HomeShelf {
@@ -98,13 +98,24 @@ pub async fn home(state: State<'_, AppState>) -> Result<Home> {
 ///
 /// Séparée de sa source pour être testable : une fonction qui lit l'horloge
 /// elle-même ne se teste qu'en attendant le bon moment de la journée.
-fn greeting(hour: u32) -> String {
-    match hour {
+/// La salutation, et le nom de celui qu'elle salue.
+///
+/// # Pourquoi le nom est facultatif
+///
+/// « Bonsoir Carlos » n'est chaleureux que si c'est bien son nom. Inventer un
+/// prénom, ou en demander un avant de laisser entrer, serait pire que de n'en
+/// afficher aucun : « Bonsoir » tout court se suffit.
+fn greeting(hour: u32, name: &str) -> String {
+    let moment = match hour {
         5..=11 => "Bonjour",
         12..=17 => "Bon après-midi",
         _ => "Bonsoir",
+    };
+
+    match name.trim() {
+        "" => moment.to_string(),
+        nom => format!("{moment} {nom}"),
     }
-    .to_string()
 }
 
 fn local_hour() -> u32 {
@@ -316,17 +327,20 @@ mod tests {
 
     #[test]
     fn la_salutation_suit_lheure() {
-        assert_eq!(greeting(8), "Bonjour");
-        assert_eq!(greeting(14), "Bon après-midi");
-        assert_eq!(greeting(21), "Bonsoir");
-        assert_eq!(greeting(3), "Bonsoir", "trois heures du matin reste le soir");
+        assert_eq!(greeting(8, ""), "Bonjour");
+        assert_eq!(greeting(8, "Carlos"), "Bonjour Carlos");
+        // Un nom fait d'espaces ne nomme personne.
+        assert_eq!(greeting(20, "   "), "Bonsoir");
+        assert_eq!(greeting(14, ""), "Bon après-midi");
+        assert_eq!(greeting(21, ""), "Bonsoir");
+        assert_eq!(greeting(3, ""), "Bonsoir", "trois heures du matin reste le soir");
     }
 
     #[test]
     fn la_salutation_couvre_les_vingt_quatre_heures() {
         // Une heure sans salutation afficherait un titre vide en page d'accueil.
         for hour in 0..24 {
-            assert!(!greeting(hour).is_empty(), "aucune salutation à {hour} h");
+            assert!(!greeting(hour, "").is_empty(), "aucune salutation à {hour} h");
         }
     }
 

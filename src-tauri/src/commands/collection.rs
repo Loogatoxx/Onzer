@@ -258,6 +258,19 @@ pub async fn fetch_lyrics(state: State<'_, AppState>, track_id: i64) -> Result<L
     Ok(lyrics::parse(&found.raw))
 }
 
+/// Rattache les fichiers `.lrc` restés au dépôt.
+///
+/// Aucun réseau : ces paroles sont déjà sur le disque, déposées par le
+/// téléchargeur à côté des morceaux qu'il a pris. Ce bouton ne fait que les
+/// rapprocher de leur morceau.
+#[tauri::command]
+pub async fn adopt_sidecars(
+    state: State<'_, AppState>,
+) -> Result<crate::library::sidecar::AdoptionReport> {
+    let paths = state.paths.read().await.clone();
+    crate::library::sidecar::adopt(&state.pool, &paths).await
+}
+
 /// Synchronise les paroles de toute la bibliothèque.
 ///
 /// Retourne aussitôt : la cadence courtoise d'une requête par seconde rendrait

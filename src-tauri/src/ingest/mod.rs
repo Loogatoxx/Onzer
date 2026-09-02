@@ -98,8 +98,30 @@ fn spawn_inbox_loop(
                 continue;
             }
 
-            for file in tracker.observe(&inbox::list_candidates(&inbox_dir)) {
+            let ready = tracker.observe(&inbox::list_candidates(&inbox_dir));
+            let imported = !ready.is_empty();
+
+            for file in ready {
                 import_from_inbox(&pool, &resolver, &file).await;
+            }
+
+            // Le téléchargeur dépose ses paroles synchronisées dans un `.lrc`
+            // du même nom, que le dépôt ignore puisqu'il n'accepte que
+            // l'audio. Une fois les morceaux rangés, on rapproche les deux :
+            // sans cette étape, les `.lrc` s'accumulent seuls au dépôt —
+            // cent dix-huit s'y étaient entassés.
+            if imported {
+                match crate::library::sidecar::adopt(&pool, &resolver).await {
+                    Ok(report) if report.adopted > 0 => {
+                        tracing::info!(
+                            rattaches = report.adopted,
+                            orphelins = report.orphans,
+                            "paroles synchronisées rattachées"
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => tracing::warn!(%error, "rattachement des .lrc impossible"),
+                }
             }
         }
     });

@@ -176,6 +176,12 @@ export interface RebuildReport {
   artists: number;
 }
 
+/** Ce que le rattachement des `.lrc` a fait. */
+export interface AdoptionReport {
+  adopted: number;
+  orphans: number;
+}
+
 export interface AlbumProgress {
   missing: number;
   running: boolean;
@@ -826,6 +832,16 @@ export const ipc = {
    * survivent.
    */
   rebuildLibrary: (): Promise<RebuildReport> => invoke<RebuildReport>("rebuild_library"),
+
+  /**
+   * Rattache les fichiers `.lrc` restés au dépôt.
+   *
+   * Aucun réseau : ces paroles sont déjà sur le disque.
+   */
+  adoptSidecars: (): Promise<AdoptionReport> => invoke<AdoptionReport>("adopt_sidecars"),
+
+  /** Les morceaux dont le fichier manque, sous forme « Artiste - Titre ». */
+  offlineTracks: (): Promise<string[]> => invoke<string[]>("offline_tracks"),
 
   /** Combien de morceaux affichent encore un tiret à la place de leur album. */
   missingAlbums: (): Promise<AlbumProgress> => invoke<AlbumProgress>("missing_albums"),

@@ -10,6 +10,7 @@ import { IdentifyPanel } from "@/features/identify/IdentifyPanel";
 import { SuspectPanel } from "@/features/identify/SuspectPanel";
 import { ArtworkBar } from "@/features/lyrics/ArtworkBar";
 import { AlbumBar } from "@/features/library/AlbumBar";
+import { OfflineBar } from "@/features/library/OfflineBar";
 import { LyricsBar } from "@/features/lyrics/LyricsBar";
 import { ListenBar } from "@/features/lyrics/ListenBar";
 import { Artwork } from "@/features/library/Artwork";
@@ -1198,6 +1199,8 @@ function Page(props: PageProps) {
           {/* L'écoute ne dépend d'aucun service : le modèle tourne sur la
               machine. Elle reste donc proposée même complétion éteinte. */}
           <ListenBar />
+
+          <OfflineBar count={props.counts?.unavailable ?? 0} />
         </div>
 
         <p className="mt-3 truncate font-mono text-[11px] text-ink-faint">

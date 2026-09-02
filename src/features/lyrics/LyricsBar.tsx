@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Icon } from "@/components/Icon";
-import { ipc, type LyricsProgress } from "@/lib/ipc";
+import { ipc, type AdoptionReport, type LyricsProgress } from "@/lib/ipc";
 
 /**
  * Récupération des paroles manquantes.
@@ -35,6 +35,7 @@ const POLL_MS = 2000;
 export function LyricsBar() {
   const [progress, setProgress] = useState<LyricsProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [adoption, setAdoption] = useState<AdoptionReport | null>(null);
 
   useEffect(() => {
     const read = () => {
@@ -92,6 +93,24 @@ export function LyricsBar() {
         </button>
       </div>
 
+      {/* Le téléchargeur dépose ses `.lrc` au dépôt, qui n'accepte que
+          l'audio : ils y restent seuls jusqu'à ce qu'on les rapproche. */}
+      <button
+        type="button"
+        disabled={progress.running}
+        onClick={() => {
+          setError(null);
+          setAdoption(null);
+          void ipc
+            .adoptSidecars()
+            .then(setAdoption)
+            .catch((cause: unknown) => setError(String(cause)));
+        }}
+        className="mt-2 w-full rounded-full bg-raised/60 px-3 py-1 text-[11px] text-ink-faint transition-colors hover:text-ink disabled:opacity-40"
+      >
+        Rattacher les .lrc du dépôt
+      </button>
+
       {progress.running && (
         <div className="mt-2 h-1 overflow-hidden rounded-full bg-raised">
           <div
@@ -102,6 +121,16 @@ export function LyricsBar() {
       )}
 
       {error !== null && <p className="mt-2 text-[11px] text-danger">{error}</p>}
+
+      {adoption !== null && (
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
+          {adoption.adopted} fichier{adoption.adopted > 1 ? "s" : ""} .lrc
+          rattaché{adoption.adopted > 1 ? "s" : ""} à leur morceau
+          {adoption.orphans > 0 &&
+            `, ${adoption.orphans} sans morceau correspondant — ils restent au dépôt`}
+          .
+        </p>
+      )}
 
       {!progress.running && (
         <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">

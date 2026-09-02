@@ -193,6 +193,42 @@ mod tests {
     }
 }
 
+/// Les morceaux dont le fichier n'est plus là, sous forme « Artiste - Titre ».
+///
+/// # À quoi sert cette liste
+///
+/// Un morceau hors ligne n'est pas perdu : sa ligne, son historique et ses
+/// playlists sont intacts, seul le fichier manque. Le retélécharger suppose de
+/// savoir **lesquels** — et le lire à l'écran, cent cinquante fois, n'est pas
+/// une réponse.
+///
+/// La forme « Artiste - Titre » n'est pas décorative : c'est celle que lisent
+/// `spotdl`, `yt-dlp` et les convertisseurs de playlist. Une liste qu'on ne
+/// peut que regarder ne servirait à rien.
+#[tauri::command]
+pub async fn offline_tracks(state: State<'_, AppState>) -> Result<Vec<String>> {
+    let rows: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT t.title,
+                (SELECT a.name FROM track_artists ta
+                   JOIN artists a ON a.id = ta.artist_id
+                  WHERE ta.track_id = t.id AND ta.role = 'main'
+                  ORDER BY ta.position LIMIT 1)
+           FROM tracks t
+          WHERE t.deleted_at IS NULL AND t.is_available = 0
+          ORDER BY 2, 1",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(title, artist)| match artist {
+            Some(artist) => format!("{artist} - {title}"),
+            None => title,
+        })
+        .collect())
+}
+
 /// Retire un morceau de la bibliothèque.
 ///
 /// # Retirer n'est pas détruire

@@ -14,6 +14,13 @@ import { ipc, type PlaybackSnapshot } from "@/lib/ipc";
  *
  * Les commandes retournent elles-mêmes l'instantané mis à jour : l'interface
  * réagit à l'instant du clic, sans attendre le prochain battement.
+ *
+ * # La règle qui en découle
+ *
+ * **Toute commande de lecture doit passer par ce hook.** L'appeler directement
+ * depuis un composant compile parfaitement et marche à moitié : l'action a
+ * lieu, l'interface l'ignore. Deux appels s'étaient glissés hors du hook, et
+ * cliquer un titre de la file changeait la musique sans changer l'affichage.
  */
 export function usePlayback() {
   const [state, setState] = useState<PlaybackSnapshot | null>(null);
@@ -77,6 +84,19 @@ export function usePlayback() {
     toggle: useCallback(() => run(ipc.togglePlayback), [run]),
     next: useCallback(() => run(ipc.nextTrack), [run]),
     previous: useCallback(() => run(ipc.previousTrack), [run]),
+    /**
+     * Saute à une position de la file.
+     *
+     * Passe par `run` comme tout le reste : la commande **rend l'état mis à
+     * jour**, et l'appeler sans appliquer ce retour laisse l'interface sur le
+     * morceau précédent. C'est exactement ce qui se produisait en cliquant un
+     * titre de la file — la musique changeait, la pochette et les paroles non.
+     */
+    jump: useCallback((index: number) => run(() => ipc.jumpInQueue(index)), [run]),
+
+    /** Ajoute à la file. Rend l'état pour que la file affichée suive. */
+    enqueue: useCallback((ids: number[]) => run(() => ipc.enqueueTracks(ids)), [run]),
+
     seek: useCallback((positionMs: number) => run(() => ipc.seekTo(positionMs)), [run]),
     setVolume: useCallback((volume: number) => run(() => ipc.setVolume(volume)), [run]),
     toggleShuffle: useCallback(

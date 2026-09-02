@@ -628,7 +628,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       onRadio={startRadio}
       onToggleLoved={(id) => void toggleLoved(id)}
       onEnqueue={(id) => {
-        void ipc.enqueueTracks([id]).catch((cause: unknown) => setError(String(cause)));
+        void playback.enqueue([id]);
       }}
       onOpenArtist={(id) => void openArtistOf(id)}
       onCorrect={setCorrecting}
@@ -838,7 +838,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
             onClose={() => setPanel("closed")}
             onToggleLoved={() => void toggleLoved(current.trackId)}
             onSeek={(position) => void playback.seek(position)}
-            onJump={(index) => void ipc.jumpInQueue(index).catch(() => undefined)}
+            onJump={(index) => void playback.jump(index)}
             onRadio={startRadio}
             onExpandLyrics={() => openLyrics()}
             lyricsExpanded={route.kind === "lyrics"}

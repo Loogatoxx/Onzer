@@ -13,7 +13,8 @@
     "app": "npm run cache:mount && tauri dev",
     "app:build": "npm run cache:mount && tauri build",
     "android": "JAVA_HOME=\"$HOME/.jdks/jdk-21.0.12.1+1/Contents/Home\" ANDROID_HOME=/opt/homebrew/share/android-commandlinetools NDK_HOME=/opt/homebrew/share/android-commandlinetools/ndk/27.2.12479018 tauri android dev",
-    "android:build": "JAVA_HOME=\"$HOME/.jdks/jdk-21.0.12.1+1/Contents/Home\" ANDROID_HOME=/opt/homebrew/share/android-commandlinetools NDK_HOME=/opt/homebrew/share/android-commandlinetools/ndk/27.2.12479018 tauri android build --apk"
+    "android:build": "JAVA_HOME=\"$HOME/.jdks/jdk-21.0.12.1+1/Contents/Home\" ANDROID_HOME=/opt/homebrew/share/android-commandlinetools NDK_HOME=/opt/homebrew/share/android-commandlinetools/ndk/27.2.12479018 tauri android build --apk",
+    "icons": "node tools/icon/generate-icon.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",

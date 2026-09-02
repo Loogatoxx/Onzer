@@ -31,7 +31,7 @@ const GRID =
 // Au-dessus, la place existe : l'album et la date d'ajout reprennent leur
 // colonne, parce que les masquer sur un écran large serait gâcher l'espace
 // qu'on vient de gagner.
-"grid grid-cols-[1.75rem_minmax(0,1fr)_auto] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_auto] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.25rem_auto] items-center gap-4";
+"grid grid-cols-[1.25rem_minmax(0,1fr)_auto] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_auto] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.25rem_auto] items-center gap-2.5 lg:gap-4";
 
 interface TrackTableProps {
   tracks: TrackSummary[];
@@ -183,9 +183,21 @@ export function TrackTable({
   }
 
   return (
-    <div className="px-3 pb-8">
+    <div className="px-1 pb-8 lg:px-3">
       <div
-        className={`${GRID} sticky top-[64px] z-10 mb-1 border-b border-line bg-surface/85 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint backdrop-blur`}
+        // # Pourquoi le décalage suit la coquille et non la ligne
+        //
+        // Ces soixante-quatre pixels sont la hauteur de la barre du haut, qui
+        // n'existe qu'à partir de 768 px. En dessous, l'en-tête se collait donc
+        // **à l'intérieur** de la liste : une bande « # TITRE » flottait au
+        // milieu des morceaux, avec des lignes visibles au-dessus d'elle et une
+        // autre à moitié cachée dessous.
+        //
+        // La densité des lignes bascule à 1024 px, la barre du haut à 768 :
+        // deux seuils différents parce qu'ils répondent à deux questions
+        // différentes — la place pour des colonnes, la place pour une barre
+        // latérale. Celui-ci doit suivre la barre.
+        className={`${GRID} sticky top-0 z-10 mb-1 border-b border-line bg-surface/85 px-1.5 py-2 md:top-[64px] lg:px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint backdrop-blur`}
       >
         <span className="text-center">#</span>
         <SortHeader column="title" label="Titre" sort={sort} onSort={onSort} />
@@ -358,12 +370,12 @@ function TrackRow({
       onPointerUp={() => clearTimeout(minuteur.current)}
       onPointerLeave={() => clearTimeout(minuteur.current)}
       onPointerCancel={() => clearTimeout(minuteur.current)}
-      className={`${GRID} group rounded-md px-3 py-2 transition-colors hover:bg-elevated ${
+      className={`${GRID} group rounded-md px-1.5 py-2 transition-colors hover:bg-elevated lg:px-3 ${
         isCurrent ? "bg-elevated/60" : ""
       } ${unavailable ? "opacity-40" : ""}`}
     >
       {/* ── Numéro / lecture ─────────────────────────────────────────── */}
-      <div className="flex h-9 w-7 items-center justify-center">
+      <div className="flex h-9 w-5 items-center justify-center lg:w-7">
         {isCurrent ? (
           <span className="group-hover:hidden">
             <PlayingIndicator animated={isPlaying} />
@@ -386,48 +398,56 @@ function TrackRow({
       </div>
 
       {/* ── Titre ────────────────────────────────────────────────────── */}
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 items-center gap-2.5 lg:gap-3">
         <Artwork hash={track.artworkHash} className="h-10 w-10 rounded" />
 
         <div className="min-w-0">
           <p
-            className={`truncate text-[15px] font-medium ${
+            className={`truncate text-[15px] font-medium leading-tight ${
               isCurrent ? "text-accent" : "text-ink"
             }`}
           >
             {track.title}
           </p>
-          <p className="truncate text-[13px] text-ink-muted">
-            {track.artist === null ? (
-              "Artiste inconnu"
-            ) : (
-              // Le nom d'un artiste est une porte : c'est ce qu'on attend de
-              // lui partout ailleurs, et le lire sans pouvoir y aller donne
-              // l'impression d'une impasse.
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onOpenArtist();
-                }}
-                className="truncate transition-colors hover:text-ink hover:underline"
-              >
-                {track.artist}
-              </button>
-            )}
-            {unavailable && <span className="ml-2 text-warn">hors ligne</span>}
-          </p>
-          {/* En compact, ce que les colonnes disaient tient sous le titre :
-              une pastille de paroles et la durée. C'est ce que fait tout
-              lecteur de téléphone, et pour la même raison — la largeur. */}
-          <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-faint lg:hidden">
-            {track.hasLyrics && (
-              <span title="Paroles disponibles">
-                <Icon name="lyrics" size={12} />
-              </span>
-            )}
-            <span className="numerals">{formatDuration(track.durationMs)}</span>
-          </p>
+          {/* # Pourquoi tout tient sur une seule seconde ligne
+              La durée occupait une troisième ligne, et le bloc de texte
+              dépassait alors la pochette en haut comme en bas : la ligne
+              n'avait plus de cadre, l'image flottait au milieu d'un texte plus
+              grand qu'elle. Deux lignes font exactement ses quarante pixels. */}
+          <div className="flex min-w-0 items-center gap-1.5 text-[13px] leading-tight text-ink-muted">
+            <span className="min-w-0 truncate">
+              {track.artist === null ? (
+                "Artiste inconnu"
+              ) : (
+                // Le nom d'un artiste est une porte : c'est ce qu'on attend de
+                // lui partout ailleurs, et le lire sans pouvoir y aller donne
+                // l'impression d'une impasse.
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenArtist();
+                  }}
+                  className="block max-w-full truncate transition-colors hover:text-ink hover:underline"
+                >
+                  {track.artist}
+                </button>
+              )}
+            </span>
+            {unavailable && <span className="shrink-0 text-warn">hors ligne</span>}
+
+            {/* La durée n'a sa colonne qu'au-dessus de `lg` : en compact elle
+                suit l'artiste, précédée du point qui la détache du nom. */}
+            <span className="flex shrink-0 items-center gap-1 text-[12px] text-ink-faint lg:hidden">
+              <span aria-hidden>·</span>
+              {track.hasLyrics && (
+                <span title="Paroles disponibles">
+                  <Icon name="lyrics" size={12} />
+                </span>
+              )}
+              <span className="numerals">{formatDuration(track.durationMs)}</span>
+            </span>
+          </div>
 
           {reason !== undefined && (
             <p className="mt-0.5 truncate text-[11px] text-ink-faint">{reason}</p>
@@ -478,7 +498,7 @@ function TrackRow({
       </span>
 
       {/* ── Actions ──────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-end gap-1">
+      <div className="-mr-1 flex items-center justify-end gap-1 lg:mr-0">
         <button
           type="button"
           title={isLoved ? "Retirer des favoris" : "Ajouter aux favoris"}

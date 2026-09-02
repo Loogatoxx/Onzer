@@ -1944,6 +1944,80 @@ invisibles, et l'on découvrait les favoris en appuyant par hasard.
 Et le clic sur le cœur lançait la lecture, faute d'arrêter la propagation : deux actions pour
 un geste, dont une qu'on n'avait pas demandée.
 
+**Ce que la première version compacte avait raté.** La durée occupait une **troisième** ligne
+sous l'artiste. Le bloc de texte dépassait alors la pochette en haut comme en bas : l'image
+flottait au milieu d'un texte plus grand qu'elle, et la ligne n'avait plus de cadre.
+
+```text
+  avant                            après
+  ┌──┐                             ┌────┐
+  │  │  Somewhere Only We …        │    │  Somewhere Only We Know
+  │▓▓│  Adèle Castillon            │ ▓▓ │  Adèle Castillon · ♪ 3:00
+  └──┘  ♪ 3:00                     └────┘
+```
+
+Deux lignes de texte font exactement les quarante pixels de la pochette. Et la durée, mise
+bout à bout avec l'artiste, ne coûte plus rien : c'est la ligne que Spotify écrit depuis
+toujours.
+
+**Les bords.** Le conteneur et la ligne posaient chacun douze pixels de marge : quarante-huit
+pixels perdus sur les trois cent soixante-quinze d'un téléphone, soit un huitième de la
+largeur, pour aérer une liste qui manquait déjà de place. En compact, ils tombent à sept de
+chaque côté — le numéro touche presque le bord gauche, les trois points le bord droit — et les
+colonnes gardent leur respiration là où la largeur existe.
+
+---
+
+## ADR-070 — L'icône n'est pas une image, c'est une découpe
+
+**Contexte.** Sur le téléphone, Onzer n'avait pas son icône : un carré arrondi minuscule,
+posé au centre d'un rond blanc. Le fichier était pourtant le bon — celui du Dock.
+
+**Ce qu'Android fait d'une icône.** Il ne l'affiche pas, il la **taille**. Le lanceur choisit
+le masque — cercle, goutte, carré arrondi selon le constructeur — et l'applique à un dessin de
+108 dp dont seuls les 72 dp centraux sont garantis visibles.
+
+```text
+   108 dp ─ ce qu'on dessine
+  ┌───────────────────────┐
+  │   ╭───────────────╮   │   72 dp ─ ce que le masque laisse voir
+  │   │    ♪          │   │
+  │   ╰───────────────╯   │
+  └───────────────────────┘
+```
+
+Le carré arrondi de macOS, posé tel quel dans cette toile, se retrouvait donc rétréci au
+centre, avec ses propres angles arrondis à l'intérieur de ceux du masque — et le blanc que le
+gabarit d'Apple réserve autour du motif devenait le fond de l'icône.
+
+**Décision.** Deux couches, comme Android l'attend : le dégradé occupe toute la toile et se
+fait tailler par le masque ; la note reste dans la zone sûre. En **vectoriel** — le motif tient
+en trois formes, et une icône nette à toutes les densités coûte alors deux kilo-octets au lieu
+de cinq images. Une troisième couche, monochrome, sert aux thèmes d'Android 13.
+
+Le motif reste décrit **une seule fois**, dans le générateur : la note doit avoir l'air d'être
+la même sur les deux plateformes, pas seulement d'être la même forme. Elle occupe donc dans la
+zone sûre la part qu'elle occupe dans le corps de l'icône macOS.
+
+**Deux défauts que le vectoriel a mis au jour.**
+
+Un tracé se remplit selon la règle du non-zéro : deux contours parcourus en sens contraire
+s'annulent là où ils se recouvrent. Le disque de la tête tournait à l'envers des rectangles, et
+la hampe **creusait** un coin blanc dans la tête au lieu de s'y fondre. Un défaut qu'aucune
+relecture du dessin ne révèle, puisqu'il ne naît qu'au moment du remplissage.
+
+Et la hampe descendait plus bas que le centre du disque tout en dépassant de son flanc droit :
+il restait entre les deux une encoche qu'on prenait pour une rayure. Elle était là depuis le
+premier jour, sur macOS aussi. En calant le bord droit de la hampe sur le point le plus à
+droite du disque, les contours se rejoignent tangentiellement — et c'est ainsi que la hampe se
+pose sur la tête en gravure musicale.
+
+**Un ordre qui n'est pas une commodité.** `tauri icon` produit le `.icns` et les vignettes,
+mais écrit **aussi** dans `res/`, où il remplace l'icône adaptative par un carré arrondi sur
+fond blanc. La moitié Android doit donc passer après, sans quoi le travail est défait en
+silence. `npm run icons` enchaîne les deux : c'est la seule façon de ne pas dépendre de la
+mémoire de celui qui lance la commande.
+
 ---
 
 ## Dette technique assumée

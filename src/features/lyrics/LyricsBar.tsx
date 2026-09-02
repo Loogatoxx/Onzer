@@ -32,7 +32,7 @@ import { ipc, type AdoptionReport, type LyricsProgress } from "@/lib/ipc";
  */
 const POLL_MS = 2000;
 
-export function LyricsBar() {
+export function LyricsBar({ onChanged }: { onChanged: () => void }) {
   const [progress, setProgress] = useState<LyricsProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adoption, setAdoption] = useState<AdoptionReport | null>(null);
@@ -103,7 +103,10 @@ export function LyricsBar() {
           setAdoption(null);
           void ipc
             .adoptSidecars()
-            .then(setAdoption)
+            .then((report) => {
+              setAdoption(report);
+              if (report.adopted > 0) onChanged();
+            })
             .catch((cause: unknown) => setError(String(cause)));
         }}
         className="mt-2 w-full rounded-full bg-raised/60 px-3 py-1 text-[11px] text-ink-faint transition-colors hover:text-ink disabled:opacity-40"

@@ -18,14 +18,24 @@ import { ipc, type ExportedList, type RescueReport } from "@/lib/ipc";
  * `spotdl`, `yt-dlp` et les convertisseurs de playlist. Le fichier produit se
  * colle tel quel là où on en a besoin.
  */
-export function OfflineBar({ count }: { count: number }) {
+export function OfflineBar({
+  count,
+  onChanged,
+}: {
+  count: number;
+  /** Prévient la coquille : les compteurs de l'en-tête ont changé. */
+  onChanged: () => void;
+}) {
   const [exported, setExported] = useState<ExportedList | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [rescue, setRescue] = useState<RescueReport | null>(null);
 
-  if (count === 0) return null;
+  // Le bandeau disparaît quand il n'y a plus rien — sauf tant qu'il a un
+  // résultat à annoncer : s'évanouir au moment de rendre son verdict laisserait
+  // l'utilisateur sans savoir ce qui s'est passé.
+  if (count === 0 && rescue === null) return null;
 
   async function exportList() {
     setBusy(true);
@@ -84,7 +94,12 @@ export function OfflineBar({ count }: { count: number }) {
           setBusy(true);
           void ipc
             .rescueSetAside()
-            .then(setRescue)
+            .then((report) => {
+              setRescue(report);
+              // Cent cinquante morceaux viennent de redevenir jouables :
+              // l'en-tête doit cesser de les compter comme absents.
+              if (report.restored > 0) onChanged();
+            })
             .catch((cause: unknown) => setError(String(cause)))
             .finally(() => setBusy(false));
         }}

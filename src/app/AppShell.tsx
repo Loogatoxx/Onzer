@@ -173,18 +173,33 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
 
   // Contrôle de présence des fichiers avant tout : le SSD a pu être débranché
   // depuis la dernière session.
+  //
+  // Une seule fois, au démarrage : c'est un parcours du disque entier, hors de
+  // proportion avec un simple rafraîchissement d'écran.
   useEffect(() => {
     void ipc
       .refreshAvailability()
-      .then(() => Promise.all([ipc.lovedTracks(), ipc.libraryCounts()]))
-      .then(([lovedTracks, loadedCounts]) => {
-        setLoved(new Set(lovedTracks.map((track) => track.id)));
-        setCounts(loadedCounts);
-      })
+      .then(() => ipc.lovedTracks())
+      .then((lovedTracks) => setLoved(new Set(lovedTracks.map((track) => track.id))))
       .catch((cause: unknown) => setError(String(cause)));
 
     reloadPlaylists();
   }, [reloadPlaylists]);
+
+  /**
+   * Les compteurs de l'en-tête, relus à chaque changement.
+   *
+   * Ils étaient chargés une fois pour toutes au démarrage : après une reprise
+   * des fichiers écartés, l'en-tête annonçait encore « 153 hors ligne » alors
+   * que cent cinquante venaient d'être réparés. Un chiffre faux est pire qu'un
+   * chiffre absent — il fait douter du travail qui vient d'être fait.
+   *
+   * Ce sont trois `COUNT` sur une base indexée : les relire coûte moins cher
+   * que de se demander s'ils sont encore justes.
+   */
+  useEffect(() => {
+    void ipc.libraryCounts().then(setCounts).catch(() => undefined);
+  }, [revision]);
 
   // Reste-t-il des morceaux à charger sous ceux qui sont affichés ?
   //
@@ -1190,7 +1205,7 @@ function Page(props: PageProps) {
 
           {props.onlineCompletion && (
             <>
-              <LyricsBar />
+              <LyricsBar onChanged={props.onReload} />
               <ArtworkBar />
               <AlbumBar />
             </>
@@ -1200,7 +1215,7 @@ function Page(props: PageProps) {
               machine. Elle reste donc proposée même complétion éteinte. */}
           <ListenBar />
 
-          <OfflineBar count={props.counts?.unavailable ?? 0} />
+          <OfflineBar count={props.counts?.unavailable ?? 0} onChanged={props.onReload} />
         </div>
 
         <p className="mt-3 truncate font-mono text-[11px] text-ink-faint">

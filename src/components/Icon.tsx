@@ -248,7 +248,12 @@ export function IconButton({
   active?: boolean;
   disabled?: boolean;
   size?: number;
-  onClick?: () => void;
+  /**
+   * L'événement est transmis : un bouton posé dans une ligne cliquable doit
+   * pouvoir arrêter la propagation, sans quoi son action et celle de la ligne
+   * se déclenchent ensemble.
+   */
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   className?: string;
 }) {
   return (

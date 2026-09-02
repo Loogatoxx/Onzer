@@ -21,7 +21,17 @@ import { Artwork } from "./Artwork";
  * disparaît jamais.
  */
 const GRID =
-  "grid grid-cols-[1.75rem_minmax(0,1fr)_1.25rem_3.25rem_auto] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_auto] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.25rem_auto] items-center gap-4";
+  // # Deux dispositions, une seule grille
+//
+// En dessous de `lg`, il ne reste que le numéro, le titre et le menu : les
+// paroles et la durée descendent **sous le titre**, comme sur n'importe quel
+// lecteur de téléphone. Étaler quatre colonnes sur 375 px laissait au titre
+// une centaine de pixels — on lisait « Somewhere Only We K… » et rien d'autre.
+//
+// Au-dessus, la place existe : l'album et la date d'ajout reprennent leur
+// colonne, parce que les masquer sur un écran large serait gâcher l'espace
+// qu'on vient de gagner.
+"grid grid-cols-[1.75rem_minmax(0,1fr)_auto] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_auto] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.25rem_auto] items-center gap-4";
 
 interface TrackTableProps {
   tracks: TrackSummary[];
@@ -174,7 +184,7 @@ export function TrackTable({
         {/* Colonne sans en-tête : « Paroles » écrit au-dessus d'une pastille
             large d'un caractère déborderait sur le titre. L'icône se comprend
             au survol, où elle porte son infobulle. */}
-        <span aria-label="Paroles" />
+        <span aria-label="Paroles" className="hidden lg:block" />
         <SortHeader
           column="album"
           label="Album"
@@ -192,7 +202,7 @@ export function TrackTable({
         {/* L'horloge est **dans** la colonne des durées, pas au-dessus du
             bloc d'actions : elle annonce ces chiffres-là, elle doit tomber
             dessus. */}
-        <span className="flex justify-center">
+        <span className="hidden justify-center lg:flex">
           <SortHeader column="duration" label="" sort={sort} onSort={onSort}>
             <Icon name="clock" size={15} />
           </SortHeader>
@@ -366,6 +376,18 @@ function TrackRow({
             )}
             {unavailable && <span className="ml-2 text-warn">hors ligne</span>}
           </p>
+          {/* En compact, ce que les colonnes disaient tient sous le titre :
+              une pastille de paroles et la durée. C'est ce que fait tout
+              lecteur de téléphone, et pour la même raison — la largeur. */}
+          <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-faint lg:hidden">
+            {track.hasLyrics && (
+              <span title="Paroles disponibles">
+                <Icon name="lyrics" size={12} />
+              </span>
+            )}
+            <span className="numerals">{formatDuration(track.durationMs)}</span>
+          </p>
+
           {reason !== undefined && (
             <p className="mt-0.5 truncate text-[11px] text-ink-faint">{reason}</p>
           )}
@@ -374,14 +396,16 @@ function TrackRow({
 
       {/* ── Paroles ──────────────────────────────────────────────────── */}
       <span
+        className="hidden lg:block"
         title={
           track.hasLyrics
             ? "Paroles disponibles"
             : "Pas de paroles — à récupérer depuis le panneau de lecture"
         }
-        className={track.hasLyrics ? "text-ink-muted" : "text-ink-faint/25"}
       >
-        <Icon name="lyrics" size={14} />
+        <span className={track.hasLyrics ? "text-ink-muted" : "text-ink-faint/25"}>
+          <Icon name="lyrics" size={14} />
+        </span>
       </span>
 
       {/* ── Album ────────────────────────────────────────────────────── */}
@@ -408,7 +432,7 @@ function TrackRow({
       </p>
 
       {/* ── Durée ────────────────────────────────────────────────────── */}
-      <span className="numerals text-center text-[13px] text-ink-muted">
+      <span className="numerals hidden text-center text-[13px] text-ink-muted lg:block">
         {formatDuration(track.durationMs)}
       </span>
 
@@ -425,7 +449,7 @@ function TrackRow({
           // n'existe pas : le cœur était donc **invisible**, et l'on découvrait
           // les favoris en appuyant par hasard. Même sur un bureau, un contour
           // gris se voit sans encombrer.
-          className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+          className={`hidden h-8 w-8 items-center justify-center rounded-full transition-colors lg:flex ${
             isLoved ? "text-accent" : "text-ink-faint/70 hover:text-ink"
           }`}
         >
@@ -528,8 +552,13 @@ function RowMenu({
         label={`Autres actions pour ${track.title}`}
         active={open}
         size={16}
-        onClick={() => setOpen((value) => !value)}
-        className={open ? "" : "opacity-0 focus:opacity-100 group-hover:opacity-100"}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+        // Sur un écran tactile, ce qui ne se montre qu'au survol ne se montre
+        // jamais. Le menu reste donc visible en compact.
+        className={open ? "" : "lg:opacity-0 lg:focus:opacity-100 lg:group-hover:opacity-100"}
       />
 
       {open && (

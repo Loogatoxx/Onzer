@@ -1,4 +1,7 @@
+import { useState } from "react";
+
 import { Artwork } from "@/features/library/Artwork";
+import { useSeekGesture } from "./useSeekGesture";
 import { Icon } from "@/components/Icon";
 import { formatDuration, type PlaybackSnapshot } from "@/lib/ipc";
 
@@ -46,6 +49,8 @@ export function NowPlayingView({
   onShuffle: (shuffle: boolean) => void;
   onRepeat: () => void;
 }) {
+  const [agrandie, setAgrandie] = useState(false);
+  const geste = useSeekGesture(state.positionMs, state.durationMs, onSeek);
   const track = state.current;
 
   if (track === null) {
@@ -59,11 +64,34 @@ export function NowPlayingView({
   const ratio = state.durationMs > 0 ? state.positionMs / state.durationMs : 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col px-6 pb-10 pt-6">
-      <Artwork
-        hash={track.artworkHash}
-        className="aspect-square w-full rounded-2xl shadow-2xl shadow-black/50"
-      />
+    <div className="mx-auto flex w-full max-w-md flex-col px-6 pb-10 pt-6" {...geste}>
+      {/* # Toucher la pochette l'agrandit
+          Elle est la seule image de l'application, et sur un téléphone elle
+          reste bridée par la marge du texte. Un appui la met plein écran, sur
+          fond noir : c'est le geste qu'on a partout ailleurs devant une image,
+          et il ne coûte rien à qui ne le connaît pas. */}
+      <button
+        type="button"
+        aria-label="Agrandir la pochette"
+        onClick={() => setAgrandie(true)}
+        className="w-full"
+      >
+        <Artwork
+          hash={track.artworkHash}
+          className="aspect-square w-full rounded-2xl shadow-2xl shadow-black/50"
+        />
+      </button>
+
+      {agrandie && (
+        <div
+          role="dialog"
+          aria-label="Pochette"
+          onClick={() => setAgrandie(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
+        >
+          <Artwork hash={track.artworkHash} className="max-h-full w-full rounded-xl" />
+        </div>
+      )}
 
       <div className="mt-7">
         <h1 className="display text-[clamp(1.4rem,5vw,2rem)] leading-tight text-ink">

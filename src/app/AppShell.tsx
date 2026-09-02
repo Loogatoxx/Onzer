@@ -1129,6 +1129,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               onToggle={() => void playback.toggle()}
               onNext={() => void playback.next()}
               onOpen={() => navigate({ kind: "playing" })}
+              onSeek={(position) => void playback.seek(position)}
             />
           )}
 

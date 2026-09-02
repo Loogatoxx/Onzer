@@ -153,7 +153,12 @@ export function PageHeader({
               />
             ))}
 
-          <p className="mt-4 flex flex-wrap items-center gap-x-2 text-[13px] text-ink-muted">
+          {/* `justify-center` sur mobile suit le titre, lui-même centré : un
+              nom qui court sur trois lignes laissait les compteurs collés à
+              gauche, sous un titre centré — la composition partait de travers.
+              `break-words` sur le titre empêche par ailleurs un nom sans
+              espace de déborder de l'écran. */}
+          <p className="mt-4 flex flex-wrap items-center justify-center gap-x-2 text-[13px] text-ink-muted sm:justify-start">
             {meta}
           </p>
         </div>

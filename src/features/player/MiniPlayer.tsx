@@ -1,4 +1,5 @@
 import { Artwork } from "@/features/library/Artwork";
+import { useSeekGesture } from "./useSeekGesture";
 import { Icon } from "@/components/Icon";
 import type { PlaybackSnapshot } from "@/lib/ipc";
 
@@ -27,13 +28,16 @@ export function MiniPlayer({
   onToggle,
   onNext,
   onOpen,
+  onSeek,
 }: {
   state: PlaybackSnapshot;
   onToggle: () => void;
   onNext: () => void;
   /** Ouvre l'écran de lecture, où tout le reste se trouve. */
   onOpen: () => void;
+  onSeek: (positionMs: number) => void;
 }) {
+  const geste = useSeekGesture(state.positionMs, state.durationMs, onSeek);
   const track = state.current;
   if (track === null) return null;
 
@@ -41,7 +45,10 @@ export function MiniPlayer({
     state.durationMs > 0 ? Math.min(1, state.positionMs / state.durationMs) : 0;
 
   return (
-    <div className="shrink-0 border-t border-line bg-elevated">
+    // Un glissement horizontal saute de quinze secondes : c'est le geste
+    // qu'on fait quand on rate une phrase, et il n'a nulle part où se poser
+    // sur une barre haute de cinquante pixels.
+    <div className="shrink-0 touch-pan-y border-t border-line bg-elevated" {...geste}>
       <div className="h-[2px] bg-raised">
         <div
           className="h-full bg-accent transition-[width] duration-500"

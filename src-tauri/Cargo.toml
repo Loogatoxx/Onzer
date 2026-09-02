@@ -88,6 +88,12 @@ reqwest = { version = "0.13.3", default-features = false, features = ["json", "g
 # mieux qu'un ménage à faire après chaque panne.
 tempfile = "3"
 
+# Le pont vers la machine virtuelle Java : `cpal` y lit le contexte Android
+# sans lequel il refuse — en paniquant — d'ouvrir le moindre flux audio.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
+
 # Les touches multimédia n'existent que sur un bureau : ce greffon n'a ni
 # implémentation ni sens sur Android, et l'y embarquer casse la compilation
 # pour cette cible.

@@ -159,10 +159,30 @@ fn audio_thread(
     shared: Arc<SharedState>,
     ready: Sender<std::result::Result<(), String>>,
 ) {
-    let sink = match rodio::DeviceSinkBuilder::open_default_sink() {
-        Ok(sink) => sink,
-        Err(error) => {
+    // # Pourquoi une panique est rattrapée ici
+    //
+    // Ouvrir un périphérique passe par du code natif — CoreAudio, AAudio.
+    // Quand son environnement n'est pas celui qu'il attend, il ne rend pas une
+    // erreur : il **panique**. Le fil meurt alors sans rien dire, et
+    // l'application ne voit qu'un canal fermé : « le thread audio n'a pas
+    // démarré », sans la moindre cause. Sur un téléphone dont le constructeur
+    // chiffre les journaux, c'est un mur.
+    let ouverture = std::panic::catch_unwind(rodio::DeviceSinkBuilder::open_default_sink);
+
+    let sink = match ouverture {
+        Ok(Ok(sink)) => sink,
+        Ok(Err(error)) => {
             let _ = ready.send(Err(format!("périphérique audio indisponible : {error}")));
+            return;
+        }
+        Err(panique) => {
+            let cause = panique
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| panique.downcast_ref::<&str>().map(|texte| (*texte).to_string()))
+                .unwrap_or_else(|| "cause inconnue".to_string());
+
+            let _ = ready.send(Err(format!("le pilote audio a paniqué : {cause}")));
             return;
         }
     };

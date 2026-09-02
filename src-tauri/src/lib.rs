@@ -5,6 +5,8 @@
 
 pub mod analysis;
 pub mod audio;
+#[cfg(target_os = "android")]
+mod android;
 pub mod commands;
 pub mod core;
 pub mod db;
@@ -44,10 +46,27 @@ pub struct AppState {
     player: Option<PlayerService>,
 }
 
+/// Pourquoi le moteur audio n'a pas démarré.
+///
+/// # Pourquoi la raison est conservée
+///
+/// « Aucun périphérique audio disponible » ne dit pas **pourquoi**, et sur un
+/// téléphone dont le constructeur chiffre les journaux système, c'est tout ce
+/// qu'on peut voir. La cause exacte — celle que rodio a rendue — est donc
+/// gardée pour être affichée. Même leçon qu'avec les touches multimédia
+/// (ADR-030) : un défaut qui ne quitte pas les journaux est un défaut qu'on ne
+/// peut pas corriger.
+static RAISON_AUDIO: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 impl AppState {
     pub fn player(&self) -> core::Result<&PlayerService> {
         self.player.as_ref().ok_or_else(|| {
-            OnzerError::Invalid("aucun périphérique audio disponible".to_string())
+            let raison = RAISON_AUDIO
+                .get()
+                .map(|raison| format!(" ({raison})"))
+                .unwrap_or_default();
+
+            OnzerError::Invalid(format!("aucun périphérique audio disponible{raison}"))
         })
     }
 }
@@ -124,6 +143,7 @@ pub fn run() {
                 }
                 Err(error) => {
                     tracing::error!(%error, "moteur audio indisponible");
+                    let _ = RAISON_AUDIO.set(error.to_string());
                     None
                 }
             };

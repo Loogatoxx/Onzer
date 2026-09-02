@@ -129,12 +129,32 @@ pub struct RootSuggestions {
 pub fn suggested_roots() -> RootSuggestions {
     #[cfg(target_os = "android")]
     {
+        // Les dossiers publics d'Android, dans l'ordre où on a des chances
+        // d'y trouver de la musique. On ne propose que ceux qui **existent**
+        // : un bouton menant à un dossier absent ne rend service à personne,
+        // et le nom varie avec la langue du téléphone — « Musique » chez qui
+        // range en français, « Music » chez les autres.
+        const CANDIDATS: [&str; 4] = [
+            "/storage/emulated/0/Musique",
+            "/storage/emulated/0/Music",
+            "/storage/emulated/0/Download",
+            "/storage/emulated/0/Downloads",
+        ];
+
+        let mut roots: Vec<String> = CANDIDATS
+            .iter()
+            .filter(|chemin| std::path::Path::new(chemin).is_dir())
+            .map(|chemin| (*chemin).to_string())
+            .collect();
+
+        // Aucun n'existe : on propose quand même le dossier standard, qu'Onzer
+        // créera. Un écran sans aucun bouton serait une impasse.
+        if roots.is_empty() {
+            roots.push("/storage/emulated/0/Music".to_string());
+        }
+
         RootSuggestions {
-            // Les chemins publics d'Android, stables depuis dix ans.
-            roots: vec![
-                "/storage/emulated/0/Music".to_string(),
-                "/storage/emulated/0/Download".to_string(),
-            ],
+            roots,
             can_browse: false,
         }
     }

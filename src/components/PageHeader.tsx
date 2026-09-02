@@ -67,7 +67,11 @@ export function PageHeader({
 
   return (
     <header className="relative bg-gradient-to-b from-elevated/70 to-transparent px-6 pb-4 pt-6">
-      <div className="flex items-end gap-6">
+      {/* Sur un écran étroit, la pochette et le titre côte à côte laissent au
+          titre une colonne de cent pixels. Ils s'empilent donc, pochette
+          centrée au-dessus — la disposition que tous les lecteurs de téléphone
+          ont fini par adopter, pour la même raison. */}
+      <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-end sm:gap-6 sm:text-left">
         <div className="group relative shrink-0 overflow-hidden rounded-lg shadow-2xl shadow-black/50">
           {cover}
 
@@ -155,7 +159,7 @@ export function PageHeader({
         </div>
       </div>
 
-      <div className="mt-6 flex items-center gap-4">
+      <div className="mt-6 flex items-center justify-center gap-4 sm:justify-start">
         {onPlay !== null && (
           <button
             type="button"
@@ -216,7 +220,7 @@ export function HeaderAction({
 /** Tuile de remplacement quand la collection n'a pas de pochette. */
 export function CoverTile({
   name,
-  size = "h-52 w-52",
+  size = "h-40 w-40 sm:h-52 sm:w-52",
 }: {
   name: IconName;
   size?: string;

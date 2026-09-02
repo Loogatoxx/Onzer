@@ -20,6 +20,9 @@ import { MatchDialog } from "@/features/library/MatchDialog";
 import { DuplicatePanel } from "@/features/library/DuplicatePanel";
 import { TrackTable } from "@/features/library/TrackTable";
 import { Sidebar, type Route } from "@/features/nav/Sidebar";
+import { MobileTabs } from "@/features/nav/MobileTabs";
+import { MiniPlayer } from "@/features/player/MiniPlayer";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { TopBar } from "@/features/nav/TopBar";
 import { NowPlayingPanel, type PanelTab } from "@/features/player/NowPlayingPanel";
 import { LyricsView } from "@/features/player/LyricsView";
@@ -217,6 +220,17 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
 
   /** Le conteneur qui défile, pour le ramener en haut au changement de page. */
   const scroller = useRef<HTMLElement | null>(null);
+
+  /**
+   * Disposition étroite : onglets en bas, pas de barre latérale ni de panneau.
+   *
+   * La bascule tient à la **largeur**, pas au système : une fenêtre de bureau
+   * rétrécie a le même problème qu'un téléphone, et la même réponse lui va.
+   */
+  const mobile = useIsMobile();
+
+  /** Sur mobile, la recherche est un mode et non une page. */
+  const [searchOpen, setSearchOpen] = useState(false);
 
   /**
    * La complétion en ligne est-elle proposée ?
@@ -695,21 +709,38 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   return (
     <div className="flex h-full flex-col bg-base">
       {/* Les feux de circulation de macOS vivent ici : la fenêtre n'a pas de
-          barre de titre, il faut donc lui réserver sa bande de glissement. */}
-      <div className="drag-region h-9 shrink-0" />
+          barre de titre, il faut donc lui réserver sa bande de glissement.
+          Un téléphone n'a ni fenêtre ni feux — la bande n'y serait qu'un vide
+          de neuf pixels en haut de l'écran. */}
+      {!mobile && <div className="drag-region h-9 shrink-0" />}
 
-      <div className="flex min-h-0 flex-1 gap-2 px-2">
-        <Sidebar
-          route={route}
-          onNavigate={navigate}
-          playlists={playlists}
-          onCreatePlaylist={createPlaylist}
-        />
+      <div className={`flex min-h-0 flex-1 ${mobile ? "" : "gap-2 px-2"}`}>
+        {!mobile && (
+          <Sidebar
+            route={route}
+            onNavigate={navigate}
+            playlists={playlists}
+            onCreatePlaylist={createPlaylist}
+          />
+        )}
 
         <main
           ref={scroller}
-          className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-xl bg-surface"
+          className={`min-h-0 min-w-0 flex-1 overflow-y-auto bg-surface ${
+            mobile ? "" : "rounded-xl"
+          }`}
         >
+          {mobile ? (
+            <MobileSearch
+              open={searchOpen}
+              query={query}
+              onQuery={setQuery}
+              onClose={() => {
+                setQuery("");
+                setSearchOpen(false);
+              }}
+            />
+          ) : (
           <TopBar
             query={query}
             onQuery={setQuery}
@@ -723,6 +754,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
             panelOpen={panel !== "closed"}
             onTogglePanel={() => setPanel((value) => (value === "closed" ? "lyrics" : "closed"))}
           />
+          )}
 
           <Banners
             progress={progress}
@@ -826,7 +858,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           )}
         </main>
 
-        {panel !== "closed" && current !== null && (
+        {!mobile && panel !== "closed" && current !== null && (
           <NowPlayingPanel
             track={current}
             positionMs={playback.state?.positionMs ?? 0}
@@ -891,7 +923,33 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
         />
       )}
 
-      {playback.state !== null && (
+      {mobile && (
+        <>
+          {playback.state !== null && (
+            <MiniPlayer
+              state={playback.state}
+              onToggle={() => void playback.toggle()}
+              onNext={() => void playback.next()}
+              onOpen={() => openLyrics()}
+            />
+          )}
+
+          <MobileTabs
+            active={ongletActif(route, searchOpen)}
+            onNavigate={(destination) => {
+              setSearchOpen(false);
+              setQuery("");
+              navigate(destination);
+            }}
+            onSearch={() => {
+              setSearchOpen(true);
+              navigate({ kind: "library" });
+            }}
+          />
+        </>
+      )}
+
+      {!mobile && playback.state !== null && (
         <PlayerBar
           state={playback.state}
           isLoved={current !== null && loved.has(current.trackId)}
@@ -1021,7 +1079,7 @@ function Page(props: PageProps) {
           title="Titres likés"
           meta={meta}
           cover={
-            <div className="flex h-52 w-52 items-center justify-center bg-gradient-to-br from-accent to-accent-soft">
+            <div className="flex h-40 w-40 items-center justify-center bg-gradient-to-br from-accent to-accent-soft sm:h-52 sm:w-52">
               <Icon name="heartFilled" size={72} className="text-base" />
             </div>
           }
@@ -1070,7 +1128,7 @@ function Page(props: PageProps) {
             route.coverHash === null ? (
               <CoverTile name="artist" />
             ) : (
-              <Artwork hash={route.coverHash} className="h-52 w-52 rounded-full" />
+              <Artwork hash={route.coverHash} className="h-40 w-40 rounded-full sm:h-52 sm:w-52" />
             )
           }
           onPlay={play}
@@ -1114,7 +1172,7 @@ function Page(props: PageProps) {
           meta={meta}
           cover={
             summary?.coverHash != null ? (
-              <Artwork hash={summary.coverHash} className="h-52 w-52" />
+              <Artwork hash={summary.coverHash} className="h-40 w-40 sm:h-52 sm:w-52" />
             ) : (
               <CoverTile name="library" />
             )
@@ -1378,6 +1436,86 @@ function ProgressBar({ progress }: { progress: ScanProgress }) {
           {progress.processed} / {progress.total}
         </span>
       </p>
+    </div>
+  );
+}
+
+/**
+ * L'onglet du bas correspondant à la page affichée.
+ *
+ * La recherche prime : c'est un mode qui se superpose à une page, et tant
+ * qu'il est ouvert c'est lui que l'utilisateur habite.
+ */
+function ongletActif(route: Route, searchOpen: boolean): string {
+  if (searchOpen) return "search";
+
+  switch (route.kind) {
+    case "home":
+      return "home";
+    case "artists":
+    case "artist":
+      return "artists";
+    case "settings":
+    case "shortcuts":
+    case "sync":
+      return "settings";
+    default:
+      return "library";
+  }
+}
+
+/**
+ * La recherche sur écran étroit.
+ *
+ * # Pourquoi un champ qui apparaît et non un champ permanent
+ *
+ * En haut de chaque page, il coûterait cinquante pixels de hauteur en
+ * permanence pour une action qu'on fait rarement. Ouvert depuis son onglet, il
+ * prend la place qu'il faut au moment où l'on en a besoin, et la rend ensuite.
+ */
+function MobileSearch({
+  open,
+  query,
+  onQuery,
+  onClose,
+}: {
+  open: boolean;
+  query: string;
+  onQuery: (query: string) => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="sticky top-0 z-10 flex items-center gap-2 bg-surface px-4 pb-3 pt-4">
+      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-elevated px-4 py-2.5">
+        <Icon name="search" size={16} />
+        <input
+          autoFocus
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          placeholder="Titre, artiste, album…"
+          className="min-w-0 flex-1 bg-transparent text-[15px] text-ink placeholder:text-ink-faint focus:outline-none"
+        />
+        {query !== "" && (
+          <button
+            type="button"
+            aria-label="Effacer"
+            onClick={() => onQuery("")}
+            className="text-ink-faint"
+          >
+            <Icon name="close" size={15} />
+          </button>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={onClose}
+        className="shrink-0 text-[14px] text-ink-muted"
+      >
+        Annuler
+      </button>
     </div>
   );
 }

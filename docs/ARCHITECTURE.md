@@ -1829,6 +1829,68 @@ lecture en arrière-plan, qui demande un service de premier plan Android et n'a 
 
 ---
 
+## ADR-066 — Sur un écran étroit, la navigation descend
+
+**Contexte.** L'interface de bureau tient en trois colonnes : barre latérale de 240 px,
+contenu, panneau de droite de 350 px. Sur un téléphone de 375 px de large, la seule barre
+latérale mangerait les deux tiers.
+
+**Décision.** La bascule tient à la **largeur**, pas au système. Une fenêtre de bureau
+rétrécie a exactement le même problème qu'un téléphone, et la même réponse lui convient —
+c'est aussi ce qui rend la disposition mobile vérifiable sur le Mac, en tirant sur un coin de
+fenêtre.
+
+En dessous de 768 px : barre latérale et panneau disparaissent, une **barre d'onglets** prend
+place en bas, et le lecteur se réduit à ce qui tient au-dessus d'elle.
+
+| Élément | Bureau | Étroit |
+|---|---|---|
+| Navigation | Barre latérale | Cinq onglets en bas, sous le pouce |
+| Lecteur | Dix commandes | Pochette, titre, lecture, suivant |
+| Recherche | Champ permanent en haut | Un mode, ouvert depuis son onglet |
+| Pochette d'en-tête | 208 px, à côté du titre | 160 px, empilée au-dessus |
+
+**Ce qui ne change pas** : les jetons de couleur, la typographie, les formes, les gestes. La
+direction artistique est un calque, pas une mise en page — c'est ce qui permet à cette
+bascule de tenir en trois composants.
+
+---
+
+## ADR-067 — Android donne l'audio et les fichiers à deux conditions
+
+**Contexte.** Le cœur compilait pour Android depuis l'ADR-065. L'application démarrait,
+s'affichait, et ne faisait rien de ce qu'on lui demandait.
+
+**Deux murs, tous deux invisibles depuis les journaux** — le constructeur du téléphone chiffre
+`logcat`. Il a fallu brancher les outils de développement de Chrome sur la WebView par l'USB
+pour les voir.
+
+**1. « android context was not initialized ».** `cpal` lit la machine virtuelle Java et
+l'objet `Context` dans `ndk_context`, un dépôt global que personne ne remplissait. Il ne
+rendait pas une erreur pour autant : il **paniquait**, le fil audio mourait sans un mot, et
+l'application ne voyait qu'un canal fermé — « le thread audio n'a pas démarré », sans cause.
+
+La panique est désormais rattrapée et sa cause remontée jusqu'à l'écran ; et
+`JNI_OnLoad` remplit le contexte au chargement de la bibliothèque, avant que la moindre ligne
+de notre code ne tourne. L'ordre n'est plus une question de discipline, c'est une garantie.
+Le `Context` vient de `ActivityThread.currentApplication()` : au chargement, aucune activité
+n'existe encore.
+
+**2. « Operation not permitted », 2699 fois.** `READ_MEDIA_AUDIO` laisse **lister** les
+fichiers, pas les ouvrir ni les déplacer — le stockage cantonné réserve cela à MediaStore. Or
+Onzer range les morceaux par artiste, année et album : déplacer des fichiers est le cœur de ce
+qu'il fait.
+
+`MANAGE_EXTERNAL_STORAGE` lève la limite. Elle ne s'accorde pas d'un bouton : le système exige
+que l'utilisateur l'active dans ses réglages, et l'application l'y emmène directement.
+
+**Résultat mesuré** : 2351 morceaux, 497 artistes, 1127 albums importés sur le téléphone,
+aucun échec. Le moteur audio démarre. **Le flux, lui, ne tourne pas encore** : la position
+avance par à-coups puis se fige, sans qu'aucun son ne sorte. C'est le point qui reste ouvert,
+et c'était le risque annoncé dès l'estimation.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

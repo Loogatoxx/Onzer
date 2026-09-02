@@ -1666,6 +1666,68 @@ donnée « manque » partout à la fois, se demander d'abord si on la cherche au
 
 ---
 
+## ADR-061 — Deux interrupteurs, parce que ce sont deux questions
+
+**Contexte.** Un seul réglage gouvernait « la complétion en ligne » : paroles, pochettes,
+albums **et** l'ouvrier d'identification acoustique. Demander des paroles réveillait donc un
+ouvrier qui réécrit des titres — un effet de bord que rien n'annonçait.
+
+**Décision.** Deux réglages distincts, gardés chacun côté cœur comme côté interface. Les deux
+ressemblent à une seule question — « Onzer a-t-il le droit d'aller en ligne ? » — mais
+répondent à des besoins opposés : vouloir des paroles sur une bibliothèque bien taguée est
+courant, vouloir qu'on en réécrive les titres ne l'est pas.
+
+---
+
+## ADR-062 — Le modèle donne la minuterie, jamais les mots
+
+**Contexte.** Après le disque et LRCLIB, 260 morceaux gardent leurs **vraies** paroles sans
+horodatage, et 276 n'ont rien du tout.
+
+**Le choix qu'on aurait pu faire, et qui aurait été mauvais.** Afficher directement la
+transcription du modèle. Sur du rap français, Whisper se trompe de mot régulièrement :
+l'utilisateur verrait défiler un texte approximatif à la place de paroles exactes qu'il
+possédait déjà.
+
+**Décision.** Un **alignement**, pas une substitution :
+
+```text
+  paroles officielles     transcription du modèle
+  « J'm'arrache à lire »  « [00:21.8] je marrache alire »
+           │                          │
+           └──────────  ALIGNEMENT  ──┘
+                         │
+           « [00:21.8] J'm'arrache à lire »
+             ↑ les mots officiels, la minuterie du modèle
+```
+
+Un Needleman-Wunsch sur les mots normalisés — l'algorithme des séquences biologiques, qui
+tolère qu'un mot manque ou soit mal entendu là où une comparaison ligne à ligne se perdrait au
+premier décalage. La pire erreur possible devient un décalage de quelques secondes ; **jamais
+un mot inventé**.
+
+**Le détail mesuré qui a changé l'algorithme.** Sur « HS 808 », dont l'introduction est chantée
+deux fois, l'alignement retenait la **seconde** occurrence — les scores étant identiques, rien
+ne départageait. La première ligne s'affichait cinq secondes trop tard. La remontée préfère
+désormais le trou à l'appariement **à égalité stricte**, ce qui revient à choisir toujours le
+passage le plus tôt : `[00:05.26]` est devenu `[00:00.02]`.
+
+**Les morceaux sans aucune parole** sont transcrits — c'est le modèle qui écrit — et le
+résultat porte une signature `[by:Onzer — transcription automatique]` : une métadonnée que le
+format `.lrc` prévoit, que l'analyseur ignore déjà et que tout autre lecteur affichera. C'est
+une option **décochée par défaut** : deviner un texte et le présenter comme officiel serait
+exactement le genre de service qu'on ne rend pas.
+
+**Ce qui ne change pas.** Le modèle tourne sur la machine, sur un fichier du disque. Rien ne
+sort : ni l'audio, ni le texte, ni le fait qu'une transcription ait eu lieu. C'est la seule
+forme d'intelligence artificielle qu'un lecteur hors ligne puisse honnêtement proposer — et
+c'est aussi pourquoi ce bandeau reste visible quand la complétion en ligne est éteinte.
+
+**Mesuré de bout en bout** sur un morceau de 2 min 20 : 292 mots entendus en 40 s sur un M4,
+52 lignes calées, texte officiel intact.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

@@ -140,6 +140,25 @@ export interface MetadataCandidate {
   score: number;
 }
 
+/** Ce qui manque pour pouvoir écouter. */
+export interface WhisperMissing {
+  whisper: boolean;
+  ffmpeg: boolean;
+  model: boolean;
+}
+
+export interface WhisperStatus {
+  ready: boolean;
+  missing: WhisperMissing | null;
+  /** Morceaux qui ont le bon texte mais pas les temps. */
+  toAlign: number;
+  /** Morceaux sans aucune parole. */
+  toTranscribe: number;
+  running: boolean;
+  done: number;
+  total: number;
+}
+
 export interface Preferences {
   /** Onzer peut-il proposer de compléter les métadonnées en ligne ? */
   onlineCompletion: boolean;
@@ -754,6 +773,20 @@ export const ipc = {
    */
   candidatePreview: (url: string): Promise<string | null> =>
     invoke<string | null>("candidate_preview", { url }),
+
+  whisperStatus: (): Promise<WhisperStatus> => invoke<WhisperStatus>("whisper_status"),
+
+  /**
+   * Fait écouter la bibliothèque à un modèle local.
+   *
+   * `transcribeEmpty` étend la passe aux morceaux sans aucune parole — là, le
+   * texte est **deviné** et signé comme tel.
+   */
+  listenAndSync: (transcribeEmpty: boolean): Promise<number> =>
+    invoke<number>("listen_and_sync", { transcribeEmpty }),
+
+  /** Interrompt l'écoute après le morceau en cours. */
+  stopListening: (): Promise<void> => invoke<void>("stop_listening"),
 
   preferences: (): Promise<Preferences> => invoke<Preferences>("preferences"),
 

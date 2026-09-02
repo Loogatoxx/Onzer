@@ -11,6 +11,7 @@ import { SuspectPanel } from "@/features/identify/SuspectPanel";
 import { ArtworkBar } from "@/features/lyrics/ArtworkBar";
 import { AlbumBar } from "@/features/library/AlbumBar";
 import { LyricsBar } from "@/features/lyrics/LyricsBar";
+import { ListenBar } from "@/features/lyrics/ListenBar";
 import { Artwork } from "@/features/library/Artwork";
 import { CorrectDialog } from "@/features/library/CorrectDialog";
 import { MatchDialog } from "@/features/library/MatchDialog";
@@ -1144,6 +1145,10 @@ function Page(props: PageProps) {
               <AlbumBar />
             </>
           )}
+
+          {/* L'écoute ne dépend d'aucun service : le modèle tourne sur la
+              machine. Elle reste donc proposée même complétion éteinte. */}
+          <ListenBar />
         </div>
 
         <p className="mt-3 truncate font-mono text-[11px] text-ink-faint">

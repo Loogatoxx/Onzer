@@ -288,6 +288,9 @@ pub fn run() {
             commands::preferences::set_online_completion,
             commands::preferences::set_auto_identification,
             commands::preferences::rebuild_library,
+            commands::whisper::whisper_status,
+            commands::whisper::listen_and_sync,
+            commands::whisper::stop_listening,
         ])
         .run(tauri::generate_context!())
         .expect("échec au lancement d'Onzer");

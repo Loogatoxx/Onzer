@@ -164,7 +164,7 @@ function RelireSetting({
     setBilan(null);
 
     try {
-      setBilan(await ipc.importFolder(racine));
+      setBilan(await ipc.importFolder(racine, false));
       onChanged();
     } catch (cause) {
       setErreur(String(cause));

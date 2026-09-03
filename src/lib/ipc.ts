@@ -628,8 +628,16 @@ export const ipc = {
   setLibraryRoot: (path: string): Promise<void> =>
     invoke<void>("set_library_root", { path }),
 
-  importFolder: (folder: string): Promise<ScanSummary> =>
-    invoke<ScanSummary>("import_folder", { folder }),
+  /**
+   * Importe un dossier. `organize` à `false` se contente d'indexer sur place.
+   *
+   * « Importer un dossier » veut dire ranger. « Chercher de nouveaux
+   * morceaux » veut seulement dire découvrir : sur une bibliothèque déjà en
+   * ordre, un rangement complet déplacerait des milliers de fichiers pour
+   * retrouver la même arborescence.
+   */
+  importFolder: (folder: string, organize = true): Promise<ScanSummary> =>
+    invoke<ScanSummary>("import_folder", { folder, organize }),
 
   listTracks: (
     limit = 200,

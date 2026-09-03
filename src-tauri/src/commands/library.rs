@@ -59,6 +59,15 @@ fn volume_name(path: &std::path::Path) -> Option<String> {
 
 /// Importe le contenu audio d'un dossier dans la bibliothèque.
 ///
+/// # `organize` : ranger, ou seulement découvrir
+///
+/// « Importer un dossier » exprime l'intention de faire **ranger**, et c'est
+/// le défaut. « Chercher de nouveaux morceaux » n'exprime que celle de
+/// découvrir : lancé sur une bibliothèque déjà en ordre, un rangement complet
+/// déplacerait des milliers de fichiers pour retrouver, au mieux, exactement
+/// la même arborescence — et au pire en réorganiserait une partie sur la foi
+/// de tags qui ont changé depuis. Ce n'est pas ce qu'on a demandé.
+///
 /// Les fichiers sont **déplacés** et rangés selon l'ADR-007. La progression est
 /// émise au fil de l'eau plutôt que retournée à la fin : sur plusieurs milliers
 /// de titres, l'interface doit rester vivante.
@@ -67,6 +76,7 @@ pub async fn import_folder(
     app: AppHandle,
     state: State<'_, AppState>,
     folder: String,
+    organize: Option<bool>,
 ) -> Result<scanner::ScanSummary> {
     let paths = state.paths.read().await.clone();
 
@@ -86,15 +96,21 @@ pub async fn import_folder(
         )));
     }
 
-    // Toujours ranger, y compris si le dossier choisi est la bibliothèque
+    // Ranger par défaut, y compris si le dossier choisi est la bibliothèque
     // elle-même : cliquer « Importer un dossier » exprime l'intention de faire
     // ranger, pas seulement d'indexer. Un fichier déjà à sa place ne bouge pas
     // (voir `resolve_collision`).
+    let handling = if organize.unwrap_or(true) {
+        FileHandling::Organize
+    } else {
+        FileHandling::IndexInPlace
+    };
+
     let summary = scanner::import_folder(
         &state.pool,
         &paths,
         &source,
-        FileHandling::Organize,
+        handling,
         "scan",
         |progress| {
             // Un échec d'émission (fenêtre fermée) ne doit pas interrompre

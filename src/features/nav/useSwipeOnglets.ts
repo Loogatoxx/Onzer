@@ -23,7 +23,40 @@ const PAGES: Route[] = [
 const SEUIL = 70;
 
 /**
+ * Le geste part-il d'une zone qui défile déjà horizontalement ?
+ *
+ * Les rangées de l'accueil — « Tes mix du jour », les reprises — se font
+ * défiler du doigt, horizontalement. Un glissement qui commence sur elles leur
+ * appartient : changer d'onglet **en plus** de les faire défiler serait deux
+ * réponses à un seul geste.
+ */
+function dansUnDefilementHorizontal(cible: EventTarget | null): boolean {
+  let noeud = cible instanceof Element ? cible : null;
+
+  while (noeud !== null) {
+    if (noeud.scrollWidth > noeud.clientWidth + 1) {
+      const style = window.getComputedStyle(noeud).overflowX;
+      if (style === "auto" || style === "scroll") return true;
+    }
+    noeud = noeud.parentElement;
+  }
+
+  return false;
+}
+
+/**
  * Passer d'un onglet à l'autre d'un glissement.
+ *
+ * # Pourquoi le toucher et non le pointeur
+ *
+ * `pointerup` paraissait le bon choix — un seul jeu d'événements pour la
+ * souris et le doigt. Mais dès que le navigateur décide qu'un mouvement est un
+ * défilement, il **annule** le pointeur : `pointercancel` part, `pointerup` ne
+ * vient jamais, et le geste se perd en silence. Sur une liste qui défile,
+ * c'est-à-dire partout, le glissement ne marchait tout simplement pas.
+ *
+ * `touchend` arrive dans tous les cas. Le geste ne servant qu'aux écrans
+ * tactiles, il n'y a rien à perdre.
  *
  * # Pourquoi le rapport entre les deux axes, et pas seulement la distance
  *
@@ -52,22 +85,31 @@ export function useSwipeOnglets(
   if (!applicable) return {};
 
   return {
-    onPointerDown: (event: React.PointerEvent) => {
-      depart.current = { x: event.clientX, y: event.clientY };
+    onTouchStart: (event: React.TouchEvent) => {
+      const doigt = event.touches[0];
+
+      depart.current =
+        doigt === undefined || event.touches.length > 1
+          ? null
+          : dansUnDefilementHorizontal(event.target)
+            ? null
+            : { x: doigt.clientX, y: doigt.clientY };
     },
-    onPointerUp: (event: React.PointerEvent) => {
+    onTouchEnd: (event: React.TouchEvent) => {
       const origine = depart.current;
       depart.current = null;
-      if (origine === null) return;
 
-      const dx = event.clientX - origine.x;
-      const dy = event.clientY - origine.y;
+      const doigt = event.changedTouches[0];
+      if (origine === null || doigt === undefined) return;
+
+      const dx = doigt.clientX - origine.x;
+      const dy = doigt.clientY - origine.y;
       if (Math.abs(dx) < SEUIL || Math.abs(dx) < Math.abs(dy) * 2) return;
 
       const cible = PAGES[index + (dx < 0 ? 1 : -1)];
       if (cible !== undefined) naviguer(cible);
     },
-    onPointerCancel: () => {
+    onTouchCancel: () => {
       depart.current = null;
     },
   };

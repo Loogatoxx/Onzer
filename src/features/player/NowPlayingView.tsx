@@ -93,16 +93,29 @@ export function NowPlayingView({
     <div
       className="mx-auto flex w-full max-w-md flex-col px-6 pb-10 pt-6"
       {...geste}
-      onPointerDown={(event) => {
-        depart.current = event.clientY;
-        geste.onPointerDown(event);
+      // Le glissement vers le bas est un geste **du doigt** : il se lit donc
+      // sur les événements tactiles, comme le déplacement dans le morceau. Le
+      // pointeur, lui, est annulé dès que le navigateur croit à un défilement
+      // — et un glissement vers le bas est précisément ce qui y ressemble le
+      // plus.
+      onTouchStart={(event) => {
+        const doigt = event.touches[0];
+        depart.current = doigt === undefined ? null : doigt.clientY;
+        geste.onTouchStart(event);
       }}
-      onPointerUp={(event) => {
+      onTouchEnd={(event) => {
         const origine = depart.current;
         depart.current = null;
-        geste.onPointerUp(event);
+        geste.onTouchEnd(event);
 
-        if (origine !== null && event.clientY - origine > 120) onClose();
+        const doigt = event.changedTouches[0];
+        if (origine !== null && doigt !== undefined && doigt.clientY - origine > 120) {
+          onClose();
+        }
+      }}
+      onTouchCancel={() => {
+        depart.current = null;
+        geste.onTouchCancel();
       }}
     >
       {/* # Toucher la pochette l'agrandit

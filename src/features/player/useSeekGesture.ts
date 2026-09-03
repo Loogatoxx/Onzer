@@ -29,24 +29,60 @@ export function useSeekGesture(
 ) {
   const depart = useRef<{ x: number; position: number } | null>(null);
 
+  const commencer = (x: number) => {
+    depart.current = { x, position: positionMs };
+  };
+
+  /** Vrai si le geste a été traité — l'appelant sait alors qu'il n'a rien à faire. */
+  const finir = (x: number): boolean => {
+    const origine = depart.current;
+    depart.current = null;
+    if (origine === null) return false;
+
+    const ecart = x - origine.x;
+    if (Math.abs(ecart) < SEUIL_PX) return false;
+
+    const cible = origine.position + Math.sign(ecart) * SAUT_MS;
+    onSeek(Math.min(Math.max(0, cible), Math.max(0, durationMs)));
+    return true;
+  };
+
   return {
+    // # Pourquoi la souris et le doigt sont séparés
+    //
+    // Un écran tactile émet **les deux** familles d'événements : traiter les
+    // deux ferait deux sauts pour un seul geste. Et l'on ne peut pas se
+    // contenter du pointeur : dès que le navigateur décide qu'un mouvement est
+    // un défilement, il annule le pointeur — `pointercancel` part, `pointerup`
+    // ne vient jamais, et le geste se perd en silence.
     onPointerDown: (event: React.PointerEvent) => {
-      depart.current = { x: event.clientX, position: positionMs };
+      if (event.pointerType === "mouse") commencer(event.clientX);
     },
     onPointerUp: (event: React.PointerEvent) => {
-      const origine = depart.current;
+      if (event.pointerType !== "mouse") return;
+
+      if (finir(event.clientX)) {
+        // Le geste l'emporte sur le clic qu'il aurait aussi déclenché.
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+    onTouchStart: (event: React.TouchEvent) => {
+      const doigt = event.touches[0];
+      if (doigt !== undefined && event.touches.length === 1) commencer(doigt.clientX);
+      else depart.current = null;
+    },
+    onTouchEnd: (event: React.TouchEvent) => {
+      const doigt = event.changedTouches[0];
+      if (doigt === undefined) return;
+
+      if (finir(doigt.clientX)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+    onTouchCancel: () => {
       depart.current = null;
-      if (origine === null) return;
-
-      const ecart = event.clientX - origine.x;
-      if (Math.abs(ecart) < SEUIL_PX) return;
-
-      // Le geste l'emporte sur le clic qu'il aurait aussi déclenché.
-      event.preventDefault();
-      event.stopPropagation();
-
-      const cible = origine.position + Math.sign(ecart) * SAUT_MS;
-      onSeek(Math.min(Math.max(0, cible), Math.max(0, durationMs)));
     },
   };
 }

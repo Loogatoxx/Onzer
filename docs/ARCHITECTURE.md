@@ -2618,6 +2618,24 @@ marches de points au lieu de les laisser plates. Même mesure, grain à 3,5 % : 
 sur 250**, 3,5 teintes par ligne, et le sommet n'est éclairci que de deux niveaux. Monter à 5 %
 ne gagne que quatre lignes et coûte un niveau de plus.
 
+**Pourquoi le fondu s'arrête aux trois cinquièmes.** Une bande, c'est une amplitude divisée par
+une distance. Sur la hauteur réelle de l'en-tête d'un téléphone — 440 pixels — quinze niveaux font
+une marche tous les vingt-neuf ; sur deux cent soixante, une tous les dix-sept. Le fondu ne perd
+rien à finir plus tôt : dans son dernier tiers il ne se distingue déjà plus du fond.
+
+Les trois mesures, sur cette hauteur : **153 lignes unies sur 440** sans rien, **29 sur 440** avec
+le grain à 3,5 % sur toute la hauteur, **10 sur 264** avec le fondu écourté et le grain à 5,5 %.
+Le bruit est passé à une seule octave : deux octaves ajoutent une composante basse fréquence, donc
+des taches — et une tache, sur du quasi-noir, se voit davantage qu'une bande.
+
+**Ce que la mesure ne dit pas.** Elle porte sur le tampon d'image, qui ne change pas avec la
+luminosité de l'écran. L'utilisateur, lui, voit l'escalier « à peine en basse luminosité, mais
+c'est flagrant en luminosité normale » : c'est à mi-course qu'un écran OLED étire le plus la plage
+des noirs. Un défaut invisible sur une capture peut donc être criant sur la dalle — c'est la limite
+de cette méthode, et la raison pour laquelle le chiffre visé n'est pas « moins de bandes », mais
+zéro.
+
+
 **Pourquoi le grain porte le masque du dégradé.** Un grain uniforme s'arrêterait net là où le
 dégradé s'éteint : on verrait la frontière du grain à la place des bandes. Il reçoit donc la même
 rampe, radiale pour un halo, linéaire pour un en-tête.

@@ -439,6 +439,31 @@
    donc le même fondu : fort là où le dégradé travaille, absent là où il n'y
    a plus rien à cacher.
    ════════════════════════════════════════════════════════════════════════ */
+/* Le fondu de l'en-tête.
+ *
+ * # Pourquoi il s'arrête aux trois cinquièmes
+ *
+ * Une bande, c'est une amplitude divisée par une distance. Quinze niveaux
+ * étalés sur quatre cent quarante pixels donnent une marche tous les
+ * vingt-neuf ; sur deux cent soixante, une tous les dix-sept. Le fondu ne perd
+ * rien à finir plus tôt — il n'a jamais rien eu à dire dans son dernier tiers,
+ * où il ne se distingue plus du fond — et l'escalier y gagne d'être deux fois
+ * plus serré, donc deux fois moins lisible.
+ *
+ * Mesuré sur la hauteur réelle de l'en-tête : 153 lignes unies sur 440 sans
+ * rien, 29 sur 440 avec le grain à 3,5 % sur toute la hauteur, **10 sur 264**
+ * ainsi. Pousser le grain à 9 % n'en gagne que deux de plus, et éclaircit le
+ * sommet de deux niveaux : ce n'est plus une trame, c'est du sable.
+ */
+.fondu-tete {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--color-elevated) 70%, transparent) 0%,
+    transparent 60%
+  );
+  --grain-masque: linear-gradient(to bottom, #000 0%, transparent 60%);
+}
+
 .grain {
   position: relative;
   /* Le contexte d'empilement est ce qui permet au grain de se glisser
@@ -454,8 +479,8 @@
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)'/%3E%3C/svg%3E");
-  opacity: var(--grain-force, 0.035);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)'/%3E%3C/svg%3E");
+  opacity: var(--grain-force, 0.055);
   -webkit-mask-image: var(--grain-masque, linear-gradient(to bottom, #000, transparent));
   mask-image: var(--grain-masque, linear-gradient(to bottom, #000, transparent));
 }

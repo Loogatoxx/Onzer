@@ -138,12 +138,40 @@ export function AppShell({
   const [cursor, setCursor] = useState(0);
   const route: Route = stack[cursor] ?? { kind: "home" };
 
+  /**
+   * Une entrée d'historique par destination — et seulement là.
+   *
+   * # Pourquoi elle est posée ici et nulle part ailleurs
+   *
+   * Elle l'était depuis un effet, et depuis le gestionnaire de retour
+   * lui-même. Or un navigateur — donc la WebView d'Android — **marque comme
+   * « à sauter » toute entrée empilée sans qu'un geste de l'utilisateur soit
+   * intervenu depuis la précédente**. C'est une protection contre les pages
+   * qui piègent le bouton retour, et elle s'appliquait à nous : les entrées
+   * reposées pendant le retour étaient enjambées par le geste suivant. La
+   * pile paraissait pleine et se vidait deux fois plus vite — on se retrouvait
+   * dehors depuis « Plus », au lieu de passer par l'accueil.
+   *
+   * Ici, l'entrée suit immédiatement l'appui qui l'a demandée. Elle compte.
+   *
+   * # L'invariant
+   *
+   * Une entrée empilée par navigation, une consommée par retour : la
+   * profondeur de la pile vaut exactement `cursor`. À l'accueil, elle est
+   * vide — et c'est le système qui reprend la main, du premier geste.
+   */
   const navigate = useCallback((next: Route) => {
     // La recherche est une **surimpression**, pas une destination : tant qu'un
     // terme est saisi, elle masque la page. Naviguer sans l'effacer donnait
     // l'impression que la barre latérale ne répondait plus — il fallait vider
     // le champ caractère par caractère pour retrouver l'application.
     setQuery("");
+    // Le même seuil que la disposition, interrogé ici plutôt que reçu : la
+    // fonction est définie avant `useIsMobile`, et la retarder pour un
+    // booléen coûterait plus de fils qu'elle n'en démêle.
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      window.history.pushState(null, "");
+    }
     setStack((previous) => [...previous.slice(0, cursor + 1), next]);
     setCursor((previous) => previous + 1);
   }, [cursor]);
@@ -444,17 +472,22 @@ export function AppShell({
     const reculer = () => {
       // Une recherche ouverte se ferme avant tout le reste : c'est la
       // surimpression la plus proche de l'utilisateur.
+      //
+      // Le curseur recule avec elle : l'ouvrir a navigué — donc empilé une
+      // entrée — et la refermer sans reculer laisserait la pile et le curseur
+      // désaccordés d'un cran, c'est-à-dire une sortie de l'application un
+      // geste trop tôt. Au passage, on retrouve la page d'où l'on cherchait
+      // plutôt que la bibliothèque.
       if (searchOpen || query !== "") {
         setQuery("");
         setSearchOpen(false);
-        window.history.pushState(null, "");
+        if (cursor > 0) setCursor(cursor - 1);
         return;
       }
 
       // Un cran en arrière dans notre propre pile. C'est ce qui ramène le
       // grand lecteur à la page d'où on l'a ouvert — et non au bureau.
       if (cursor > 0) {
-        window.history.pushState(null, "");
         setCursor(cursor - 1);
         return;
       }
@@ -462,35 +495,25 @@ export function AppShell({
       // # Pourquoi l'accueil est le sol
       //
       // Plus rien derrière, et on n'est pas à l'accueil : le geste y ramène
-      // au lieu de fermer. C'est la bibliothèque qui jouait ce rôle, et l'on
-      // en sortait sans le vouloir — il suffisait d'y lancer un morceau, ce
-      // qui ne navigue nulle part, pour que le geste suivant quitte tout.
+      // au lieu de fermer. Ce cas ne devrait plus se produire — le premier
+      // étage de la pile *est* l'accueil — mais une remise à zéro venue
+      // d'ailleurs peut l'atteindre, et fermer là serait un adieu sans
+      // préavis.
       if (route.kind !== "home") {
-        window.history.pushState(null, "");
         setStack([{ kind: "home" }]);
         setCursor(0);
         return;
       }
 
-      // À l'accueil, sans rien derrière : l'entrée que le geste vient de
-      // consommer n'est pas remplacée, et le système met l'application en
-      // arrière-plan. C'est le seul endroit où il le fait.
+      // À l'accueil, sans rien derrière : il n'y a plus d'entrée à consommer,
+      // le système met l'application en arrière-plan. C'est le seul endroit
+      // où il le fait.
     };
 
     window.addEventListener("popstate", reculer);
     return () => window.removeEventListener("popstate", reculer);
   }, [mobile, searchOpen, query, cursor, route.kind]);
 
-  /**
-   * Une entrée d'historique par destination.
-   *
-   * Sans elle, il n'y a rien à dépiler : le premier geste sortirait de
-   * l'application, exactement ce qu'on veut éviter.
-   */
-  useEffect(() => {
-    if (!mobile) return;
-    window.history.pushState(null, "");
-  }, [mobile, cursor, searchOpen]);
 
 
   /**

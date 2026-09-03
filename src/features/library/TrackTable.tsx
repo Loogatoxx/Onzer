@@ -450,7 +450,11 @@ function TrackRow({
       } ${unavailable ? "opacity-40" : ""}`}
     >
       {/* ── Numéro / lecture ─────────────────────────────────────────── */}
-      <div className="flex h-9 w-5 items-center justify-center lg:w-7">
+      {/* `relative` n'est pas décoratif : le numéro et le bouton de lecture
+          sont posés en absolu l'un sur l'autre pour se fondre. Sans ancre
+          ici, ils se positionnent par rapport à la page — tous les numéros
+          s'empilent au même endroit et ne défilent plus. */}
+      <div className="relative flex h-9 w-5 items-center justify-center lg:w-7">
         {selectionnee !== undefined ? (
           <span
             aria-hidden

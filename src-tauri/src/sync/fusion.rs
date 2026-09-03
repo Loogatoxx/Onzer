@@ -267,10 +267,20 @@ fn index_sans_ambiguite<'a>(
 fn apparier<'a>(
     locaux: &'a [MorceauSync],
     distants: &'a [MorceauSync],
+    alias: &HashMap<String, String>,
 ) -> Vec<(&'a MorceauSync, &'a MorceauSync)> {
     let par_chemin: HashMap<&str, &MorceauSync> = distants
         .iter()
         .map(|morceau| (morceau.chemin.as_str(), morceau))
+        .collect();
+
+    // L'alias va du chemin distant vers le nôtre ; l'appariement part du
+    // nôtre. On le retourne une fois plutôt que de le parcourir à chaque ligne.
+    let par_alias: HashMap<&str, &MorceauSync> = alias
+        .iter()
+        .filter_map(|(distant, local)| {
+            par_chemin.get(distant.as_str()).map(|trouve| (local.as_str(), *trouve))
+        })
         .collect();
 
     let par_tags = index_sans_ambiguite(locaux, distants, cle_secondaire);
@@ -279,9 +289,12 @@ fn apparier<'a>(
     locaux
         .iter()
         .filter_map(|local| {
-            let distant = par_chemin
+            // L'alias passe devant : c'est un fait constaté en lisant le
+            // contenu des fichiers, là où les autres clés sont des indices.
+            let distant = par_alias
                 .get(local.chemin.as_str())
                 .copied()
+                .or_else(|| par_chemin.get(local.chemin.as_str()).copied())
                 .or_else(|| par_tags.get(&cle_secondaire(local)).copied())
                 .or_else(|| par_titre.get(&cle_titre(local)).copied())?;
 
@@ -295,9 +308,18 @@ fn apparier<'a>(
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Ce que **cet** appareil doit appliquer pour rejoindre l'autre.
-pub fn fusionner(soi: &EtatSync, autre: &EtatSync) -> Fusion {
+///
+/// `alias` associe un chemin **distant** au nôtre, pour les morceaux qu'aucune
+/// clé ne rapproche et que l'import a pourtant reconnus en lisant leur
+/// contenu. Sans lui, ces morceaux-là repartaient en téléchargement à chaque
+/// synchronisation, pour être jetés à l'arrivée.
+pub fn fusionner(
+    soi: &EtatSync,
+    autre: &EtatSync,
+    alias: &HashMap<String, String>,
+) -> Fusion {
     let mut fusion = Fusion::default();
-    let paires = apparier(&soi.morceaux, &autre.morceaux);
+    let paires = apparier(&soi.morceaux, &autre.morceaux, alias);
 
     for (local, distant) in &paires {
         fusionner_favori(local, distant, &autre.appareil, &mut fusion);
@@ -566,7 +588,7 @@ mod tests {
         let mac = etat("Mac", vec![morceau("a.mp3", "Rêve", "Adèle", false)]);
         let tel = etat("Honor", vec![morceau("a.mp3", "Rêve", "Adèle", true)]);
 
-        let vers_le_mac = fusionner(&mac, &tel);
+        let vers_le_mac = fusionner(&mac, &tel, &HashMap::new());
         assert_eq!(
             vers_le_mac.changements,
             vec![Changement::Aime {
@@ -577,7 +599,7 @@ mod tests {
         );
 
         // Et l'inverse ne retire rien : le téléphone garde son favori.
-        let vers_le_tel = fusionner(&tel, &mac);
+        let vers_le_tel = fusionner(&tel, &mac, &HashMap::new());
         assert!(vers_le_tel.changements.is_empty());
     }
 
@@ -589,7 +611,7 @@ mod tests {
         let mut la_bas = morceau("a.mp3", "Rêve", "Adèle", false);
         la_bas.aime_le = Some(200);
 
-        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![la_bas]));
+        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![la_bas]), &HashMap::new());
 
         assert_eq!(
             fusion.changements,
@@ -610,7 +632,7 @@ mod tests {
         let mut la_bas = morceau("a.mp3", "Rêve", "Adèle", false);
         la_bas.aime_le = Some(50);
 
-        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![la_bas]));
+        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![la_bas]), &HashMap::new());
 
         assert_eq!(
             fusion.changements,
@@ -631,7 +653,7 @@ mod tests {
         let ici = morceau("Adele/2024 - Inversions/03 - Reve.mp3", "Rêve", "Adèle", false);
         let la_bas = morceau("Musique/Reve.mp3", "reve", "ADELE", true);
 
-        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![la_bas]));
+        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![la_bas]), &HashMap::new());
 
         assert_eq!(fusion.changements.len(), 1, "les tags doivent apparier");
     }
@@ -654,7 +676,7 @@ mod tests {
             true,
         );
 
-        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![la_bas]));
+        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![la_bas]), &HashMap::new());
 
         assert_eq!(fusion.changements.len(), 1, "le favori doit traverser");
         assert!(
@@ -674,6 +696,7 @@ mod tests {
         let fusion = fusionner(
             &etat("Mac", vec![ici_un, ici_deux]),
             &etat("Honor", vec![la_bas]),
+            &HashMap::new(),
         );
 
         assert!(
@@ -690,7 +713,7 @@ mod tests {
         let studio = morceau("a.mp3", "Rêve", "Adèle", true);
         let live = morceau("b.mp3", "Rêve", "Adèle", true);
 
-        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![studio, live]));
+        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![studio, live]), &HashMap::new());
 
         assert!(fusion.changements.is_empty());
     }
@@ -702,18 +725,18 @@ mod tests {
         avec.paroles = Some("le texte".to_string());
 
         // Rien → quelque chose : on prend.
-        let fusion = fusionner(&etat("Mac", vec![nu.clone()]), &etat("Honor", vec![avec.clone()]));
+        let fusion = fusionner(&etat("Mac", vec![nu.clone()]), &etat("Honor", vec![avec.clone()]), &HashMap::new());
         assert_eq!(fusion.changements.len(), 1);
 
         // Quelque chose → autre chose, sans synchronisation : on garde le nôtre.
         nu.paroles = Some("mon texte".to_string());
-        let fusion = fusionner(&etat("Mac", vec![nu.clone()]), &etat("Honor", vec![avec.clone()]));
+        let fusion = fusionner(&etat("Mac", vec![nu.clone()]), &etat("Honor", vec![avec.clone()]), &HashMap::new());
         assert!(fusion.changements.is_empty());
 
         // Mais un texte qui défile l'emporte sur un texte fixe.
         let mut calees = avec.clone();
         calees.paroles_synchronisees = true;
-        let fusion = fusionner(&etat("Mac", vec![nu]), &etat("Honor", vec![calees]));
+        let fusion = fusionner(&etat("Mac", vec![nu]), &etat("Honor", vec![calees]), &HashMap::new());
         assert_eq!(fusion.changements.len(), 1);
     }
 
@@ -729,7 +752,7 @@ mod tests {
             morceaux: vec!["Musique/Reve.mp3".to_string()],
         });
 
-        let fusion = fusionner(&etat("Mac", vec![ici]), &tel);
+        let fusion = fusionner(&etat("Mac", vec![ici]), &tel, &HashMap::new());
 
         assert_eq!(
             fusion.changements,
@@ -761,7 +784,7 @@ mod tests {
             morceaux: vec!["deux.mp3".to_string()],
         });
 
-        let fusion = fusionner(&mac, &tel);
+        let fusion = fusionner(&mac, &tel, &HashMap::new());
 
         let Some(Changement::Playlist { morceaux, .. }) = fusion.changements.first() else {
             panic!("la playlist devait être fusionnée");
@@ -790,7 +813,7 @@ mod tests {
             morceaux: vec!["un.mp3".to_string()],
         });
 
-        assert!(fusionner(&mac, &tel).changements.is_empty());
+        assert!(fusionner(&mac, &tel, &HashMap::new()).changements.is_empty());
     }
 
     #[test]
@@ -817,7 +840,7 @@ mod tests {
             morceaux: vec!["un.mp3".to_string()],
         });
 
-        let fusion = fusionner(&mac, &tel);
+        let fusion = fusionner(&mac, &tel, &HashMap::new());
         assert_eq!(fusion.changements.len(), 1, "« Nouvelle » doit être créée");
     }
 
@@ -834,11 +857,39 @@ mod tests {
             vec![morceau("un.mp3", "Un", "A", false), nouveau],
         );
 
-        let fusion = fusionner(&mac, &tel);
+        let fusion = fusionner(&mac, &tel, &HashMap::new());
 
         assert_eq!(fusion.manquants.len(), 1);
         assert_eq!(fusion.manquants[0].chemin, "deux.mp3");
         assert_eq!(fusion.manquants[0].taille, 4_000_000);
+    }
+
+    #[test]
+    fn un_alias_appris_evite_de_retelecharger() {
+        // Le cas réel : onze morceaux revenaient à chaque synchronisation.
+        // Ni le chemin ni les tags ne les rapprochent — seul l'import les
+        // reconnaît, en lisant leur contenu. Il le dit une fois, la fusion
+        // s'en souvient.
+        let ici = morceau("Rangé/ici.mp3", "Un titre", "Un artiste", false);
+        let la_bas = morceau("Rangé/autrement.mp3", "Autre titre", "Autre artiste", true);
+
+        let mac = etat("Mac", vec![ici]);
+        let tel = etat("Honor", vec![la_bas]);
+
+        // Sans alias : le morceau paraît manquant, et son favori ne traverse pas.
+        let sans = fusionner(&mac, &tel, &HashMap::new());
+        assert_eq!(sans.manquants.len(), 1);
+        assert!(sans.changements.is_empty());
+
+        // Avec : il est reconnu, et tout suit.
+        let alias = HashMap::from([(
+            "Rangé/autrement.mp3".to_string(),
+            "Rangé/ici.mp3".to_string(),
+        )]);
+        let avec = fusionner(&mac, &tel, &alias);
+
+        assert!(avec.manquants.is_empty(), "il est là : ne pas le redemander");
+        assert_eq!(avec.changements.len(), 1, "le favori doit traverser");
     }
 
     #[test]
@@ -852,7 +903,7 @@ mod tests {
         let tel = etat("Honor", vec![morceau("un.mp3", "Un", "A", false), fantome]);
 
         assert!(
-            fusionner(&mac, &tel).manquants.is_empty(),
+            fusionner(&mac, &tel, &HashMap::new()).manquants.is_empty(),
             "on ne propose pas un fichier que l'autre n'a plus"
         );
     }
@@ -867,7 +918,7 @@ mod tests {
         );
         let tel = etat("Honor", vec![morceau("Musique/Reve.mp3", "reve", "ADELE", false)]);
 
-        assert!(fusionner(&mac, &tel).manquants.is_empty());
+        assert!(fusionner(&mac, &tel, &HashMap::new()).manquants.is_empty());
     }
 
     #[test]
@@ -877,10 +928,10 @@ mod tests {
         let mut mac = etat("Mac", vec![morceau("a.mp3", "Rêve", "Adèle", false)]);
         let tel = etat("Honor", vec![morceau("a.mp3", "Rêve", "Adèle", true)]);
 
-        assert_eq!(fusionner(&mac, &tel).changements.len(), 1);
+        assert_eq!(fusionner(&mac, &tel, &HashMap::new()).changements.len(), 1);
 
         // On applique.
         mac.morceaux[0].aime = true;
-        assert!(fusionner(&mac, &tel).changements.is_empty());
+        assert!(fusionner(&mac, &tel, &HashMap::new()).changements.is_empty());
     }
 }

@@ -330,6 +330,17 @@ impl PlayerService {
         self.device.position_ms()
     }
 
+    /// Le morceau en cours, sans construire tout l'instantané.
+    ///
+    /// # Pourquoi cet accès existe
+    ///
+    /// La boucle de surveillance a besoin de savoir, quatre fois par seconde,
+    /// si le morceau a changé. `snapshot` répondrait — en clonant la file
+    /// entière, soit deux mille éléments pour comparer un entier.
+    pub async fn current_track_id(&self) -> Option<i64> {
+        self.state.lock().await.current.as_ref().map(|play| play.track_id())
+    }
+
     pub fn is_playing(&self) -> bool {
         self.device.is_playing()
     }

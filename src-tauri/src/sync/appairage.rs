@@ -239,7 +239,11 @@ async fn fusion(
         .await
         .map_err(|erreur| ErreurHttp::interne(&erreur))?;
 
-    let resultat = fusionner(&local, &distant);
+    let alias = etat::alias(&serveur.pool)
+        .await
+        .map_err(|erreur| ErreurHttp::interne(&erreur))?;
+
+    let resultat = fusionner(&local, &distant, &alias);
 
     etat::appliquer(
         &serveur.pool,

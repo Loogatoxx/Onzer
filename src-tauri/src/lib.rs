@@ -535,6 +535,24 @@ fn spawn_playback_loop(handle: tauri::AppHandle) {
             is_playing: false,
         };
 
+        // Le morceau que le système d'exploitation croit entendre.
+        //
+        // # Le défaut que ça corrige
+        //
+        // L'état n'était poussé vers Android qu'à deux moments : une fin de
+        // morceau atteinte toute seule, et un changement lecture/pause.
+        // **Passer au suivant volontairement** n'est ni l'un ni l'autre :
+        // cela vient d'une commande, qui change le morceau sans que la boucle
+        // n'ait rien à en dire.
+        //
+        // La notification restait donc sur le morceau précédent, avec sa
+        // durée à lui, jusqu'à ce qu'un appui la réveille. Comparer
+        // l'identifiant couvre tous les chemins d'un coup — commande, fin
+        // naturelle, saut dans la file — au lieu d'en énumérer trois et d'en
+        // oublier un quatrième.
+        #[cfg(target_os = "android")]
+        let mut dernier_publie: Option<i64> = None;
+
         loop {
             interval.tick().await;
 
@@ -548,12 +566,18 @@ fn spawn_playback_loop(handle: tauri::AppHandle) {
             match player.tick(&state.pool, &paths).await {
                 Ok(true) => {
                     let _ = handle.emit(STATE_EVENT, player.snapshot().await);
-
-                    #[cfg(target_os = "android")]
-                    publier_vers_android(&handle, &player).await;
                 }
                 Ok(false) => {}
                 Err(error) => tracing::warn!(%error, "enchaînement interrompu"),
+            }
+
+            #[cfg(target_os = "android")]
+            {
+                let courant = player.current_track_id().await;
+                if courant != dernier_publie {
+                    dernier_publie = courant;
+                    publier_vers_android(&handle, &player).await;
+                }
             }
 
             let tick = PlaybackTick {

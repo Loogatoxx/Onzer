@@ -122,7 +122,8 @@ pub async fn synchroniser(
         .await
         .map_err(|erreur| OnzerError::Invalid(format!("réponse illisible : {erreur}")))?;
 
-    let resultat = fusionner(&local, &distant);
+    let alias = etat::alias(pool).await?;
+    let resultat = fusionner(&local, &distant, &alias);
 
     etat::appliquer(
         pool,
@@ -134,7 +135,7 @@ pub async fn synchroniser(
 
     // La même fusion, arguments inversés : ce que nous avons et qu'ils n'ont
     // pas. Le calcul est local et ne coûte rien — les deux états sont déjà là.
-    let chez_eux = fusionner(&distant, &local).manquants.len();
+    let chez_eux = fusionner(&distant, &local, &alias).manquants.len();
 
     Ok(RapportSync::compter(
         &distant.appareil,
@@ -225,7 +226,26 @@ pub async fn telecharger(
             Ok(ImportOutcome::Imported { .. }) | Ok(ImportOutcome::Restored { .. }) => {
                 rapport.recus += 1;
             }
-            Ok(ImportOutcome::Duplicate { .. }) => rapport.doublons += 1,
+            Ok(ImportOutcome::Duplicate { existing_id, .. }) => {
+                rapport.doublons += 1;
+
+                // # Pourquoi retenir ce que l'import vient de découvrir
+                //
+                // Il a reconnu le morceau en lisant son contenu — la seule
+                // façon d'y arriver quand ni le chemin ni les tags ne
+                // concordent. Sans mémoire, la fusion suivante le redemandera,
+                // on le retéléchargera, et il finira encore à la poubelle.
+                // Onze morceaux revenaient ainsi à chaque synchronisation.
+                if let Ok(Some(local)) = sqlx::query_scalar::<_, String>(
+                    "SELECT relative_path FROM tracks WHERE id = ?",
+                )
+                .bind(existing_id)
+                .fetch_optional(pool)
+                .await
+                {
+                    let _ = etat::noter_alias(pool, &morceau.chemin, &local).await;
+                }
+            }
             Err(erreur) => {
                 tracing::warn!(chemin = %morceau.chemin, %erreur, "morceau non rapatrié");
                 rapport.echecs += 1;

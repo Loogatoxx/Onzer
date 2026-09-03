@@ -4,6 +4,8 @@
 //! logique de décision vit dans [`super::fusion`], où elle se teste sans base
 //! ni réseau.
 
+use std::collections::HashMap;
+
 use sqlx::SqlitePool;
 
 use crate::core::{now_ms, Result};
@@ -141,6 +143,36 @@ async fn lire_playlists(pool: &SqlitePool) -> Result<Vec<PlaylistSync>> {
     }
 
     Ok(playlists)
+}
+
+/// Les équivalences apprises par l'import : chemin distant → chemin local.
+///
+/// Elles ne s'échangent pas. Chaque appareil apprend les siennes, en
+/// téléchargeant un fichier que l'import reconnaît ensuite comme déjà présent
+/// — une chose que seule la lecture du contenu peut établir.
+pub async fn alias(pool: &SqlitePool) -> Result<HashMap<String, String>> {
+    let lignes = sqlx::query_as::<_, (String, String)>(
+        "SELECT remote_path, local_path FROM sync_alias",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(lignes.into_iter().collect())
+}
+
+/// Retient qu'un chemin distant désigne un morceau que nous avons déjà.
+pub async fn noter_alias(pool: &SqlitePool, distant: &str, local: &str) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO sync_alias (remote_path, local_path, at) VALUES (?, ?, ?)
+         ON CONFLICT(remote_path) DO UPDATE SET local_path = excluded.local_path, at = excluded.at",
+    )
+    .bind(distant)
+    .bind(local)
+    .bind(now_ms())
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 /// Applique les changements, et consigne les arbitrages.

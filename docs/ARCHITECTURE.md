@@ -2378,6 +2378,62 @@ que là où une caméra existe.
 
 ---
 
+## ADR-081 — Ce que le système d'exploitation croit entendre
+
+**Contexte.** Passer au morceau suivant ne changeait rien à la notification : elle restait sur
+le précédent, avec sa durée à lui, jusqu'à ce qu'un appui la réveille.
+
+**Ce qui se passait.** L'état n'était poussé vers Android qu'à deux moments — une fin de
+morceau atteinte toute seule, et un changement lecture/pause. **Passer au suivant
+volontairement** n'est ni l'un ni l'autre : cela vient d'une commande, qui change le morceau
+sans que la boucle de surveillance n'ait rien à en dire.
+
+**Décision.** La boucle compare l'identifiant du morceau en cours à celui qu'elle a publié en
+dernier. Un seul critère, qui couvre tous les chemins d'un coup — commande, fin naturelle, saut
+dans la file — au lieu d'en énumérer trois et d'en oublier un quatrième.
+
+**Ce que ça a demandé.** Un accès léger au morceau courant : `snapshot` aurait répondu, en
+clonant la file entière — deux mille éléments, quatre fois par seconde, pour comparer un entier.
+
+---
+
+## ADR-082 — Se souvenir de ce que l'import a reconnu
+
+**Contexte.** Onze morceaux revenaient dans la liste des manquants à chaque synchronisation. On
+les téléchargeait, l'import les reconnaissait aussitôt — « déjà là sous un autre nom » —, le
+fichier partait à la poubelle, et la fois suivante on recommençait.
+
+**Ce qui les rendait invisibles à la fusion.** Ce sont les mêmes fichiers, rangés autrement et
+tagués autrement : ni le chemin, ni l'artiste, ni le titre ne concordent. Seul l'import sait
+les reconnaître, **parce qu'il lit leur contenu**. Il sait donc quelque chose que la fusion
+ignore.
+
+**Décision.** Il le lui dit. Chaque doublon constaté à l'import inscrit une équivalence —
+chemin distant, chemin local — que la fusion consulte **en premier**, avant ses propres clés :
+c'est un fait constaté, là où les autres sont des indices.
+
+**Pourquoi ces équivalences ne s'échangent pas.** Chaque appareil apprend les siennes, en
+téléchargeant. Les transmettre supposerait qu'elles valent pour l'autre, ce qui n'a aucune
+raison d'être vrai : c'est *son* rangement à lui qu'elles décrivent.
+
+---
+
+## ADR-083 — Une fusion, un transfert, puis une fusion
+
+**Contexte.** Un morceau nouveau sur le Mac, et aimé : le téléphone le téléchargeait bien, et
+ne le mettait pas dans les favoris. Il fallait appuyer une seconde fois sur « Synchroniser ».
+
+**Ce qui se passait.** La fusion a lieu **avant** le transfert — c'est elle qui dit ce qui
+manque. Au moment où elle décide, le morceau n'existe pas encore ici : il n'y a rien à quoi
+poser un cœur, rien à quoi attacher des paroles.
+
+**Décision.** Le transfert est suivi d'une seconde fusion, immédiate. Ce n'est pas une
+correction cosmétique : c'est le seul moment où les morceaux qui viennent d'arriver peuvent
+recevoir ce qui leur revient. C'est aussi là que les équivalences apprises à l'instant
+(ADR-082) se font entendre pour la première fois.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

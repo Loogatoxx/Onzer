@@ -31,6 +31,8 @@ export function ScannerQR({
 }) {
   const video = useRef<HTMLVideoElement | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  /** Incrémenté par « Réessayer » : c'est ce qui relance l'effet. */
+  const [essai, setEssai] = useState(0);
 
   useEffect(() => {
     let flux: MediaStream | null = null;
@@ -55,15 +57,27 @@ export function ScannerQR({
 
         if (video.current !== null) {
           video.current.srcObject = flux;
-          await video.current.play();
+
+          // # Pourquoi `play()` n'est pas attendu, ni son échec fatal
+          //
+          // Sur Android, il arrive qu'il rejette faute de geste utilisateur —
+          // alors même que `autoPlay` démarrera la lecture une fraction de
+          // seconde plus tard. Traiter ce rejet comme une panne laissait un
+          // rectangle gris avec un bouton de lecture au milieu : la vue web
+          // proposait de démarrer une vidéo qui tournait déjà.
+          void video.current.play().catch(() => undefined);
         }
 
         chercher();
       } catch (cause) {
+        const texte = String(cause);
+
         setErreur(
-          String(cause).includes("NotAllowed")
-            ? "L'accès à la caméra a été refusé. Tu peux toujours recopier les huit chiffres."
-            : String(cause),
+          texte.includes("NotAllowed") || texte.includes("Permission")
+            ? "L'accès à la caméra a été refusé. Autorise-le dans les réglages du téléphone, ou recopie les huit chiffres."
+            : texte.includes("NotFound")
+              ? "Aucune caméra trouvée sur cet appareil."
+              : texte,
         );
       }
     }
@@ -106,7 +120,7 @@ export function ScannerQR({
         for (const piste of flux.getTracks()) piste.stop();
       }
     };
-  }, [onLu]);
+  }, [onLu, essai]);
 
   return (
     <div
@@ -129,23 +143,44 @@ export function ScannerQR({
       <div className="relative flex-1 overflow-hidden">
         <video
           ref={video}
+          autoPlay
           playsInline
           muted
-          className="h-full w-full object-cover"
+          className="h-full w-full bg-black object-cover"
         />
 
         {/* Un cadre au centre : sans repère, on ne sait pas où viser, et l'on
             approche le téléphone jusqu'à ce que le QR sorte du champ. */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="h-56 w-56 rounded-2xl border-2 border-white/70" />
-        </div>
-      </div>
+        {erreur === null && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="h-56 w-56 rounded-2xl border-2 border-white/70" />
+          </div>
+        )}
 
-      {erreur !== null && (
-        <p className="px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4 text-center text-[13px] leading-relaxed text-warn">
-          {erreur}
-        </p>
-      )}
+        {/* # Pourquoi l'erreur occupe le centre
+            Elle était écrite en bas d'un écran noir, sous la vidéo. On voyait
+            un rectangle vide et rien d'autre : l'explication existait, hors du
+            regard. */}
+        {erreur !== null && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black px-8 text-center">
+            <span className="text-warn">
+              <Icon name="close" size={28} />
+            </span>
+            <p className="text-[14px] leading-relaxed text-ink">{erreur}</p>
+
+            <button
+              type="button"
+              onClick={() => {
+                setErreur(null);
+                setEssai((valeur) => valeur + 1);
+              }}
+              className="pression rounded-full bg-elevated px-5 py-2.5 text-[13px] font-medium text-ink"
+            >
+              Réessayer
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

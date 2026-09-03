@@ -4,6 +4,7 @@ import { Icon } from "@/components/Icon";
 import { ScannerQR } from "./ScannerQR";
 import {
   ipc,
+  type SyncNotice,
   type PairingInfo,
   type SyncReport,
   type TransferProgress,
@@ -56,6 +57,7 @@ export function PairingView({ onSynced }: { onSynced: () => void }) {
 
 function Recevoir() {
   const [infos, setInfos] = useState<PairingInfo | null>(null);
+  const [recu, setRecu] = useState<SyncNotice | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
 
@@ -68,6 +70,18 @@ function Recevoir() {
   useEffect(() => {
     return () => {
       void ipc.closePairing().catch(() => undefined);
+    };
+  }, []);
+
+  // # Pourquoi ce côté-ci a besoin d'être informé
+  //
+  // Celui qui se connecte voit un rapport : il a agi, il attend une réponse.
+  // Celui qui ouvre la porte ne voit rien passer — l'échange a lieu, sa base
+  // change, et son écran reste un QR. On ne sait même pas si ça a marché.
+  useEffect(() => {
+    const abonnement = ipc.onSyncApplied(setRecu);
+    return () => {
+      void abonnement.then((arreter) => arreter());
     };
   }, []);
 
@@ -133,6 +147,17 @@ function Recevoir() {
             codes erronés la referment aussi.
           </p>
 
+          {recu !== null && (
+            <p className="mt-3 rounded-lg border border-accent/25 bg-accent/5 px-3.5 py-2.5 text-[13px] leading-relaxed text-ink">
+              {recu.appareil} s&apos;est connecté
+              {recu.changements === 0
+                ? " — rien à reprendre de son côté."
+                : ` et ${recu.changements} chose${recu.changements > 1 ? "s" : ""} ${
+                    recu.changements > 1 ? "sont arrivées" : "est arrivée"
+                  } ici.`}
+            </p>
+          )}
+
           <button
             type="button"
             onClick={fermer}
@@ -196,8 +221,28 @@ function CodeQR({ matrice }: { matrice: boolean[][] }) {
 //  Entrer chez l'autre
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Où l'adresse de l'autre appareil est retenue.
+ *
+ * # Pourquoi elle seule, et pas le code
+ *
+ * L'adresse est une propriété du réseau : elle ne bouge pas d'une fois sur
+ * l'autre. Le code est tiré au sort à chaque ouverture — le retenir ne ferait
+ * que proposer un secret périmé, et donner l'impression que la synchronisation
+ * refuse un code correct.
+ */
+const MEMOIRE_ADRESSE = "onzer.appairage.adresse";
+
 function SeConnecter({ onSynced }: { onSynced: () => void }) {
-  const [hote, setHote] = useState("");
+  // Quitter la page démonte ce composant : sans mémoire, il fallait retaper
+  // l'adresse après chaque aller-retour vers la bibliothèque.
+  const [hote, setHote] = useState(() => {
+    try {
+      return localStorage.getItem(MEMOIRE_ADRESSE) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [code, setCode] = useState("");
   const [occupe, setOccupe] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -243,6 +288,14 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
 
     try {
       const { adresse, port } = destination();
+
+      try {
+        localStorage.setItem(MEMOIRE_ADRESSE, hote.trim());
+      } catch {
+        // Un navigateur qui refuse le stockage n'est pas une raison de ne pas
+        // synchroniser.
+      }
+
       setRapport(await ipc.syncWithDevice(adresse, port, code));
       // La base vient de changer : sans ce rappel, l'écran garderait
       // l'ancienne vérité jusqu'au prochain démarrage.
@@ -276,11 +329,21 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
     try {
       const { adresse, port } = destination();
       const bilan = await ipc.fetchMissingFiles(adresse, port, code, rapport.manquants);
-
       setBilanTransfert(bilan);
-      // Les morceaux reçus ne sont plus manquants : reproposer de les
-      // télécharger les ferait descendre une seconde fois.
-      setRapport({ ...rapport, manquants: [], octetsManquants: 0 });
+
+      // # Pourquoi une seconde fusion, tout de suite
+      //
+      // La première a eu lieu **avant** que les fichiers n'arrivent : les
+      // morceaux qu'on vient de recevoir n'existaient pas encore ici, et rien
+      // ne pouvait donc leur poser un cœur ni leur donner leurs paroles. Il
+      // fallait appuyer une seconde fois sur « Synchroniser » pour les voir
+      // rejoindre les favoris — une étape que personne ne devine.
+      //
+      // C'est aussi le moment où les équivalences apprises par l'import se
+      // font entendre : ce qu'il vient de reconnaître comme déjà présent ne
+      // sera plus jamais reproposé.
+      const second = await ipc.syncWithDevice(adresse, port, code);
+      setRapport(second);
       onSynced();
     } catch (cause) {
       setErreur(String(cause));

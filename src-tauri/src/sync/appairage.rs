@@ -26,17 +26,40 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use axum::extract::{DefaultBodyLimit, State};
+use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use tokio::sync::RwLock;
 
-use crate::core::{OnzerError, Result};
+use crate::core::{OnzerError, PathResolver, Result};
 
 use super::etat;
 use super::fusion::{fusionner, EtatSync};
+
+/// Comment prévenir l'interface qu'une fusion vient d'être appliquée.
+///
+/// # Pourquoi une fonction et non une poignée Tauri
+///
+/// Le serveur n'a besoin de savoir qu'une chose : « préviens ». Lui donner une
+/// `AppHandle` l'attacherait à une application graphique en train de tourner —
+/// et rendrait la porte impossible à éprouver sans en lancer une. Ici, le test
+/// passe une fermeture qui note l'appel, et vérifie que l'avertissement part.
+pub type Avertisseur = Arc<dyn Fn(&str, &super::fusion::Fusion) + Send + Sync>;
+
+/// Ce que la porte a besoin de savoir pour répondre.
+pub struct EtatServeur {
+    pub pool: SqlitePool,
+    /// Pour retrouver les fichiers qu'on nous demande. Sous verrou partagé :
+    /// la racine change quand le SSD est rebranché.
+    pub paths: Arc<RwLock<PathResolver>>,
+    /// Sans cet avertissement, l'écran garde son ancienne vérité : les favoris
+    /// arrivent en base et n'apparaissent nulle part — ce qui se voit
+    /// exactement comme une synchronisation qui ne marche pas.
+    pub prevenir: Avertisseur,
+}
 
 /// Port d'écoute souhaité. Voisin de celui de l'API d'import, dans la même
 /// plage haute. C'est celui que le client suppose quand on ne lui en donne pas.
@@ -86,8 +109,8 @@ fn sessions() -> &'static Mutex<Option<Session>> {
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Ouvre la porte et rend de quoi l'afficher.
-pub async fn ouvrir(pool: SqlitePool) -> Result<InfosAppairage> {
-    ouvrir_sur(pool, PORT).await
+pub async fn ouvrir(etat: Arc<EtatServeur>) -> Result<InfosAppairage> {
+    ouvrir_sur(etat, PORT).await
 }
 
 /// # Pourquoi le port n'est pas garanti
@@ -97,7 +120,7 @@ pub async fn ouvrir(pool: SqlitePool) -> Result<InfosAppairage> {
 /// encore libérée. Échouer là-dessus serait absurde : n'importe quel port fait
 /// l'affaire, puisque le code **et** le QR le transportent. On demande donc le
 /// port habituel, et l'on se rabat sur celui que le système veut bien donner.
-pub async fn ouvrir_sur(pool: SqlitePool, souhaite: u16) -> Result<InfosAppairage> {
+pub async fn ouvrir_sur(etat: Arc<EtatServeur>, souhaite: u16) -> Result<InfosAppairage> {
     fermer();
 
     let code = tirer_un_code();
@@ -143,8 +166,9 @@ pub async fn ouvrir_sur(pool: SqlitePool, souhaite: u16) -> Result<InfosAppairag
 
     let routeur = Router::new()
         .route("/sync/v1/fusion", post(fusion))
+        .route("/sync/v1/fichier", get(fichier))
         .layer(DefaultBodyLimit::max(TAILLE_MAX))
-        .with_state(Arc::new(pool));
+        .with_state(etat);
 
     tokio::spawn(async move {
         let service = axum::serve(ecoute, routeur).with_graceful_shutdown(async {
@@ -205,20 +229,20 @@ pub fn ouverte() -> bool {
 /// seul aller-retour suffit, et la fusion étant stable, refaire le calcul ne
 /// produit plus rien.
 async fn fusion(
-    State(pool): State<Arc<SqlitePool>>,
+    State(serveur): State<Arc<EtatServeur>>,
     entetes: HeaderMap,
     Json(distant): Json<EtatSync>,
 ) -> std::result::Result<Json<EtatSync>, ErreurHttp> {
     verifier(&entetes)?;
 
-    let local = etat::lire(&pool)
+    let local = etat::lire(&serveur.pool)
         .await
         .map_err(|erreur| ErreurHttp::interne(&erreur))?;
 
     let resultat = fusionner(&local, &distant);
 
     etat::appliquer(
-        &pool,
+        &serveur.pool,
         &distant.appareil,
         &resultat.changements,
         &resultat.arbitrages,
@@ -232,12 +256,65 @@ async fn fusion(
         "fusion appliquée"
     );
 
+    // # Pourquoi l'interface est prévenue
+    //
+    // Ce côté-ci n'a rien demandé : c'est l'autre appareil qui s'est connecté,
+    // et l'écran affiché ici ne sait pas que sa base vient de changer. Les
+    // favoris arrivaient donc bien en base — et n'apparaissaient nulle part,
+    // ce qui se voit exactement comme une synchronisation qui ne marche pas.
+    (serveur.prevenir)(&distant.appareil, &resultat);
+
     // Relu après application : c'est l'union que le client doit recevoir.
-    let apres = etat::lire(&pool)
+    let apres = etat::lire(&serveur.pool)
         .await
         .map_err(|erreur| ErreurHttp::interne(&erreur))?;
 
     Ok(Json(apres))
+}
+
+#[derive(Deserialize)]
+struct DemandeFichier {
+    chemin: String,
+}
+
+/// Rend le fichier audio d'un morceau.
+///
+/// # Pourquoi le chemin est vérifié en base et pas seulement nettoyé
+///
+/// `PathResolver::resolve` refuse déjà les chemins absolus et les `..`. Mais
+/// il ne dit rien de ce qui se trouve **dans** la bibliothèque : un chemin
+/// bien formé pourrait désigner n'importe quel fichier qu'on y aurait déposé.
+/// Exiger que le morceau existe en base réduit ce qui sort d'ici à ce que la
+/// bibliothèque connaît — et c'est tout ce que l'autre appareil peut demander.
+async fn fichier(
+    State(serveur): State<Arc<EtatServeur>>,
+    entetes: HeaderMap,
+    Query(demande): Query<DemandeFichier>,
+) -> std::result::Result<Vec<u8>, ErreurHttp> {
+    verifier(&entetes)?;
+
+    let connu: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM tracks WHERE relative_path = ? AND deleted_at IS NULL",
+    )
+    .bind(&demande.chemin)
+    .fetch_optional(&serveur.pool)
+    .await
+    .map_err(|erreur| ErreurHttp::new(StatusCode::INTERNAL_SERVER_ERROR, &erreur.to_string()))?;
+
+    if connu.is_none() {
+        return Err(ErreurHttp::new(StatusCode::NOT_FOUND, "morceau inconnu"));
+    }
+
+    let chemin = serveur
+        .paths
+        .read()
+        .await
+        .resolve(&demande.chemin)
+        .map_err(|erreur| ErreurHttp::new(StatusCode::BAD_REQUEST, &erreur.to_string()))?;
+
+    tokio::fs::read(&chemin)
+        .await
+        .map_err(|erreur| ErreurHttp::new(StatusCode::NOT_FOUND, &format!("fichier illisible : {erreur}")))
 }
 
 /// Vérifie le code, et compte les erreurs.

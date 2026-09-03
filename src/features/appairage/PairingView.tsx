@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 
 import { Icon } from "@/components/Icon";
-import { ipc, type PairingInfo, type SyncReport } from "@/lib/ipc";
+import {
+  ipc,
+  type PairingInfo,
+  type SyncReport,
+  type TransferProgress,
+  type TransferReport,
+} from "@/lib/ipc";
 
 /**
  * Synchroniser deux appareils, sur le réseau local.
@@ -20,7 +26,7 @@ import { ipc, type PairingInfo, type SyncReport } from "@/lib/ipc";
  * gigaoctets. Les titres et les albums non plus : corriger deux mille titres
  * d'un coup sans qu'on l'ait demandé est exactement ce qu'Onzer ne fait pas.
  */
-export function PairingView() {
+export function PairingView({ onSynced }: { onSynced: () => void }) {
   return (
     <div className="px-6 pb-10 pt-6">
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-muted">
@@ -37,7 +43,7 @@ export function PairingView() {
 
       <div className="mt-8 grid max-w-4xl gap-3 lg:grid-cols-2">
         <Recevoir />
-        <SeConnecter />
+        <SeConnecter onSynced={onSynced} />
       </div>
     </div>
   );
@@ -189,12 +195,23 @@ function CodeQR({ matrice }: { matrice: boolean[][] }) {
 //  Entrer chez l'autre
 // ════════════════════════════════════════════════════════════════════════════
 
-function SeConnecter() {
+function SeConnecter({ onSynced }: { onSynced: () => void }) {
   const [hote, setHote] = useState("");
   const [code, setCode] = useState("");
   const [occupe, setOccupe] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [rapport, setRapport] = useState<SyncReport | null>(null);
+  const [transfert, setTransfert] = useState<TransferProgress | null>(null);
+  const [bilanTransfert, setBilanTransfert] = useState<TransferReport | null>(null);
+
+  // L'avancement vient du cœur : c'est lui qui télécharge, un fichier à la
+  // fois, et lui seul sait où il en est.
+  useEffect(() => {
+    const abonnement = ipc.onSyncTransfer(setTransfert);
+    return () => {
+      void abonnement.then((arreter) => arreter());
+    };
+  }, []);
 
   /**
    * Un lien collé remplit les deux champs.
@@ -221,19 +238,50 @@ function SeConnecter() {
     setRapport(null);
 
     try {
-      // L'adresse peut porter son port : « 192.168.1.42:47813 ». Il n'y en a
-      // qu'un d'habitude, mais quand le port habituel est pris, l'autre
-      // appareil en affiche un autre — et il faut bien pouvoir le saisir.
-      const [adresse, portEcrit] = hote.trim().split(":");
-      const port = Number.parseInt(portEcrit ?? "", 10);
-
-      setRapport(
-        await ipc.syncWithDevice(adresse ?? "", Number.isNaN(port) ? 47812 : port, code),
-      );
+      const { adresse, port } = destination();
+      setRapport(await ipc.syncWithDevice(adresse, port, code));
+      // La base vient de changer : sans ce rappel, l'écran garderait
+      // l'ancienne vérité jusqu'au prochain démarrage.
+      onSynced();
     } catch (cause) {
       setErreur(String(cause));
     } finally {
       setOccupe(false);
+    }
+  }
+
+  /**
+   * L'adresse peut porter son port : « 192.168.1.42:47813 ».
+   *
+   * Il n'y en a qu'un d'habitude, mais quand le port habituel est pris,
+   * l'autre appareil en affiche un autre — et il faut bien pouvoir le saisir.
+   */
+  function destination() {
+    const [adresse, portEcrit] = hote.trim().split(":");
+    const port = Number.parseInt(portEcrit ?? "", 10);
+
+    return { adresse: adresse ?? "", port: Number.isNaN(port) ? 47812 : port };
+  }
+
+  async function rapatrier() {
+    if (rapport === null) return;
+
+    setErreur(null);
+    setTransfert({ fait: 0, total: rapport.manquants.length, titre: "" });
+
+    try {
+      const { adresse, port } = destination();
+      const bilan = await ipc.fetchMissingFiles(adresse, port, code, rapport.manquants);
+
+      setBilanTransfert(bilan);
+      // Les morceaux reçus ne sont plus manquants : reproposer de les
+      // télécharger les ferait descendre une seconde fois.
+      setRapport({ ...rapport, manquants: [], octetsManquants: 0 });
+      onSynced();
+    } catch (cause) {
+      setErreur(String(cause));
+    } finally {
+      setTransfert(null);
     }
   }
 
@@ -278,14 +326,140 @@ function SeConnecter() {
       </button>
 
       {rapport !== null && <Resultat rapport={rapport} />}
+
+      {rapport !== null && rapport.manquants.length > 0 && (
+        <Manquants
+          rapport={rapport}
+          transfert={transfert}
+          onRapatrier={() => void rapatrier()}
+        />
+      )}
+
+      {bilanTransfert !== null && <BilanTransfert bilan={bilanTransfert} />}
       {erreur !== null && <Erreur texte={erreur} />}
     </section>
   );
 }
 
+/** « 3,4 Go », « 812 Mo ». */
+function poids(octets: number): string {
+  if (octets >= 1_000_000_000) return `${(octets / 1_000_000_000).toFixed(1)} Go`;
+  if (octets >= 1_000_000) return `${Math.round(octets / 1_000_000)} Mo`;
+  return `${Math.max(1, Math.round(octets / 1000))} Ko`;
+}
+
+/**
+ * Les morceaux que l'autre a et qu'on n'a pas.
+ *
+ * # Pourquoi ils ne descendent pas tout seuls
+ *
+ * Ce sont des fichiers. Quelques mégaoctets chacun, plusieurs gigaoctets pour
+ * une bibliothèque entière : les faire venir sans prévenir remplirait un
+ * téléphone en silence. Le poids est donc annoncé avant, pas découvert après.
+ *
+ * # Pourquoi ils étaient invisibles
+ *
+ * La synchronisation annonçait « déjà d'accord » dès que favoris, playlists et
+ * paroles concordaient — sans un mot sur les morceaux que l'un des deux
+ * n'avait tout simplement pas. C'est pourtant la première chose qu'on remarque
+ * après avoir téléchargé de la musique sur l'autre appareil.
+ */
+function Manquants({
+  rapport,
+  transfert,
+  onRapatrier,
+}: {
+  rapport: SyncReport;
+  transfert: TransferProgress | null;
+  onRapatrier: () => void;
+}) {
+  const nombre = rapport.manquants.length;
+  const encours = transfert !== null && transfert.fait < transfert.total;
+
+  return (
+    <div className="mt-3 rounded-lg border border-line bg-elevated px-3.5 py-3">
+      <p className="text-[13px] font-medium text-ink">
+        {nombre} morceau{nombre > 1 ? "x" : ""} ne {nombre > 1 ? "sont" : "est"}{" "}
+        pas ici
+      </p>
+      <p className="mt-0.5 text-[12px] text-ink-muted">
+        {poids(rapport.octetsManquants)} à récupérer depuis {rapport.appareil}.
+      </p>
+
+      <ul className="mt-2 space-y-0.5 text-[12px] text-ink-faint">
+        {rapport.manquants.slice(0, 3).map((morceau) => (
+          <li key={morceau.chemin} className="truncate">
+            {morceau.artiste === null
+              ? morceau.titre
+              : `${morceau.artiste} — ${morceau.titre}`}
+          </li>
+        ))}
+        {nombre > 3 && <li>et {nombre - 3} autres…</li>}
+      </ul>
+
+      {encours ? (
+        <div className="mt-3">
+          <div className="h-1 overflow-hidden rounded-full bg-base">
+            <div
+              className="h-full bg-accent transition-[width] duration-300"
+              style={{ width: `${(transfert.fait / Math.max(1, transfert.total)) * 100}%` }}
+            />
+          </div>
+          <p className="numerals mt-1.5 truncate text-[12px] text-ink-muted">
+            {transfert.fait} / {transfert.total} · {transfert.titre}
+          </p>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onRapatrier}
+          className="pression mt-3 w-full rounded-lg border border-line px-4 py-2.5 text-[13px] text-ink transition-colors hover:bg-surface"
+        >
+          Récupérer les fichiers
+        </button>
+      )}
+    </div>
+  );
+}
+
+function BilanTransfert({ bilan }: { bilan: TransferReport }) {
+  return (
+    <div className="mt-3 rounded-lg border border-accent/25 bg-accent/5 px-3.5 py-3 text-[13px] leading-relaxed text-ink">
+      <p className="font-medium">
+        {bilan.recus} morceau{bilan.recus > 1 ? "x" : ""} rapatrié
+        {bilan.recus > 1 ? "s" : ""}
+      </p>
+
+      {(bilan.doublons > 0 || bilan.echecs > 0) && (
+        <ul className="mt-1 space-y-0.5 text-[12px] text-ink-muted">
+          {bilan.doublons > 0 && (
+            <li>
+              {bilan.doublons} étai{bilan.doublons > 1 ? "ent" : "t"} déjà là sous
+              un autre nom
+            </li>
+          )}
+          {bilan.echecs > 0 && (
+            <li className="text-warn">
+              {bilan.echecs} n&apos;{bilan.echecs > 1 ? "ont" : "a"} pas pu être
+              récupéré{bilan.echecs > 1 ? "s" : ""}
+              {bilan.premiereErreur !== null && ` — ${bilan.premiereErreur}`}
+            </li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function Resultat({ rapport }: { rapport: SyncReport }) {
+  // « Déjà d'accord » ne vaut que si **tout** concorde, fichiers compris : le
+  // dire alors que des morceaux entiers manquent est le défaut qu'on corrige.
   const rien =
-    rapport.favoris === 0 && rapport.paroles === 0 && rapport.playlists === 0;
+    rapport.favoris === 0 &&
+    rapport.paroles === 0 &&
+    rapport.playlists === 0 &&
+    rapport.manquants.length === 0 &&
+    rapport.manquantsLaBas === 0;
 
   return (
     <div className="mt-4 rounded-lg border border-accent/25 bg-accent/5 px-3.5 py-3 text-[13px] leading-relaxed text-ink">
@@ -295,7 +469,8 @@ function Resultat({ rapport }: { rapport: SyncReport }) {
 
       {rien ? (
         <p className="mt-1 text-ink-muted">
-          Les deux bibliothèques disaient déjà la même chose.
+          Les deux bibliothèques disaient déjà la même chose, et aucune
+          n&apos;a de morceau que l&apos;autre n&apos;aurait pas.
         </p>
       ) : (
         <ul className="mt-1.5 space-y-0.5 text-ink-muted">
@@ -322,6 +497,17 @@ function Resultat({ rapport }: { rapport: SyncReport }) {
         <p className="mt-2 text-[12px] text-ink-faint">
           {rapport.arbitrages} désaccord{rapport.arbitrages > 1 ? "s" : ""} —
           le plus récent a gagné, et ce qui a été remplacé est consigné.
+        </p>
+      )}
+
+      {/* On ne peut rien en faire d'ici : c'est celui qui se connecte qui
+          rapatrie. Le taire laisserait croire que tout est réglé. */}
+      {rapport.manquantsLaBas > 0 && (
+        <p className="mt-2 text-[12px] leading-relaxed text-ink-faint">
+          {rapport.manquantsLaBas} morceau{rapport.manquantsLaBas > 1 ? "x" : ""}{" "}
+          d&apos;ici {rapport.manquantsLaBas > 1 ? "manquent" : "manque"} chez{" "}
+          {rapport.appareil}. Pour {rapport.manquantsLaBas > 1 ? "les" : "le"} lui
+          donner, ouvre la porte de ce côté et connecte-toi depuis lui.
         </p>
       )}
     </div>

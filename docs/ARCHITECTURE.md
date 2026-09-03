@@ -2152,6 +2152,127 @@ prix d'un aller-retour et d'un état intermédiaire à tenir.
 
 ---
 
+## ADR-074 — Les fichiers ne descendent qu'à la demande
+
+**Contexte.** « Déjà d'accord », affichait la synchronisation — alors que le Mac venait de
+télécharger des morceaux que le téléphone n'avait pas. Elle disait vrai sur ce qu'elle
+regardait : favoris, playlists et paroles concordaient. Elle ne regardait simplement pas les
+morceaux **absents**, qui sont pourtant la première chose qu'on remarque.
+
+**Décision.** La fusion annonce désormais ce que l'autre a et que nous n'avons pas, avec son
+poids. Un clic les fait venir. Pas d'office : ce sont des fichiers, quelques mégaoctets
+chacun, plusieurs gigaoctets pour une bibliothèque — les faire descendre sans prévenir
+remplirait un téléphone en silence.
+
+**Pourquoi « manquant » se déduit de l'appariement.** Le mot n'a de sens qu'au regard de la
+règle qui décide que deux fichiers sont le même morceau — chemin d'abord, tags ensuite. Le
+recalculer autrement garantirait qu'un jour les deux réponses divergent : un morceau annoncé
+manquant que la fusion, elle, considère présent, et qu'on téléchargerait en double.
+
+**Pourquoi un fichier à la fois.** Une archive serait plus rapide sur le réseau et pire
+partout ailleurs : il faudrait la constituer — donc la place pour tout stocker deux fois —,
+la transmettre entièrement avant d'en tirer quoi que ce soit, et tout perdre si la connexion
+tombe à quatre-vingt-dix pour cent. Fichier par fichier, chaque morceau arrivé est acquis.
+
+**Pourquoi l'import passe par le chemin habituel.** Le fichier descend dans un atelier, puis
+`import_file` le range selon les règles de la bibliothèque : même nommage, même
+dédoublonnage, même journal. Écrire directement à l'emplacement annoncé par l'autre appareil
+irait plus vite et créerait une seconde façon d'entrer dans la bibliothèque, avec ses propres
+oublis.
+
+**Un piège qui n'existe que sur Android.** `std::env::temp_dir()` rend `/tmp` quand `TMPDIR`
+n'est pas défini — et sur Android, `/tmp` n'existe pas. Le transfert aurait échoué sur le seul
+appareil pour lequel il a été écrit, avec une erreur parlant d'un dossier dont personne n'a
+jamais entendu parler. L'atelier vit donc dans le dossier de données de l'application, celui
+qui porte déjà la base.
+
+**Ce que le serveur accepte de servir.** `PathResolver::resolve` refuse déjà les chemins
+absolus et les `..`. Il ne dit rien de ce qui se trouve **dans** la bibliothèque : un chemin
+bien formé pourrait désigner n'importe quel fichier qu'on y aurait déposé. Le morceau doit
+donc exister en base — ce qui sort d'ici se réduit à ce que la bibliothèque connaît.
+
+---
+
+## ADR-075 — Une base qui change sans que l'écran le sache
+
+**Contexte.** « Liké sur le Mac, ça passe nickel ; liké sur le téléphone, ça ne passe pas vers
+le Mac. » La fusion, elle, était symétrique — et les tests le prouvaient.
+
+**Ce qui se passait.** Les favoris arrivaient bien dans la base du Mac. Ils n'apparaissaient
+nulle part.
+
+La liste des favoris était chargée **une fois** au démarrage, puis tenue à jour à la main :
+cocher un cœur mettait l'ensemble à jour localement, sans jamais le redemander. Tant que
+l'interface était seule à écrire, l'hypothèse tenait.
+
+La synchronisation l'a cassée. Quand l'autre appareil se connecte, c'est **lui** qui écrit
+dans notre base, pendant qu'on regarde un écran qui n'a rien demandé. Et le symptôme est
+indistinguable d'une synchronisation qui ne marche pas.
+
+L'asymétrie venait de là : le côté qui se connecte voit son propre écran se rafraîchir
+naturellement — il a agi, il attend un résultat. Le côté qui reçoit n'attend rien.
+
+**Décision.** Deux choses, dont aucune ne suffit seule :
+
+- Le serveur **prévient** son interface après avoir appliqué une fusion. Pas avec une poignée
+  Tauri, mais avec une fonction qu'on lui donne : le serveur n'a besoin de savoir qu'une
+  chose, « préviens », et le test peut alors vérifier que l'avertissement part sans lancer
+  d'application graphique.
+- Les favoris et les playlists sont relus **à chaque révision**, et non plus une fois pour
+  toutes. Le coût est une requête ; le bénéfice est qu'aucune écriture, d'où qu'elle vienne,
+  ne peut plus rester invisible.
+
+---
+
+## ADR-076 — La recherche est un mode de la bibliothèque, pas un calque
+
+**Contexte.** « Dans la recherche, appuyer sur la lecture ne marche pas ; je dois quitter la
+recherche et aller sur la bibliothèque. »
+
+**Ce qui se passait.** Les résultats s'affichaient dès qu'une requête était écrite, **quelle
+que soit la destination**. Toucher le lecteur changeait bien de route — et ne montrait rien,
+la recherche restant par-dessus. Le geste était compris, exécuté, et invisible.
+
+**Décision.** Sur téléphone, la recherche appartient à l'onglet Bibliothèque : partir vers un
+artiste, un album ou l'écran de lecture montre cette page-là. Sur un bureau, elle occupe la
+zone principale quelle que soit la route — le lecteur y a son propre panneau et n'est jamais
+caché.
+
+La requête, elle, n'est pas effacée : revenir à la bibliothèque retrouve les résultats.
+L'effacer aurait « marché » aussi, en faisant payer chaque aller-retour.
+
+---
+
+## ADR-077 — Un glissement a une direction
+
+**Contexte.** Le glissement entre onglets fonctionnait, et se voyait comme une téléportation :
+le doigt partait vers la gauche, la page suivante était là, sans qu'aucun mouvement ne relie
+les deux.
+
+**Décision.** Deux enveloppes, deux rôles. Celle du dehors suit le doigt pendant le geste —
+elle ne change jamais de clé, donc rien ne se remonte et le mouvement est continu. Celle du
+dedans change de clé à chaque destination, et joue une entrée **par le côté d'où le geste
+venait**.
+
+**Trois détails qui font la différence entre un geste et un tremblement :**
+
+| | |
+|---|---|
+| La page résiste — un tiers du déplacement du doigt, plafonné | Un suivi au pixel près rendrait le retour élastique illisible : on ne saurait pas si le geste a été refusé ou si le doigt a glissé |
+| Vingt-huit pour cent de largeur, pas cent | La page ne vient pas de l'extérieur de l'écran : elle rattrape un mouvement déjà commencé. Cent la ferait paraître lente à durée égale |
+| Sans page de ce côté, la résistance triple | Le geste répond, et son inutilité se sent avant qu'on n'aille au bout |
+
+**Pourquoi la direction est attachée à une destination.** Elle ne vaut que pour *la* page que
+ce geste-là a appelée. Gardée seule, elle survivrait au glissement : ouvrir ensuite un artiste
+depuis une ligne le ferait entrer par le côté, comme si on avait glissé — un mouvement qui
+raconterait quelque chose qui n'a pas eu lieu.
+
+**`transform: none` et non `translateX(0)`.** Une transformation, même nulle, fait de
+l'élément un bloc conteneur : les surcouches en plein écran — la pochette agrandie — se
+seraient positionnées par rapport à lui.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

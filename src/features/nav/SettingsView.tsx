@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Icon } from "@/components/Icon";
-import { ipc, type Preferences, type RebuildReport } from "@/lib/ipc";
+import { ipc, type Preferences, type RebuildReport, type ScanSummary } from "@/lib/ipc";
 
 /**
  * Réglages.
@@ -54,6 +54,8 @@ export function SettingsView({
 
       <div className="mt-8 max-w-2xl space-y-3">
         <DossierSetting chemin={libraryRoot} />
+
+        <RelireSetting racine={libraryRoot} onChanged={onChanged} />
 
         <NameSetting
           value={preferences?.displayName ?? ""}
@@ -125,6 +127,84 @@ function DossierSetting({ chemin }: { chemin: string }) {
       <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-ink-faint">
         {chemin}
       </p>
+    </div>
+  );
+}
+
+/**
+ * Relire le dossier de musique.
+ *
+ * # Pourquoi ce bouton manquait sur téléphone
+ *
+ * Sur le Mac, « Importer » vit dans la barre du haut — qui n'existe pas sur un
+ * écran étroit. Le téléphone n'avait donc **aucun** moyen de découvrir un
+ * fichier déposé dans son dossier de musique après le premier démarrage : on
+ * copiait de nouveaux morceaux, et Onzer continuait d'afficher les anciens.
+ *
+ * # Pourquoi c'est le même chemin que l'import
+ *
+ * La commande d'import accepte la bibliothèque elle-même comme source, et ne
+ * déplace pas un fichier déjà à sa place. Écrire un « scan » séparé ferait une
+ * seconde façon d'entrer dans la bibliothèque, avec ses propres oublis.
+ */
+function RelireSetting({
+  racine,
+  onChanged,
+}: {
+  racine: string;
+  onChanged: () => void;
+}) {
+  const [occupe, setOccupe] = useState(false);
+  const [bilan, setBilan] = useState<ScanSummary | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  async function relire() {
+    setOccupe(true);
+    setErreur(null);
+    setBilan(null);
+
+    try {
+      setBilan(await ipc.importFolder(racine));
+      onChanged();
+    } catch (cause) {
+      setErreur(String(cause));
+    } finally {
+      setOccupe(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl bg-surface px-4 py-3.5">
+      <p className="text-sm font-medium text-ink">Chercher de nouveaux morceaux</p>
+      <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">
+        Relit le dossier de musique et ajoute ce qui ne s&apos;y trouvait pas
+        encore. À lancer après avoir déposé des fichiers soi-même.
+      </p>
+
+      <button
+        type="button"
+        disabled={occupe}
+        onClick={() => void relire()}
+        className="pression mt-3 rounded-lg border border-line px-4 py-2 text-[13px] text-ink transition-colors hover:bg-elevated disabled:opacity-40"
+      >
+        {occupe ? "Lecture du dossier…" : "Relire le dossier"}
+      </button>
+
+      {bilan !== null && (
+        <p className="mt-2.5 text-[12px] leading-relaxed text-ink-muted">
+          {bilan.imported === 0
+            ? "Rien de nouveau : tout ce qui est dans le dossier est déjà dans la bibliothèque."
+            : `${bilan.imported} morceau${bilan.imported > 1 ? "x" : ""} ajouté${bilan.imported > 1 ? "s" : ""}.`}
+          {bilan.duplicates > 0 && ` ${bilan.duplicates} déjà connu${bilan.duplicates > 1 ? "s" : ""}.`}
+          {bilan.failed > 0 && ` ${bilan.failed} illisible${bilan.failed > 1 ? "s" : ""}.`}
+        </p>
+      )}
+
+      {erreur !== null && (
+        <p className="mt-2.5 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-[12px] text-danger">
+          {erreur}
+        </p>
+      )}
     </div>
   );
 }

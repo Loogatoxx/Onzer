@@ -28,6 +28,10 @@ pub struct MorceauSync {
     pub artiste: Option<String>,
     pub album: Option<String>,
     pub duree_ms: i64,
+    /// Taille du fichier, en octets. Sert à annoncer ce que coûterait de
+    /// récupérer les morceaux qui manquent ici.
+    #[serde(default)]
+    pub taille: i64,
     pub aime: bool,
     /// Quand le favori a **changé d'état**. Absent pour tout ce qui date
     /// d'avant la synchronisation.
@@ -90,11 +94,31 @@ pub struct Arbitrage {
     pub garde: String,
 }
 
+/// Un morceau que l'autre appareil possède et que nous n'avons pas.
+///
+/// # Pourquoi ils ne sont pas rapatriés d'office
+///
+/// Ce sont des fichiers : quelques mégaoctets chacun, plusieurs gigaoctets
+/// pour une bibliothèque entière. Les faire descendre sans prévenir remplirait
+/// un téléphone en silence. Ils sont donc **annoncés**, avec leur poids, et
+/// c'est un clic qui les fait venir.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Manquant {
+    /// Le chemin **chez l'autre** : c'est par lui qu'on le demandera.
+    pub chemin: String,
+    pub titre: String,
+    pub artiste: Option<String>,
+    pub taille: i64,
+}
+
 /// Le résultat d'une fusion, du point de vue de celui qui l'a demandée.
 #[derive(Debug, Default)]
 pub struct Fusion {
     pub changements: Vec<Changement>,
     pub arbitrages: Vec<Arbitrage>,
+    /// Ce que l'autre a et que nous n'avons pas.
+    pub manquants: Vec<Manquant>,
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -194,7 +218,35 @@ pub fn fusionner(soi: &EtatSync, autre: &EtatSync) -> Fusion {
     }
 
     fusionner_playlists(soi, autre, &paires, &mut fusion);
+    fusion.manquants = manquants(&paires, autre);
     fusion
+}
+
+/// Les morceaux de l'autre qu'aucun des nôtres ne rejoint.
+///
+/// # Pourquoi c'est le complément de l'appariement et non une comparaison
+///
+/// « Manquant » n'a de sens qu'au regard de la règle qui décide que deux
+/// fichiers sont le même morceau. La recalculer autrement ici garantirait
+/// qu'un jour les deux réponses divergent : un morceau annoncé manquant que la
+/// fusion, elle, considère présent — et qu'on téléchargerait en double.
+fn manquants(paires: &[(&MorceauSync, &MorceauSync)], autre: &EtatSync) -> Vec<Manquant> {
+    let apparies: std::collections::HashSet<&str> = paires
+        .iter()
+        .map(|(_, distant)| distant.chemin.as_str())
+        .collect();
+
+    autre
+        .morceaux
+        .iter()
+        .filter(|morceau| !apparies.contains(morceau.chemin.as_str()))
+        .map(|morceau| Manquant {
+            chemin: morceau.chemin.clone(),
+            titre: morceau.titre.clone(),
+            artiste: morceau.artiste.clone(),
+            taille: morceau.taille,
+        })
+        .collect()
 }
 
 /// # Pourquoi un favori sans date ne se perd jamais
@@ -630,6 +682,39 @@ mod tests {
 
         let fusion = fusionner(&mac, &tel);
         assert_eq!(fusion.changements.len(), 1, "« Nouvelle » doit être créée");
+    }
+
+    #[test]
+    fn un_morceau_absent_ici_est_annonce() {
+        // Le défaut observé : « tout est bon » alors que le Mac venait de
+        // télécharger des morceaux que le téléphone n'a pas.
+        let mac = etat("Mac", vec![morceau("un.mp3", "Un", "A", false)]);
+
+        let mut nouveau = morceau("deux.mp3", "Deux", "B", false);
+        nouveau.taille = 4_000_000;
+        let tel = etat(
+            "Honor",
+            vec![morceau("un.mp3", "Un", "A", false), nouveau],
+        );
+
+        let fusion = fusionner(&mac, &tel);
+
+        assert_eq!(fusion.manquants.len(), 1);
+        assert_eq!(fusion.manquants[0].chemin, "deux.mp3");
+        assert_eq!(fusion.manquants[0].taille, 4_000_000);
+    }
+
+    #[test]
+    fn un_morceau_range_autrement_n_est_pas_manquant() {
+        // Il est là, sous un autre chemin : le télécharger le mettrait en
+        // double. C'est l'appariement qui tranche, pas une comparaison à part.
+        let mac = etat(
+            "Mac",
+            vec![morceau("Adele/2024 - Inversions/03 - Reve.mp3", "Rêve", "Adèle", false)],
+        );
+        let tel = etat("Honor", vec![morceau("Musique/Reve.mp3", "reve", "ADELE", false)]);
+
+        assert!(fusionner(&mac, &tel).manquants.is_empty());
     }
 
     #[test]

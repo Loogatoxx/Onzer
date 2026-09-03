@@ -274,6 +274,7 @@ pub fn run() {
             commands::appairage::close_pairing,
             commands::appairage::pairing_open,
             commands::appairage::sync_with_device,
+            commands::appairage::fetch_missing_files,
             commands::appairage::read_pairing_link,
             commands::appairage::sync_journal,
             commands::playback::playback_state,

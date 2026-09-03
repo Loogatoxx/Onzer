@@ -12,6 +12,10 @@
 
 use sqlx::SqlitePool;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
+use super::appairage::EtatServeur;
 use super::{appairage, client, etat};
 
 /// # Pourquoi les tests se mettent en file
@@ -72,6 +76,28 @@ async fn base(dossier: &std::path::Path, morceaux: &[(&str, &str, &str, bool)]) 
     pool
 }
 
+/// Le serveur, avec un avertisseur qui compte ses appels.
+fn serveur_de_test(
+    pool: SqlitePool,
+    dossier: &std::path::Path,
+) -> (Arc<EtatServeur>, Arc<AtomicUsize>) {
+    let avertis = Arc::new(AtomicUsize::new(0));
+    let compteur = Arc::clone(&avertis);
+
+    let mut paths = crate::core::PathResolver::new(dossier.to_path_buf());
+    paths.set_library_root(Some(dossier.join("Musique")));
+
+    let etat = Arc::new(EtatServeur {
+        pool,
+        paths: Arc::new(tokio::sync::RwLock::new(paths)),
+        prevenir: Arc::new(move |_, _| {
+            compteur.fetch_add(1, Ordering::SeqCst);
+        }),
+    });
+
+    (etat, avertis)
+}
+
 async fn aime(pool: &SqlitePool, chemin: &str) -> bool {
     sqlx::query_scalar::<_, bool>("SELECT is_loved FROM tracks WHERE relative_path = ?")
         .bind(chemin)
@@ -106,13 +132,19 @@ async fn deux_bibliotheques_convergent() {
     )
     .await;
 
-    let infos = appairage::ouvrir_sur(serveur.clone(), 0).await.unwrap();
+    let (etat_serveur, avertis) = serveur_de_test(serveur.clone(), dossier_serveur.path());
+    let infos = appairage::ouvrir_sur(etat_serveur, 0).await.unwrap();
 
     let rapport = client::synchroniser(&client_pool, "127.0.0.1", infos.port, &infos.code)
         .await
         .unwrap();
 
     assert_eq!(rapport.favoris, 1, "le client reprend le favori du serveur");
+    assert_eq!(
+        avertis.load(Ordering::SeqCst),
+        1,
+        "le serveur doit prévenir son interface : sa base vient de changer sans qu'il l'ait demandé"
+    );
 
     assert!(aime(&serveur, "un.mp3").await);
     assert!(aime(&serveur, "deux.mp3").await, "le serveur a pris celui du client");
@@ -137,7 +169,8 @@ async fn un_code_faux_est_refuse() {
     let serveur = base(dossier_serveur.path(), &[("un.mp3", "Un", "A", true)]).await;
     let client_pool = base(dossier_client.path(), &[("un.mp3", "Un", "A", false)]).await;
 
-    let infos = appairage::ouvrir_sur(serveur.clone(), 0).await.unwrap();
+    let (etat_serveur, _avertis) = serveur_de_test(serveur.clone(), dossier_serveur.path());
+    let infos = appairage::ouvrir_sur(etat_serveur, 0).await.unwrap();
 
     let erreur = client::synchroniser(&client_pool, "127.0.0.1", infos.port, "00000000")
         .await
@@ -164,7 +197,8 @@ async fn la_porte_fermee_ne_repond_plus() {
     let serveur = base(dossier_serveur.path(), &[("un.mp3", "Un", "A", true)]).await;
     let client_pool = base(dossier_client.path(), &[("un.mp3", "Un", "A", false)]).await;
 
-    let infos = appairage::ouvrir_sur(serveur, 0).await.unwrap();
+    let (etat_serveur, _avertis) = serveur_de_test(serveur, dossier_serveur.path());
+    let infos = appairage::ouvrir_sur(etat_serveur, 0).await.unwrap();
     assert!(appairage::ouverte());
 
     appairage::fermer();
@@ -196,7 +230,8 @@ async fn les_paroles_traversent() {
         .await
         .unwrap();
 
-    let infos = appairage::ouvrir_sur(serveur, 0).await.unwrap();
+    let (etat_serveur, _avertis) = serveur_de_test(serveur, dossier_serveur.path());
+    let infos = appairage::ouvrir_sur(etat_serveur, 0).await.unwrap();
 
     let rapport = client::synchroniser(&client_pool, "127.0.0.1", infos.port, &infos.code)
         .await
@@ -214,6 +249,50 @@ async fn les_paroles_traversent() {
 
     // Et l'état complet se relit sans erreur après application.
     etat::lire(&client_pool).await.unwrap();
+
+    appairage::fermer();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn un_fichier_connu_se_telecharge_et_un_autre_non() {
+    let _file = UN_A_LA_FOIS.lock().await;
+    let dossier_serveur = tempfile::tempdir().unwrap();
+
+    let serveur = base(dossier_serveur.path(), &[("Un/un.mp3", "Un", "A", false)]).await;
+
+    // Le fichier existe vraiment, à sa place dans la bibliothèque.
+    let racine = dossier_serveur.path().join("Musique");
+    std::fs::create_dir_all(racine.join("Un")).unwrap();
+    std::fs::write(racine.join("Un/un.mp3"), b"des octets").unwrap();
+
+    let (etat_serveur, _avertis) = serveur_de_test(serveur, dossier_serveur.path());
+    let infos = appairage::ouvrir_sur(etat_serveur, 0).await.unwrap();
+
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/sync/v1/fichier", infos.port);
+
+    let bon = client
+        .get(format!("{url}?chemin=Un%2Fun.mp3"))
+        .bearer_auth(&infos.code)
+        .send()
+        .await
+        .unwrap();
+    assert!(bon.status().is_success());
+    assert_eq!(bon.bytes().await.unwrap().as_ref(), b"des octets");
+
+    // Un chemin que la base ne connaît pas ne sort pas d'ici, même s'il
+    // existe sur le disque : c'est la bibliothèque qui borne ce qu'on sert.
+    let inconnu = client
+        .get(format!("{url}?chemin=Un%2Fautre.mp3"))
+        .bearer_auth(&infos.code)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inconnu.status(), reqwest::StatusCode::NOT_FOUND);
+
+    // Et sans le code, rien du tout.
+    let sans_code = client.get(format!("{url}?chemin=Un%2Fun.mp3")).send().await.unwrap();
+    assert_eq!(sans_code.status(), reqwest::StatusCode::UNAUTHORIZED);
 
     appairage::fermer();
 }

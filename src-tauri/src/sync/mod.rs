@@ -2,10 +2,13 @@
 //!
 //! # Ce qui circule, et ce qui ne circule pas
 //!
-//! Les favoris, les playlists et les paroles. **Jamais les fichiers audio** :
-//! ils font des dizaines de gigaoctets et sont déjà des deux côtés. Jamais les
-//! titres ni les albums non plus — corriger deux mille titres d'un coup, sans
-//! qu'on l'ait demandé, est exactement le genre de chose qu'Onzer ne fait pas.
+//! Les favoris, les playlists et les paroles passent d'eux-mêmes. Jamais les
+//! titres ni les albums — corriger deux mille titres d'un coup, sans qu'on
+//! l'ait demandé, est exactement le genre de chose qu'Onzer ne fait pas.
+//!
+//! Les **fichiers audio**, eux, ne partent qu'à la demande. La fusion annonce
+//! ce que l'autre a et que nous n'avons pas, avec son poids ; un clic les fait
+//! venir. Les faire descendre d'office remplirait un téléphone en silence.
 //!
 //! # Pourquoi rien ne sort de la maison
 //!
@@ -21,3 +24,33 @@ pub mod fusion;
 
 #[cfg(test)]
 mod tests_bout_en_bout;
+
+use fusion::Fusion;
+
+/// L'événement qui prévient l'interface qu'une fusion vient d'être appliquée.
+pub const EVENEMENT_APPLIQUEE: &str = "sync://appliquee";
+
+/// L'avancement d'un transfert de fichiers.
+pub const EVENEMENT_TRANSFERT: &str = "sync://transfert";
+
+/// Ce que l'interface reçoit quand la base a changé sous ses pieds.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Avis {
+    pub appareil: String,
+    pub changements: usize,
+}
+
+/// Prévient l'interface. Une notification perdue n'est pas une raison
+/// d'interrompre une fusion qui, elle, a réussi.
+pub fn prevenir(app: &tauri::AppHandle, appareil: &str, resultat: &Fusion) {
+    use tauri::Emitter;
+
+    let _ = app.emit(
+        EVENEMENT_APPLIQUEE,
+        Avis {
+            appareil: appareil.to_string(),
+            changements: resultat.changements.len(),
+        },
+    );
+}

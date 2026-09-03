@@ -404,6 +404,16 @@ export interface PairingLink {
   code: string;
 }
 
+/** Miroir de `sync::fusion::Manquant`. */
+export interface MissingTrack {
+  /** Le chemin **chez l'autre** : c'est par lui qu'on le demandera. */
+  chemin: string;
+  titre: string;
+  artiste: string | null;
+  /** Taille du fichier, en octets. */
+  taille: number;
+}
+
 /** Miroir de `sync::client::RapportSync`. */
 export interface SyncReport {
   appareil: string;
@@ -411,6 +421,32 @@ export interface SyncReport {
   paroles: number;
   playlists: number;
   arbitrages: number;
+  /** Ce que l'autre a et que nous n'avons pas. Annoncé, pas rapatrié. */
+  manquants: MissingTrack[];
+  octetsManquants: number;
+  /** Ce que nous avons et qui manque chez l'autre. Il devra venir le chercher. */
+  manquantsLaBas: number;
+}
+
+/** Miroir de `sync::client::RapportTransfert`. */
+export interface TransferReport {
+  recus: number;
+  doublons: number;
+  echecs: number;
+  premiereErreur: string | null;
+}
+
+/** L'avancement d'un transfert, poussé morceau par morceau. */
+export interface TransferProgress {
+  fait: number;
+  total: number;
+  titre: string;
+}
+
+/** Ce que l'interface reçoit quand la base a changé sous ses pieds. */
+export interface SyncNotice {
+  appareil: string;
+  changements: number;
 }
 
 /** Miroir de `commands::appairage::LigneJournal`. */
@@ -681,6 +717,29 @@ export const ipc = {
   /** Découpe un lien `onzer://appairage?…` collé depuis l'autre appareil. */
   readPairingLink: (link: string): Promise<PairingLink | null> =>
     invoke<PairingLink | null>("read_pairing_link", { link }),
+
+  /** Rapatrie les fichiers que l'autre appareil a et que nous n'avons pas. */
+  fetchMissingFiles: (
+    host: string,
+    port: number,
+    code: string,
+    tracks: MissingTrack[],
+  ): Promise<TransferReport> =>
+    invoke<TransferReport>("fetch_missing_files", { host, port, code, tracks }),
+
+  /**
+   * Une fusion vient d'être appliquée **chez nous**, à la demande de l'autre.
+   *
+   * Sans cet avertissement, l'écran garde son ancienne vérité : les favoris
+   * arrivent en base et n'apparaissent nulle part, ce qui se voit exactement
+   * comme une synchronisation qui ne marche pas.
+   */
+  onSyncApplied: (handler: (avis: SyncNotice) => void): Promise<UnlistenFn> =>
+    listen<SyncNotice>("sync://appliquee", (event) => handler(event.payload)),
+
+  /** L'avancement d'un transfert de fichiers. */
+  onSyncTransfer: (handler: (avancement: TransferProgress) => void): Promise<UnlistenFn> =>
+    listen<TransferProgress>("sync://transfert", (event) => handler(event.payload)),
 
   /** Les arbitrages passés, du plus récent au plus ancien. */
   syncJournal: (): Promise<SyncJournalEntry[]> =>

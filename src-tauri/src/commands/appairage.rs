@@ -1,16 +1,30 @@
 //! Commandes de synchronisation entre deux appareils.
 
+use std::sync::Arc;
+
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::core::Result;
+use crate::sync::appairage::EtatServeur;
+use crate::sync::fusion::Manquant;
 use crate::sync::{appairage, client};
 use crate::AppState;
 
 /// Ouvre la porte et rend de quoi l'afficher : le code, le lien, le QR.
 #[tauri::command]
-pub async fn open_pairing(state: State<'_, AppState>) -> Result<appairage::InfosAppairage> {
-    appairage::ouvrir(state.pool.clone()).await
+pub async fn open_pairing(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<appairage::InfosAppairage> {
+    appairage::ouvrir(Arc::new(EtatServeur {
+        pool: state.pool.clone(),
+        paths: state.paths.clone(),
+        prevenir: Arc::new(move |appareil, resultat| {
+            crate::sync::prevenir(&app, appareil, resultat);
+        }),
+    }))
+    .await
 }
 
 /// Referme la porte. Appelée en quittant l'écran — et c'est le point : une
@@ -49,6 +63,29 @@ pub async fn read_pairing_link(link: String) -> Result<Option<LienAppairage>> {
         port,
         code,
     }))
+}
+
+/// Rapatrie les fichiers que l'autre appareil possède et pas nous.
+///
+/// # Pourquoi c'est une commande à part
+///
+/// La fusion est instantanée : quelques mégaoctets, une seconde. Un transfert
+/// de fichiers, lui, peut durer un quart d'heure et remplir un téléphone. Les
+/// enchaîner d'office ferait d'un geste anodin une décision lourde, prise sans
+/// qu'on la voie venir.
+#[tauri::command]
+pub async fn fetch_missing_files(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    host: String,
+    port: u16,
+    code: String,
+    tracks: Vec<Manquant>,
+) -> Result<client::RapportTransfert> {
+    let code = code.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
+    let paths = state.paths.read().await.clone();
+
+    client::telecharger(&app, &state.pool, &paths, host.trim(), port, &code, &tracks).await
 }
 
 #[derive(Serialize)]

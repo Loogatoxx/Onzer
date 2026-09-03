@@ -23,6 +23,21 @@ const PAGES: Route[] = [
 const SEUIL = 70;
 
 /**
+ * Ce que le doigt déplace visiblement, rapporté à ce qu'il parcourt.
+ *
+ * La page ne suit pas le doigt au pixel près : elle **résiste**. C'est ce qui
+ * distingue un geste en cours d'un geste accompli, et ce qui rend le retour
+ * élastique lisible quand on relâche trop tôt.
+ */
+const RESISTANCE = 0.32;
+
+/** Au-delà, la page ne s'écarte plus : le geste est déjà largement acquis. */
+const ECART_MAX = 90;
+
+/** D'où la nouvelle page arrive. */
+export type Sens = "gauche" | "droite";
+
+/**
  * Le geste part-il d'une zone qui défile déjà horizontalement ?
  *
  * Les rangées de l'accueil — « Tes mix du jour », les reprises — se font
@@ -74,8 +89,10 @@ function dansUnDefilementHorizontal(cible: EventTarget | null): boolean {
  */
 export function useSwipeOnglets(
   route: Route,
-  naviguer: (route: Route) => void,
+  naviguer: (route: Route, sens: Sens) => void,
   actif: boolean,
+  /** Le déplacement à appliquer à la page pendant le geste, en pixels. */
+  onEcart: (ecart: number) => void,
 ) {
   const depart = useRef<{ x: number; y: number } | null>(null);
 
@@ -83,6 +100,9 @@ export function useSwipeOnglets(
   const applicable = actif && index !== -1;
 
   if (!applicable) return {};
+
+  /** Y a-t-il une page de ce côté ? Sinon le geste n'a nulle part où aller. */
+  const existe = (dx: number) => PAGES[index + (dx < 0 ? 1 : -1)] !== undefined;
 
   return {
     onTouchStart: (event: React.TouchEvent) => {
@@ -95,9 +115,37 @@ export function useSwipeOnglets(
             ? null
             : { x: doigt.clientX, y: doigt.clientY };
     },
+    /**
+     * La page suit le doigt, amortie.
+     *
+     * Elle ne bouge que si le mouvement est déjà nettement horizontal : sinon
+     * le simple fait de faire défiler une liste ferait trembler la page
+     * latéralement à chaque pouce qui dévie.
+     */
+    onTouchMove: (event: React.TouchEvent) => {
+      const origine = depart.current;
+      const doigt = event.touches[0];
+      if (origine === null || doigt === undefined) return;
+
+      const dx = doigt.clientX - origine.x;
+      const dy = doigt.clientY - origine.y;
+
+      if (Math.abs(dx) < 12 || Math.abs(dx) < Math.abs(dy) * 2) {
+        onEcart(0);
+        return;
+      }
+
+      // Sans page de ce côté, l'écart est divisé par trois : le geste répond,
+      // mais son inutilité se sent avant qu'on n'aille au bout.
+      const resistance = existe(dx) ? RESISTANCE : RESISTANCE / 3;
+      const ecart = Math.max(-ECART_MAX, Math.min(ECART_MAX, dx * resistance));
+
+      onEcart(ecart);
+    },
     onTouchEnd: (event: React.TouchEvent) => {
       const origine = depart.current;
       depart.current = null;
+      onEcart(0);
 
       const doigt = event.changedTouches[0];
       if (origine === null || doigt === undefined) return;
@@ -107,10 +155,14 @@ export function useSwipeOnglets(
       if (Math.abs(dx) < SEUIL || Math.abs(dx) < Math.abs(dy) * 2) return;
 
       const cible = PAGES[index + (dx < 0 ? 1 : -1)];
-      if (cible !== undefined) naviguer(cible);
+      // Le doigt part vers la gauche : la page suivante arrive **par la
+      // droite**, dans le prolongement du mouvement. L'inverse la ferait
+      // entrer à contresens du geste qui l'a appelée.
+      if (cible !== undefined) naviguer(cible, dx < 0 ? "droite" : "gauche");
     },
     onTouchCancel: () => {
       depart.current = null;
+      onEcart(0);
     },
   };
 }

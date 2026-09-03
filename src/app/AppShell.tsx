@@ -23,7 +23,7 @@ import { TrackTable } from "@/features/library/TrackTable";
 import { Sidebar, routeKey, type Route } from "@/features/nav/Sidebar";
 import type { SortColumn, TrackSort } from "@/features/library/TrackTable";
 import { MobileTabs } from "@/features/nav/MobileTabs";
-import { useSwipeOnglets } from "@/features/nav/useSwipeOnglets";
+import { useSwipeOnglets, type Sens } from "@/features/nav/useSwipeOnglets";
 import {
   BarreFiltres,
   ListeRegroupements,
@@ -287,12 +287,41 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   useEffect(() => {
     void ipc
       .refreshAvailability()
-      .then(() => ipc.lovedTracks())
-      .then((lovedTracks) => setLoved(new Set(lovedTracks.map((track) => track.id))))
       .catch((cause: unknown) => setError(String(cause)));
+  }, []);
+
+  /**
+   * Favoris et playlists, relus à chaque révision.
+   *
+   * # Le défaut que ça corrige
+   *
+   * Ils n'étaient chargés qu'au démarrage, puis tenus à jour « à la main » :
+   * cocher un cœur mettait la liste à jour localement, sans jamais la
+   * redemander. Tant que l'interface était seule à écrire, cela tenait.
+   *
+   * La synchronisation a cassé cette hypothèse. Quand l'autre appareil se
+   * connecte, c'est **lui** qui écrit dans notre base : les favoris arrivaient
+   * bien, et n'apparaissaient nulle part. On voyait exactement ce qu'on
+   * verrait si la synchronisation ne marchait pas — d'où « liké sur le
+   * téléphone, ça ne passe pas vers le Mac », alors que si, ça passait.
+   */
+  useEffect(() => {
+    void ipc
+      .lovedTracks()
+      .then((lovedTracks) => setLoved(new Set(lovedTracks.map((track) => track.id))))
+      .catch(() => undefined);
 
     reloadPlaylists();
-  }, [reloadPlaylists]);
+  }, [revision, reloadPlaylists]);
+
+  // L'autre appareil vient d'écrire chez nous : tout est à relire.
+  useEffect(() => {
+    const abonnement = ipc.onSyncApplied(() => bump());
+
+    return () => {
+      void abonnement.then((arreter) => arreter());
+    };
+  }, [bump]);
 
   /**
    * Les compteurs de l'en-tête, relus à chaque changement.
@@ -329,9 +358,45 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
    */
   const mobile = useIsMobile();
 
+  /**
+   * Le glissement entre onglets, et ce qu'on en voit.
+   *
+   * `ecart` est le déplacement du doigt pendant le geste ; `sens` dit d'où la
+   * nouvelle page doit arriver une fois le geste accompli. Sans lui, elle
+   * apparaissait simplement à la place de l'ancienne — le mouvement portait
+   * une direction, et l'affichage la jetait.
+   */
+  /**
+   * La recherche est-elle chez elle ?
+   *
+   * Sur téléphone, elle appartient à l'onglet Bibliothèque : partir vers un
+   * artiste, un album ou l'écran de lecture doit montrer cette page-là, pas
+   * des résultats. Sur un bureau, elle occupe la zone principale quelle que
+   * soit la route — le lecteur y a son propre panneau.
+   */
+  const recherchePlacee = !mobile || route.kind === "library";
+
+  const [ecart, setEcart] = useState(0);
+
+  // # Pourquoi la direction est attachée à une destination
+  //
+  // Elle ne vaut que pour **la** page que ce geste-là a appelée. Gardée
+  // seule, elle survivrait au glissement : ouvrir ensuite un artiste depuis
+  // une ligne le ferait entrer par le côté, comme si on avait glissé — un
+  // mouvement qui raconterait quelque chose qui n'a pas eu lieu.
+  const [sens, setSens] = useState<{ cle: string; sens: Sens } | null>(null);
+
   // Le geste ne vaut que sur les quatre racines, et jamais pendant une
   // recherche : le résultat affiché n'appartient à aucun onglet.
-  const glissement = useSwipeOnglets(route, navigate, mobile && !searching);
+  const glissement = useSwipeOnglets(
+    route,
+    (destination, direction) => {
+      setSens({ cle: routeKey(destination), sens: direction });
+      navigate(destination);
+    },
+    mobile && !searching,
+    setEcart,
+  );
 
   const [filtre, setFiltre] = useState<FiltreRecherche>("titres");
   const regroupements = useRegroupements(searching ? (results ?? []) : []);
@@ -1033,7 +1098,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
         >
           {mobile ? (
             <MobileSearch
-              open={searchOpen}
+              open={searchOpen && recherchePlacee}
               query={query}
               onQuery={setQuery}
               onClose={() => {
@@ -1057,15 +1122,47 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           />
           )}
 
-          {/* La clé change à chaque destination : c'est ce qui fait rejouer
-              l'animation d'entrée, React remontant alors le sous-arbre. */}
-          <div key={routeKey(route)} className="page-entree">
-          {mobile && searchOpen && !searching ? (
+          {/* # Deux enveloppes, deux rôles
+              Celle du dehors suit le doigt pendant le geste : elle ne change
+              jamais de clé, donc rien ne se remonte et le mouvement est
+              continu. `transform: none` quand rien ne bouge — et non
+              `translateX(0)` — pour ne pas laisser derrière soi un bloc
+              conteneur qui déplacerait les surcouches en plein écran.
+
+              Celle du dedans change de clé à chaque destination : c'est ce
+              qui fait rejouer l'animation d'entrée, React remontant alors le
+              sous-arbre. */}
+          <div
+            className={ecart === 0 ? "glissement-retour" : undefined}
+            style={ecart === 0 ? { transform: "none" } : { transform: `translateX(${ecart}px)` }}
+          >
+          <div
+            key={routeKey(route)}
+            className={
+              sens?.cle !== routeKey(route)
+                ? "page-entree"
+                : sens.sens === "droite"
+                  ? "page-depuis-droite"
+                  : "page-depuis-gauche"
+            }
+          >
+          {/* # Pourquoi la recherche ne recouvre plus que sa page
+              Elle s'affichait dès qu'une requête était écrite, **quelle que
+              soit la destination**. Appuyer sur le lecteur depuis les
+              résultats changeait donc bien de route — et ne montrait rien : la
+              recherche restait par-dessus. Il fallait l'annuler à la main pour
+              voir l'écran de lecture, ce qui se raconte exactement comme « la
+              lecture ne marche pas depuis la recherche ».
+
+              Sur un bureau, la recherche remplace la zone principale quoi
+              qu'il arrive : le lecteur y a son propre panneau, elle ne le
+              cache pas. */}
+          {mobile && searchOpen && recherchePlacee && !searching ? (
             // Sous le champ vide, la bibliothèque entière n'a rien à faire :
             // elle est à un onglet de là, et l'afficher ici laisse croire que
             // ce sont des résultats.
             <RecherchesRecentes onChoose={setQuery} />
-          ) : searching ? (
+          ) : searching && recherchePlacee ? (
             <>
               <SearchHeader query={query} count={shown.length} />
 
@@ -1205,6 +1302,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
             </Page>
           )}
           </div>
+          </div>
         </main>
 
         {!mobile && panel !== "closed" && current !== null && (
@@ -1285,7 +1383,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           )}
 
           <MobileTabs
-            active={ongletActif(route, searchOpen)}
+            active={ongletActif(route, searchOpen && recherchePlacee)}
             onNavigate={(destination) => {
               setSearchOpen(false);
               setQuery("");
@@ -1569,7 +1667,7 @@ function Page(props: PageProps) {
   }
 
   if (route.kind === "pairing") {
-    return <PairingView />;
+    return <PairingView onSynced={props.onReload} />;
   }
 
   if (route.kind === "settings") {

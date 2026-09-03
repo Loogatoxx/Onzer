@@ -101,6 +101,21 @@
     width: 10px;
     height: 10px;
   }
+
+  /* # Pourquoi elle disparaît sur un écran étroit
+     Ces dix pixels ne sont pas une décoration : WebKit leur **réserve la
+     place**, en retirant la largeur au contenu. Sur le téléphone, la page se
+     dessinait donc trente-deux pixels physiques trop court, et le couloir
+     laissait voir le fond du conteneur — une bande noire d'une autre teinte,
+     du haut jusqu'en bas de l'écran, mesurée à (18,18,20) contre une page qui
+     variait de 19 à 38. Un doigt n'a de toute façon aucun usage d'une barre
+     de défilement. */
+  @media (max-width: 767px) {
+    ::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+    }
+  }
   ::-webkit-scrollbar-track {
     background: transparent;
   }

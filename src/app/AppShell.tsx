@@ -121,6 +121,27 @@ const PAGE_SIZE = 100;
  * permet aux paroles de continuer à défiler pendant qu'on fouille sa
  * bibliothèque.
  */
+/**
+ * Les pages dont le haut est clair.
+ *
+ * Ce sont celles qui commencent par la bande d'onglets ou par un en-tête de
+ * collection — les deux démarrent à `elevated/70`. L'encoche prend leur
+ * teinte ; ailleurs elle reste à la surface de la page.
+ */
+const HAUT_CLAIR = new Set<Route["kind"]>([
+  "library",
+  "loved",
+  "history",
+  "offline",
+  "playlist",
+  "albums",
+  "playlists",
+  "artist",
+  "album",
+  "category",
+  "generated",
+]);
+
 export function AppShell({
   libraryRoot,
   onRacineChangee,
@@ -1236,10 +1257,11 @@ export function AppShell({
   return (
     <div
       className="flex h-full flex-col bg-base"
-      // L'application se dessine sous la barre d'état — c'est ce qui permet à
-      // la couleur de fond de la remplir plutôt que de laisser une bande
-      // noire. Encore faut-il que le contenu, lui, commence en dessous.
-      style={mobile ? { paddingTop: "env(safe-area-inset-top)" } : undefined}
+      // L'encoche n'est plus réservée ici : elle l'était en `base`, quand ce
+      // qui la suit immédiatement est la bande d'onglets, bien plus claire.
+      // Cela faisait une marche franche de dix-neuf niveaux juste sous
+      // l'horloge — mesurée sur l'appareil. Elle est désormais peinte par le
+      // contenu lui-même, de la couleur exacte de ce qui commence dessous.
     >
       {/* Les feux de circulation de macOS vivent ici : la fenêtre n'a pas de
           barre de titre, il faut donc lui réserver sa bande de glissement.
@@ -1288,6 +1310,26 @@ export function AppShell({
             mobile ? "" : "rounded-xl"
           }`}
         >
+          {/* # La bande d'encoche
+
+              Elle vit **dans** le conteneur qui défile, et non au-dessus :
+              elle porte la teinte de ce qui commence juste dessous, si bien
+              que la page démarre sous l'horloge sans aucune marche. Quand on
+              fait défiler, elle s'en va avec le reste — la barre d'état
+              surplombe alors une surface unie, où il n'y a plus de bord.
+
+              Toutes les pages ne commencent pas clair : l'accueil, les
+              réglages ou la file démarrent à même la surface. Leur donner la
+              bande créerait la marche qu'on vient d'enlever, à l'envers. */}
+          {mobile && (
+            <div
+              aria-hidden
+              className={`h-[env(safe-area-inset-top)] ${
+                HAUT_CLAIR.has(route.kind) ? "bg-elevated/70" : ""
+              }`}
+            />
+          )}
+
           {mobile ? (
             <MobileSearch
               open={searchOpen && recherchePlacee}

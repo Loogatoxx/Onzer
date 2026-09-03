@@ -2591,6 +2591,110 @@ appareil reprendrait une écoute périmée, ce qu'on cherche précisément à é
 
 ---
 
+## ADR-090 — Un fondu sur du noir ne peut pas être lisse
+
+**Le grief.** « Les fondus sur le noir font parfois un escalier, et on voit le dégradé de
+couleur. »
+
+**Ce qu'on a mesuré.** Le fondu de l'en-tête part de `#1c1c20` à 70 % et meurt en transparent,
+sur le fond `#08080a`. Une fois composé, il ne traverse que **quinze niveaux** de luminance. Un
+écran 8 bits n'en a pas d'autres à offrir : il manque les deux cent quarante autres.
+
+Une marche, ce n'est pas une colonne de pixels identiques — c'est une **ligne entière** d'une
+seule teinte. Mesuré en composant le fondu dans un canevas, sur 200 × 250 pixels : **83 lignes
+sur 250 sont unies**, 1,7 teinte par ligne. Ce sont ces 83 lignes que l'œil suit.
+
+Le même défaut frappe plus fort les halos : dix pour cent de violet sur du quasi-noir, étalés sur
+cinq cents pixels de rayon, font six niveaux — donc six anneaux concentriques. Le commentaire du
+halo affirmait qu'il « s'éteint mathématiquement à zéro » : c'est vrai, et sans rapport avec ce
+que l'écran sait dessiner.
+
+**Ce qui ne marche pas.** Ajouter des étapes au dégradé. Les niveaux manquants n'existent pas ;
+on ne peut pas les interpoler. Changer d'espace de couleur non plus : la quantification a lieu à
+l'arrivée.
+
+**La décision.** Tramer. Un bruit fin, masqué par la même rampe que le dégradé, remplit les
+marches de points au lieu de les laisser plates. Même mesure, grain à 3,5 % : **14 lignes unies
+sur 250**, 3,5 teintes par ligne, et le sommet n'est éclairci que de deux niveaux. Monter à 5 %
+ne gagne que quatre lignes et coûte un niveau de plus.
+
+**Pourquoi le grain porte le masque du dégradé.** Un grain uniforme s'arrêterait net là où le
+dégradé s'éteint : on verrait la frontière du grain à la place des bandes. Il reçoit donc la même
+rampe, radiale pour un halo, linéaire pour un en-tête.
+
+**Pourquoi trois fondus sont devenus des aplats.** Les pochettes de repli allaient de `#26262b`
+à `#1c1c20` : dix niveaux sur deux cent huit pixels. À ce compte-là, un dégradé n'est plus une
+nuance, seulement ses artefacts. La bande d'onglets, elle, descendait de 70 % à 40 % juste avant
+que l'en-tête ne reparte de 70 % — deux escaliers empilés qui remontaient l'un dans l'autre.
+
+---
+
+## ADR-091 — Une charte de mouvement que le mouvement n'appliquait pas
+
+**Le grief.** « Il y a des animations sur les glissements ou les appuis qui font trop brut. »
+
+**Ce qu'on a trouvé.** La feuille de style annonce « une seule courbe pour toute l'application ».
+Elle ne régissait que les huit animations écrites dans ce fichier. Les **143** autres transitions
+s'écrivent `transition-colors` ou `transition-transform` sans préciser de courbe : elles tombaient
+sur celle de Tailwind — `cubic-bezier(0.4, 0, 0.2, 1)`, symétrique et molle — pendant que la
+nôtre, forte à la décélération, ne touchait presque rien. La quasi-totalité de ce qu'on ressent
+obéissait à l'autre main.
+
+`--default-transition-timing-function` corrige les 143 d'un coup.
+
+**Le défaut caché.** `.pression` vit hors de toute couche ; les utilitaires de Tailwind vivent
+dans `@layer utilities`, et le non-couché l'emporte. En déclarant `transition: transform`, elle
+**effaçait** le `transition-colors` des dix-sept éléments portant les deux classes — dont chaque
+ligne de la bibliothèque, dont le fond changeait donc d'un coup. La règle énumère désormais aussi
+les couleurs, à leur durée à elles.
+
+**L'asymétrie.** Une matière qu'on presse cède vite et revient lentement : 90 ms pour descendre,
+260 pour remonter. Une durée unique dans les deux sens donne le « clic de plastique ».
+
+**Ce qui manquait entièrement.** Aucune animation de sortie n'existait : tout est monté par un
+`&&` et démonté de même, donc tout **s'évapore**. La moitié de chaque interaction était absente.
+Un crochet garde l'élément monté le temps qu'il parte.
+
+**Trois gestes qui mentaient.**
+
+* La barre de lecture s'animait sur 500 ms pour une position poussée toutes les 250 : elle
+  poursuivait une cible déjà partie, et n'arrivait jamais. Elle dure maintenant un tic, en ligne
+  droite — une progression à vitesse constante ne décélère pas.
+* La ligne qu'on déplace dans la file **revenait à sa case de départ** pendant que l'ordre
+  voyageait vers le cœur, puis sautait à sa nouvelle place quand la liste revenait. Elle se pose
+  désormais au pixel où la liste réordonnée la dessinera : l'échange devient invisible.
+* Le glissement entre onglets butait sur un mur à quatre-vingt-dix pixels — la résistance passait
+  de 0,32 à zéro d'un coup. Une tangente hyperbolique donne la même pente au départ et s'approche
+  de la limite sans l'atteindre. Il retient aussi son intention une fois reconnue, et comprend un
+  coup de pouce vif : le seuil était purement distanciel, un geste rapide de soixante pixels ne
+  faisait rien.
+
+---
+
+## ADR-092 — L'endroit où la main part toute seule
+
+**Le principe.** Une interface se lit par ce qu'on a envie d'y toucher. Chaque endroit qui
+ressemble à un lien sans en être coûte deux fois : le geste perdu, et la confiance qu'on retire à
+tous les autres.
+
+**La catégorie qui trompe le plus.** Pas l'élément inerte — l'élément **vivant ailleurs**. Le nom
+d'artiste du panneau de droite était mort alors que le même bloc, sur téléphone, est fait de deux
+boutons. La pastille ▶ d'un artiste ouvrait sa page alors que la pastille identique, sur
+l'accueil, lance la musique. On n'apprend pas une règle : on apprend une exception, sans savoir
+laquelle.
+
+**Le pire cas.** Un survol qui répond sans handler derrière. La rétrospective en était pleine :
+le rang s'éclaire, le nom aussi — et rien ne se passe. L'interface promet, puis ne tient pas.
+
+**Le corollaire.** Un compteur nomme une destination. « 154 hors ligne » désignait une page qui
+existe, et c'était **la seule mention de cette page sur tout le bureau**.
+
+**Ce qui reste.** Quatre bandeaux de maintenance ont un en-tête identique à quatre autres qui se
+replient au clic. L'incohérence est réelle ; la corriger est un choix de conception, pas une
+réparation, et elle attend.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

@@ -3,7 +3,9 @@
 //! Rappel de l'ADR-004 : aucune logique ici. Ces fonctions valident, délèguent
 //! au module `library`, et convertissent le résultat pour le frontend.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use tauri::{AppHandle, Emitter, State};
 
@@ -196,6 +198,55 @@ pub async fn artwork_data_uri(state: State<'_, AppState>, hash: String) -> Resul
     )))
 }
 
+
+/// La couleur que cette pochette donne à sa page.
+///
+/// # Pourquoi une commande et non un champ de plus
+///
+/// La teinte ne sert qu'à un seul endroit — le voile d'un en-tête de
+/// collection — et une page en affiche une, jamais deux mille. La calculer dans
+/// la projection commune des morceaux la ferait décoder pour chaque ligne d'une
+/// liste, pour la jeter aussitôt.
+///
+/// Elle est mise en cache par empreinte : les douze pistes d'un album partagent
+/// leur pochette, et l'on revient souvent sur la même page.
+#[tauri::command]
+pub async fn artwork_tint(state: State<'_, AppState>, hash: String) -> Result<Option<String>> {
+    if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(OnzerError::Invalid("empreinte de pochette invalide".into()));
+    }
+
+    {
+        let cache = TEINTES.lock().await;
+        if let Some(connue) = cache.get(&hash) {
+            return Ok(connue.clone());
+        }
+    }
+
+    let artwork_dir = state.paths.read().await.artwork_dir();
+    let path = crate::library::artwork::thumbnail_path(&artwork_dir, &hash);
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let bytes = std::fs::read(path)?;
+    let teinte = tauri::async_runtime::spawn_blocking(move || {
+        let decodee = image::load_from_memory(&bytes).ok()?;
+        // Trente-deux pixels de côté suffisent à un vote de couleur, et
+        // divisent le travail par deux cent cinquante.
+        let petite = decodee.thumbnail(32, 32).to_rgb8();
+        crate::library::teinte::dominante_hex(petite.as_raw())
+    })
+    .await
+    .unwrap_or(None);
+
+    TEINTES.lock().await.insert(hash, teinte.clone());
+    Ok(teinte)
+}
+
+/// Teintes déjà calculées, par empreinte de pochette.
+static TEINTES: LazyLock<tokio::sync::Mutex<HashMap<String, Option<String>>>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(HashMap::new()));
 
 #[cfg(test)]
 mod tests {

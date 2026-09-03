@@ -16,6 +16,7 @@ pub mod rebuild;
 pub mod repair;
 pub mod scanner;
 pub mod sidecar;
+pub mod teinte;
 pub mod transcribe;
 
 pub use importer::{FileHandling, ImportOutcome};

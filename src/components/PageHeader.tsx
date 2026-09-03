@@ -69,6 +69,14 @@ interface PageHeaderProps {
    */
   filtre?: string;
   onFiltre?: (texte: string) => void;
+  /**
+   * La couleur du voile, tirée de la pochette.
+   *
+   * `null` laisse le gris : c'est le cas d'une pochette en noir et blanc, et
+   * c'est le bon — la charte dit que les couleurs viennent des albums, pas
+   * qu'il faut en inventer à ceux qui n'en ont pas.
+   */
+  teinte?: string | null;
   /** Quand il est fourni, la pochette devient remplaçable au clic. */
   onPickCover?: () => void;
   /** Quand elle est fournie, la ligne de description devient modifiable. */
@@ -106,6 +114,7 @@ export function PageHeader({
   extra,
   filtre,
   onFiltre,
+  teinte,
   onPickCover,
   description,
   onDescription,
@@ -122,7 +131,19 @@ export function PageHeader({
   // Plus de `grain` : la trame ne sert qu'à casser un dégradé, et appliquée à
   // un aplat elle **est** le dégradé — son masque s'éteint vers le bas.
   return (
-    <header className="fondu-tete relative px-6 pb-4 pt-6">
+    <header
+      className="fondu-tete relative px-6 pb-4 pt-6"
+      // La transition adoucit l'arrivée : la page s'affiche en gris, puis
+      // prend sa couleur quand la pochette a fini d'être lue.
+      style={
+        teinte == null
+          ? undefined
+          : ({
+              "--voile": teinte,
+              transition: "background-image 320ms var(--ease-out-soft)",
+            } as React.CSSProperties)
+      }
+    >
       {/* Sur un écran étroit, la pochette et le titre côte à côte laissent au
           titre une colonne de cent pixels. Ils s'empilent donc, pochette
           centrée au-dessus — la disposition que tous les lecteurs de téléphone

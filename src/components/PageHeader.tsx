@@ -56,6 +56,19 @@ interface PageHeaderProps {
   onRename?: (name: string) => void;
   /** Boutons additionnels, placés après les commandes de lecture. */
   extra?: React.ReactNode;
+  /**
+   * Filtre la liste affichée, sans quitter la page.
+   *
+   * # Pourquoi il ne remplace pas la recherche générale
+   *
+   * Celle-ci cherche dans deux mille morceaux et remplace la page. Là, on est
+   * déjà quelque part — dans une playlist de cinq cents titres, dans la
+   * discographie d'un artiste — et l'on veut **écarter** ce qui ne correspond
+   * pas, pas partir ailleurs. Ce sont deux gestes différents ; en confondre un
+   * avec l'autre oblige à revenir sur ses pas.
+   */
+  filtre?: string;
+  onFiltre?: (texte: string) => void;
   /** Quand il est fourni, la pochette devient remplaçable au clic. */
   onPickCover?: () => void;
   /** Quand elle est fournie, la ligne de description devient modifiable. */
@@ -91,6 +104,8 @@ export function PageHeader({
   onSelectMode,
   onRename,
   extra,
+  filtre,
+  onFiltre,
   onPickCover,
   description,
   onDescription,
@@ -257,6 +272,10 @@ export function PageHeader({
         )}
 
         {extra}
+
+        {onFiltre !== undefined && (
+          <FiltreListe valeur={filtre ?? ""} onChange={onFiltre} />
+        )}
       </div>
     </header>
   );
@@ -292,6 +311,74 @@ export function HeaderAction({
     >
       <Icon name={name} size={24} />
     </button>
+  );
+}
+
+/**
+ * Le champ qui écarte.
+ *
+ * Replié, c'est une loupe : un champ toujours ouvert dirait « il faut chercher
+ * ici », alors que la plupart du temps on veut simplement lire la liste.
+ * Déplié, il prend la place — et se referme dès qu'il est vide et qu'on le
+ * quitte, pour ne pas laisser un filtre invisible en travers de la page.
+ */
+function FiltreListe({
+  valeur,
+  onChange,
+}: {
+  valeur: string;
+  onChange: (texte: string) => void;
+}) {
+  const [ouvert, setOuvert] = useState(valeur !== "");
+
+  if (!ouvert) {
+    return (
+      <button
+        type="button"
+        aria-label="Filtrer cette liste"
+        title="Filtrer cette liste"
+        onClick={() => setOuvert(true)}
+        className="pression ml-auto flex h-10 w-10 items-center justify-center rounded-full text-ink-muted hover:text-ink"
+      >
+        <Icon name="search" size={20} />
+      </button>
+    );
+  }
+
+  return (
+    <div className="ml-auto flex items-center gap-1.5 rounded-full bg-elevated px-3 py-1.5">
+      <span className="shrink-0 text-ink-faint">
+        <Icon name="search" size={15} />
+      </span>
+      <input
+        autoFocus
+        value={valeur}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={() => {
+          if (valeur === "") setOuvert(false);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          onChange("");
+          setOuvert(false);
+        }}
+        placeholder="Dans cette liste"
+        className="w-32 bg-transparent text-[13px] text-ink placeholder:text-ink-faint focus:outline-none sm:w-44"
+      />
+      {valeur !== "" && (
+        <button
+          type="button"
+          aria-label="Effacer le filtre"
+          onClick={() => {
+            onChange("");
+            setOuvert(false);
+          }}
+          className="pression shrink-0 text-ink-faint hover:text-ink"
+        >
+          <Icon name="close" size={14} />
+        </button>
+      )}
+    </div>
   );
 }
 

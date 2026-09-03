@@ -302,6 +302,16 @@ export function AppShell({
   }, [searching, results, query]);
 
   /**
+   * Ce qui écarte, dans la liste ouverte.
+   *
+   * Distinct de `query`, qui cherche dans toute la bibliothèque et remplace la
+   * page : celui-ci ne quitte pas la collection où l'on se trouve. Il se vide
+   * en changeant de page — un filtre qu'on aurait oublié rendrait la page
+   * suivante à moitié vide sans dire pourquoi.
+   */
+  const [filtreListe, setFiltreListe] = useState("");
+
+  /**
    * Les listes qui arrivent entières se trient ici.
    *
    * La bibliothèque, elle, est triée par la base : elle est paginée, et cent
@@ -309,7 +319,28 @@ export function AppShell({
    * que pas de tri.
    */
   const shown = useMemo(() => {
-    const liste = searching ? (results ?? []) : tracks;
+    const brut = searching ? (results ?? []) : tracks;
+
+    // Accents et casse écartés : personne ne tape « Éclipse » avec l'accent
+    // quand il cherche vite, et un filtre qui exige la typographie exacte ne
+    // sert qu'à celui qui connaît déjà la réponse.
+    const aplati = (valeur: string) =>
+      valeur
+        .toLocaleLowerCase("fr")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
+    const terme = aplati(filtreListe.trim());
+    const liste =
+      terme === ""
+        ? brut
+        : brut.filter(
+            (morceau) =>
+              aplati(morceau.title).includes(terme)
+              || aplati(morceau.artist ?? "").includes(terme)
+              || aplati(morceau.album ?? "").includes(terme),
+          );
+
     if (sort === null || route.kind === "library") return liste;
 
     const sens = sort.descending ? -1 : 1;
@@ -323,11 +354,13 @@ export function AppShell({
           return sens * texte(gauche.album).localeCompare(texte(droite.album), "fr");
         case "duration":
           return sens * (gauche.durationMs - droite.durationMs);
+        case "plays":
+          return sens * (gauche.playCount - droite.playCount);
         default:
           return sens * (gauche.addedAt - droite.addedAt);
       }
     });
-  }, [searching, results, tracks, sort, route.kind]);
+  }, [searching, results, tracks, sort, route.kind, filtreListe]);
 
   /** Le morceau en cours. Dérivé tôt : les raccourcis clavier s'en servent. */
   const current = playback.state?.current ?? null;
@@ -865,6 +898,10 @@ export function AppShell({
   // qu'on ne voit plus, et agir dessus depuis ailleurs serait une surprise.
   const cleRoute = routeKey(route);
   useEffect(() => setSelection(null), [cleRoute, page]);
+
+  // Le filtre de liste s'en va avec la page : le laisser derrière soi rendrait
+  // la suivante à moitié vide, sans dire pourquoi.
+  useEffect(() => setFiltreListe(""), [cleRoute]);
 
   function basculerSelection(trackId: number) {
     setSelection((actuelle) => {
@@ -1460,6 +1497,8 @@ export function AppShell({
                 })
               }
               onOpenArtistOfTrack={(id) => void openArtistOf(id)}
+              filtre={filtreListe}
+              onFiltre={setFiltreListe}
               onPlayArtist={(artistId) => {
                 void ipc
                   .artistTracks(artistId)
@@ -1767,6 +1806,9 @@ interface PageProps {
    * lequel de ses morceaux.
    */
   onOpenArtistOfTrack: (trackId: number) => void;
+  /** Le filtre de la liste ouverte, et de quoi le changer. */
+  filtre: string;
+  onFiltre: (texte: string) => void;
   /** Lance tous les morceaux d'un artiste. */
   onPlayArtist: (artistId: number) => void;
   /** Écoute un morceau seul, sans toucher à la file affichée. */
@@ -1903,6 +1945,19 @@ function Page(props: PageProps) {
     </>
   );
 
+  /**
+   * La loupe n'apparaît pas partout.
+   *
+   * La bibliothèque est paginée par la base : filtrer les cent lignes visibles
+   * sur deux mille laisserait croire qu'il n'y a que cela — la recherche
+   * générale, elle, interroge tout. Et sous une douzaine de titres, on voit
+   * déjà la liste entière.
+   */
+  const filtrable = route.kind !== "library" && (tracks.length > 12 || props.filtre !== "");
+  const filtreProps = filtrable
+    ? { filtre: props.filtre, onFiltre: props.onFiltre }
+    : {};
+
   const play = tracks.length === 0 ? null : () => props.onPlayAll(false);
   const shuffle = tracks.length === 0 ? undefined : () => props.onPlayAll(true);
   const enfiler = tracks.length === 0 ? undefined : props.onEnqueueAll;
@@ -1955,6 +2010,7 @@ function Page(props: PageProps) {
             </div>
           }
           onPlay={play}
+          {...filtreProps}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -1976,6 +2032,7 @@ function Page(props: PageProps) {
             <CoverTile name="clock" />
           }
           onPlay={play}
+          {...filtreProps}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2157,6 +2214,7 @@ function Page(props: PageProps) {
             )
           }
           onPlay={play}
+          {...filtreProps}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2204,6 +2262,7 @@ function Page(props: PageProps) {
             )
           }
           onPlay={play}
+          {...filtreProps}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2229,6 +2288,7 @@ function Page(props: PageProps) {
           }
           cover={<CoverTile name="sparkle" />}
           onPlay={play}
+          {...filtreProps}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2256,6 +2316,7 @@ function Page(props: PageProps) {
             )
           }
           onPlay={play}
+          {...filtreProps}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2286,6 +2347,7 @@ function Page(props: PageProps) {
           }
           cover={<CoverTile name="sparkle" />}
           onPlay={play}
+          {...filtreProps}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2352,6 +2414,7 @@ function Page(props: PageProps) {
         }
         cover={<CoverTile name="library" />}
         onPlay={play}
+        {...filtreProps}
         {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
         {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
         {...(localiser === undefined ? {} : { onLocate: localiser })}

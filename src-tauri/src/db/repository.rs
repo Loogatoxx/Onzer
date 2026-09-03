@@ -861,7 +861,9 @@ pub const TRACK_COLUMNS: &str = "t.id, t.title,
                 al.title AS album, t.album_id, t.year, t.track_no, t.duration_ms, t.format,
                 t.relative_path, t.is_available, al.artwork_hash, t.is_loved, t.added_at,
                 (t.lyrics IS NOT NULL AND t.lyrics <> '') AS has_lyrics,
-                (t.lyrics LIKE '%[__:__%')               AS has_synced";
+                (t.lyrics LIKE '%[__:__%')               AS has_synced,
+                COALESCE((SELECT ts.play_count FROM track_stats ts
+                           WHERE ts.track_id = t.id), 0)  AS play_count";
 
 /// Vue d'un morceau destinée à l'interface.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -894,6 +896,17 @@ pub struct TrackSummary {
     /// Distinct de `has_lyrics` : un morceau peut porter son texte sans aucun
     /// horodatage, et c'est là qu'on peut lui proposer de le caler.
     pub has_synced: bool,
+    /// Combien de fois **on** l'a écouté.
+    ///
+    /// Compté depuis le premier jour dans `track_stats`, et affiché nulle
+    /// part jusqu'ici. C'est le seul chiffre qu'un lecteur local puisse donner
+    /// et qu'un service en ligne ne donne pas : le sien est mondial, celui-ci
+    /// est le tien.
+    ///
+    /// Sous-requête corrélée plutôt que jointure : `track_stats` n'a de ligne
+    /// que pour ce qu'on a écouté, et une jointure gauche de plus sur six
+    /// requêtes se paie plus cher qu'une lecture par clé primaire.
+    pub play_count: i64,
 }
 
 /// Liste les morceaux, du plus récemment ajouté au plus ancien.
@@ -948,6 +961,8 @@ pub enum SortColumn {
     Artist,
     Album,
     Duration,
+    /// Le nombre d'écoutes, du plus joué au moins joué.
+    Plays,
 }
 
 impl Default for Sort {
@@ -976,6 +991,9 @@ impl Sort {
             SortColumn::Artist => "artist COLLATE NOCASE",
             SortColumn::Album => "album COLLATE NOCASE",
             SortColumn::Duration => "t.duration_ms",
+            // L'alias de la projection : SQLite accepte qu'un ORDER BY s'y
+            // réfère, et cela évite d'écrire la sous-requête deux fois.
+            SortColumn::Plays => "play_count",
         };
 
         // Départage stable : deux morceaux de même durée doivent toujours

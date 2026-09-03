@@ -7,6 +7,7 @@ import {
   type PlaylistSummary,
   type TrackSummary,
 } from "@/lib/ipc";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { Artwork } from "./Artwork";
 import { useFermeture } from "@/lib/useFermeture";
 
@@ -43,7 +44,9 @@ const COLONNES =
 //
 // Deux boutons de trente-deux pixels et leur écart : quatre rem un quart. Un
 // seul en dessous de `lg`, où le cœur ne s'affiche pas.
-"grid-cols-[1.25rem_minmax(0,1fr)_2rem] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_4.25rem] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.25rem_4.25rem] items-center gap-2.5 lg:gap-4";
+// Les lectures n'apparaissent qu'au-delà de `xl` : c'est la seule largeur
+// où une septième colonne ne prend rien au titre.
+"grid-cols-[1.25rem_minmax(0,1fr)_2rem] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_4.25rem] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.5rem_3.25rem_4.25rem] items-center gap-2.5 lg:gap-4";
 
 const GRID = `grid ${COLONNES}`;
 
@@ -130,7 +133,7 @@ interface TrackTableProps {
  */
 const APPUI_LONG_MS = 450;
 
-export type SortColumn = "title" | "album" | "duration" | "added";
+export type SortColumn = "title" | "album" | "duration" | "added" | "plays";
 
 export interface TrackSort {
   column: SortColumn;
@@ -264,6 +267,18 @@ export function TrackTable({
           onSort={onSort}
           className="hidden xl:block"
         />
+        {/* # Les lectures, et lesquelles
+            Le chiffre de Spotify est mondial ; celui-ci est le tien. C'est la
+            seule colonne qu'un lecteur hors ligne peut remplir mieux qu'un
+            service en ligne. */}
+        <SortHeader
+          column="plays"
+          label="Lectures"
+          sort={sort}
+          onSort={onSort}
+          className="hidden justify-end xl:flex"
+        />
+
         {/* L'horloge est **dans** la colonne des durées, pas au-dessus du
             bloc d'actions : elle annonce ces chiffres-là, elle doit tomber
             dessus. */}
@@ -592,6 +607,11 @@ function TrackRow({
         {formatDate(track.addedAt)}
       </p>
 
+      {/* ── Lectures ─────────────────────────────────────────────────── */}
+      <span className="numerals hidden text-right text-[13px] text-ink-faint xl:block">
+        {track.playCount === 0 ? "—" : track.playCount.toLocaleString("fr-FR")}
+      </span>
+
       {/* ── Durée ────────────────────────────────────────────────────── */}
       <span className="numerals hidden text-center text-[13px] text-ink-muted lg:block">
         {formatDuration(track.durationMs)}
@@ -648,6 +668,7 @@ const NOMS_DE_TRI: Record<SortColumn, string> = {
   album: "Album",
   duration: "Durée",
   added: "Ajouté",
+  plays: "Lectures",
 };
 
 /**
@@ -796,7 +817,8 @@ function RowMenu({
   onOpenChange: (open: boolean) => void;
 }) {
   const setOpen = onOpenChange;
-  const monte = useFermeture(open);
+  const monte = useFermeture(open, 200);
+  const mobile = useIsMobile();
   /** Deuxième clic exigé avant de retirer de la bibliothèque. */
   const [armed, setArmed] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
@@ -830,6 +852,30 @@ function RowMenu({
     setOpen(false);
   }
 
+  const entrees = (
+    <EntreesDeLigne
+      track={track}
+      isLoved={isLoved}
+      playlists={playlists}
+      armed={armed}
+      setArmed={setArmed}
+      choose={choose}
+      onEnqueue={onEnqueue}
+      onPlayNext={onPlayNext}
+      onToggleLoved={onToggleLoved}
+      onRadio={onRadio}
+      onOpenArtist={onOpenArtist}
+      onOpenAlbum={onOpenAlbum}
+      onCorrect={onCorrect}
+      onMatch={onMatch}
+      onSyncLyrics={onSyncLyrics}
+      onRemove={onRemove}
+      onAddToPlaylist={onAddToPlaylist}
+      libelleRetrait={libelleRetrait}
+      {...(onRemoveFromPlaylist === undefined ? {} : { onRemoveFromPlaylist })}
+    />
+  );
+
   return (
     <div
       ref={anchor}
@@ -857,10 +903,108 @@ function RowMenu({
         className={open ? "" : "lg:opacity-0 lg:focus:opacity-100 lg:group-hover:opacity-100"}
       />
 
-      {monte && (
-        <div
-          className={`${open ? "animate-surgir" : "animate-disparaitre"} absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60`}
-        >
+      {monte
+        && (mobile ? (
+          <>
+            {/* # Pourquoi une feuille, et pas le même menu
+
+                Le menu du bureau est un rectangle de deux cent cinquante
+                pixels accroché à un bouton, avec des lignes de trente-deux :
+                on le vise à la souris. Au pouce, il tombe dans le coin de
+                l'écran le plus difficile à atteindre, et ses lignes sont deux
+                fois trop basses.
+
+                La feuille part du bord inférieur — le seul que le pouce
+                atteint sans changer de prise — et rappelle en tête **de quel
+                morceau** on parle : ouvert par un appui long, le menu arrive
+                sans qu'on ait vu ce qu'on a saisi. */}
+            <div
+              className={`fixed inset-0 z-40 bg-base/60 ${
+                open ? "animate-apparaitre" : "animate-disparaitre"
+              }`}
+              onClick={() => setOpen(false)}
+            />
+
+            <div
+              className={`fixed inset-x-0 bottom-0 z-50 max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-line bg-raised pb-[env(safe-area-inset-bottom)] shadow-2xl shadow-black/60 [&_button]:py-3.5 [&_button]:text-[15px] ${
+                open ? "barre-monte" : "barre-descend"
+              }`}
+            >
+              <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+                <Artwork hash={track.artworkHash} className="h-11 w-11 shrink-0 rounded" />
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px] font-semibold text-ink">
+                    {track.title}
+                  </span>
+                  <span className="block truncate text-[13px] text-ink-muted">
+                    {track.artist ?? "Artiste inconnu"}
+                  </span>
+                </span>
+              </div>
+
+              <div className="py-1">{entrees}</div>
+            </div>
+          </>
+        ) : (
+          <div
+            className={`${open ? "animate-surgir" : "animate-disparaitre"} absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60`}
+          >
+            {entrees}
+          </div>
+        ))}
+    </div>
+  );
+}
+
+/**
+ * Ce que le menu d'une ligne propose.
+ *
+ * Écrit une fois : la feuille du téléphone et le menu du bureau montrent la
+ * même chose, et deux copies finiraient par diverger d'une entrée.
+ */
+function EntreesDeLigne({
+  track,
+  isLoved,
+  playlists,
+  armed,
+  setArmed,
+  choose,
+  onEnqueue,
+  onPlayNext,
+  onToggleLoved,
+  onRadio,
+  onOpenArtist,
+  onOpenAlbum,
+  onCorrect,
+  onMatch,
+  onSyncLyrics,
+  onRemoveFromPlaylist,
+  onRemove,
+  onAddToPlaylist,
+  libelleRetrait,
+}: {
+  track: TrackSummary;
+  isLoved: boolean;
+  playlists: PlaylistSummary[];
+  armed: boolean;
+  setArmed: (value: boolean) => void;
+  choose: (action: () => void) => void;
+  onEnqueue: () => void;
+  onPlayNext: () => void;
+  onToggleLoved: () => void;
+  onRadio: () => void;
+  onOpenArtist: () => void;
+  onOpenAlbum: () => void;
+  onCorrect: () => void;
+  onMatch: () => void;
+  onSyncLyrics: () => void;
+  onRemoveFromPlaylist?: () => void;
+  onRemove: () => void;
+  onAddToPlaylist: (playlistId: number) => void;
+  libelleRetrait: string;
+}) {
+  return (
+    <>
           <MenuItem icon="queue" onClick={() => choose(onEnqueue)}>
             Ajouter à la file d'attente
           </MenuItem>
@@ -970,9 +1114,7 @@ function RowMenu({
               Le fichier reste sur le disque, et ton historique d'écoute aussi.
             </p>
           </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 

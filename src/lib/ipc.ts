@@ -53,6 +53,14 @@ export interface TrackSummary {
   hasLyrics: boolean;
   /** Les paroles défilent-elles avec la musique ? */
   hasSynced: boolean;
+  /**
+   * Combien de fois **on** l'a écouté.
+   *
+   * Compté depuis le premier jour, et affiché nulle part jusqu'ici. C'est le
+   * seul chiffre qu'un lecteur local puisse donner et qu'un service en ligne
+   * ne donne pas : le sien est mondial, celui-ci est le tien.
+   */
+  playCount: number;
 }
 
 /** Miroir de `identify::spotdl::PlaylistTrack`. */

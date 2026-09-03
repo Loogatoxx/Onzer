@@ -54,3 +54,28 @@ pub fn prevenir(app: &tauri::AppHandle, appareil: &str, resultat: &Fusion) {
         },
     );
 }
+
+/// Ce que le lecteur est en train de jouer, sous la forme que la
+/// synchronisation échange.
+///
+/// # Pourquoi c'est ici et non dans `etat`
+///
+/// `etat` ne parle qu'à la base ; le lecteur, lui, vit ailleurs. Les faire se
+/// rencontrer dans la lecture de l'état obligerait chaque appel à disposer des
+/// deux, y compris les tests qui n'ont pas de carte son.
+pub fn lecture_courante(instantane: &crate::audio::PlaybackSnapshot) -> Option<fusion::LectureSync> {
+    let courant = instantane.current.as_ref()?;
+
+    Some(fusion::LectureSync {
+        file: instantane
+            .queue
+            .iter()
+            .map(|item| item.relative_path.clone())
+            .collect(),
+        position: instantane.queue_index.unwrap_or(0),
+        position_ms: instantane.position_ms,
+        quand: crate::core::now_ms(),
+        titre: courant.title.clone(),
+        artiste: courant.artist.clone(),
+    })
+}

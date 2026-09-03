@@ -49,6 +49,21 @@ use super::fusion::{fusionner, EtatSync};
 /// passe une fermeture qui note l'appel, et vérifie que l'avertissement part.
 pub type Avertisseur = Arc<dyn Fn(&str, &super::fusion::Fusion) + Send + Sync>;
 
+/// De quoi demander, **au moment où l'on répond**, ce que le lecteur joue.
+///
+/// # Pourquoi une fonction et non une valeur
+///
+/// La porte reste ouverte plusieurs minutes. Une valeur figée à l'ouverture
+/// annoncerait le morceau d'il y a cinq minutes — et l'autre appareil
+/// reprendrait une écoute périmée, ce qui est exactement ce qu'on essaie
+/// d'éviter.
+pub type SourceLecture = Arc<
+    dyn Fn() -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Option<super::fusion::LectureSync>> + Send>,
+        > + Send
+        + Sync,
+>;
+
 /// Ce que la porte a besoin de savoir pour répondre.
 pub struct EtatServeur {
     pub pool: SqlitePool,
@@ -59,6 +74,8 @@ pub struct EtatServeur {
     /// arrivent en base et n'apparaissent nulle part — ce qui se voit
     /// exactement comme une synchronisation qui ne marche pas.
     pub prevenir: Avertisseur,
+    /// Ce que cet appareil écoute, demandé à chaque échange.
+    pub lecture: SourceLecture,
 }
 
 /// Port d'écoute souhaité. Voisin de celui de l'API d'import, dans la même
@@ -235,7 +252,8 @@ async fn fusion(
 ) -> std::result::Result<Json<EtatSync>, ErreurHttp> {
     verifier(&entetes)?;
 
-    let local = etat::lire(&serveur.pool)
+    let lecture = (serveur.lecture)().await;
+    let local = etat::lire(&serveur.pool, lecture)
         .await
         .map_err(|erreur| ErreurHttp::interne(&erreur))?;
 
@@ -269,7 +287,7 @@ async fn fusion(
     (serveur.prevenir)(&distant.appareil, &resultat);
 
     // Relu après application : c'est l'union que le client doit recevoir.
-    let apres = etat::lire(&serveur.pool)
+    let apres = etat::lire(&serveur.pool, (serveur.lecture)().await)
         .await
         .map_err(|erreur| ErreurHttp::interne(&erreur))?;
 

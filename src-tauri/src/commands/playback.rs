@@ -187,6 +187,82 @@ pub async fn stop_playback(state: State<'_, AppState>) -> Result<PlaybackSnapsho
     Ok(state.player()?.snapshot().await)
 }
 
+/// Reprend une écoute venue de l'autre appareil.
+///
+/// # Pourquoi les chemins et non des identifiants
+///
+/// La synchronisation raisonne en chemins relatifs : ce sont eux qui traversent
+/// et qui se traduisent d'une bibliothèque à l'autre. Les identifiants, eux,
+/// n'ont de sens que sur l'appareil qui les a attribués.
+#[tauri::command]
+pub async fn resume_playback(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    position: usize,
+    position_ms: i64,
+) -> Result<PlaybackSnapshot> {
+    let placeholders = vec!["?"; paths.len()].join(",");
+    let sql = format!(
+        "SELECT id, relative_path FROM tracks
+          WHERE relative_path IN ({placeholders}) AND deleted_at IS NULL"
+    );
+
+    let mut requete = sqlx::query_as::<_, (i64, String)>(&sql);
+    for chemin in &paths {
+        requete = requete.bind(chemin);
+    }
+
+    let par_chemin: std::collections::HashMap<String, i64> = requete
+        .fetch_all(&state.pool)
+        .await?
+        .into_iter()
+        .map(|(id, chemin)| (chemin, id))
+        .collect();
+
+    // L'ordre de la file vient de l'autre appareil ; la base rend ses lignes
+    // dans le sien. C'est le premier qui compte.
+    let ids: Vec<i64> = paths
+        .iter()
+        .filter_map(|chemin| par_chemin.get(chemin).copied())
+        .collect();
+
+    if ids.is_empty() {
+        return Err(crate::core::OnzerError::Invalid(
+            "aucun de ces morceaux n'est ici".to_string(),
+        ));
+    }
+
+    // Les morceaux que nous n'avons pas ont été écartés : la place du morceau
+    // en cours vaut pour la file d'origine, il faut la ramener à celle-ci.
+    let position = position.min(ids.len().saturating_sub(1));
+
+    let tracks = repository::tracks_by_ids(&state.pool, &ids).await?;
+    let par_id: std::collections::HashMap<i64, QueueItem> = tracks
+        .into_iter()
+        .map(|track| (track.id, QueueItem::from(track)))
+        .collect();
+
+    let items: Vec<QueueItem> = ids.iter().filter_map(|id| par_id.get(id).cloned()).collect();
+
+    let paths_resolver = state.paths.read().await.clone();
+
+    state
+        .player()?
+        .play_queue(
+            &state.pool,
+            &paths_resolver,
+            items,
+            position,
+            PlaySource::Queue,
+            None,
+        )
+        .await?;
+
+    state.player()?.seek(position_ms).await?;
+
+    Ok(state.player()?.snapshot().await)
+}
+
 #[tauri::command]
 pub async fn playback_state(state: State<'_, AppState>) -> Result<PlaybackSnapshot> {
     Ok(state.player()?.snapshot().await)

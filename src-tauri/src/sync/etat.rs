@@ -10,7 +10,7 @@ use sqlx::SqlitePool;
 
 use crate::core::{now_ms, Result};
 
-use super::fusion::{Arbitrage, Changement, EtatSync, MorceauSync, PlaylistSync};
+use super::fusion::{Arbitrage, Changement, EtatSync, LectureSync, MorceauSync, PlaylistSync};
 
 /// Le nom sous lequel cet appareil se présente à l'autre.
 ///
@@ -47,7 +47,7 @@ pub fn nom_appareil() -> String {
 /// au prix d'un aller-retour de plus et d'un état intermédiaire à tenir. Le
 /// jour où la bibliothèque en portera cent fois plus, il faudra y revenir ;
 /// aujourd'hui ce serait de la complexité sans contrepartie.
-pub async fn lire(pool: &SqlitePool) -> Result<EtatSync> {
+pub async fn lire(pool: &SqlitePool, lecture: Option<LectureSync>) -> Result<EtatSync> {
     let lignes = sqlx::query_as::<_, LigneMorceau>(
         "SELECT t.relative_path, t.title,
                 (SELECT a.name FROM track_artists ta
@@ -97,6 +97,7 @@ pub async fn lire(pool: &SqlitePool) -> Result<EtatSync> {
         appareil: nom_appareil(),
         morceaux,
         playlists: lire_playlists(pool).await?,
+        lecture,
     })
 }
 

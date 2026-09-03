@@ -271,6 +271,7 @@ pub fn run() {
             commands::playback::play_next,
             commands::playback::remove_from_queue,
             commands::playback::move_in_queue,
+            commands::playback::resume_playback,
             commands::playback::set_sleep_timer,
             commands::playback::sleep_timer,
             commands::appairage::open_pairing,

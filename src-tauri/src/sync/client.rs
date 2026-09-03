@@ -11,7 +11,7 @@ use crate::core::{OnzerError, PathResolver, Result};
 use crate::library::importer::{self, FileHandling, ImportOutcome};
 
 use super::etat;
-use super::fusion::{fusionner, Changement, EtatSync, Manquant};
+use super::fusion::{fusionner, Changement, EtatSync, Manquant, Reprise};
 
 /// Ce qu'une synchronisation a fait, en clair.
 #[derive(Debug, Default, Serialize)]
@@ -31,6 +31,11 @@ pub struct RapportSync {
     pub manquants: Vec<Manquant>,
     /// Le poids total de ces morceaux, en octets.
     pub octets_manquants: i64,
+    /// L'écoute de l'autre, quand elle est plus récente que la nôtre.
+    ///
+    /// Proposée, jamais appliquée : prendre la main sur le son de quelqu'un
+    /// qui écoute déjà est le geste le plus brutal qu'un lecteur puisse faire.
+    pub reprise: Option<Reprise>,
     /// Ce que **nous** avons et qui manque chez l'autre.
     ///
     /// On ne peut rien en faire d'ici — c'est celui qui se connecte qui
@@ -46,6 +51,7 @@ impl RapportSync {
         arbitrages: usize,
         manquants: Vec<Manquant>,
         manquants_la_bas: usize,
+        reprise: Option<Reprise>,
     ) -> Self {
         let octets_manquants = manquants.iter().map(|morceau| morceau.taille).sum();
 
@@ -55,6 +61,7 @@ impl RapportSync {
             manquants,
             octets_manquants,
             manquants_la_bas,
+            reprise,
             ..Self::default()
         };
 
@@ -84,8 +91,9 @@ pub async fn synchroniser(
     hote: &str,
     port: u16,
     code: &str,
+    lecture: Option<super::fusion::LectureSync>,
 ) -> Result<RapportSync> {
-    let local = etat::lire(pool).await?;
+    let local = etat::lire(pool, lecture).await?;
 
     let reponse = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
@@ -143,6 +151,7 @@ pub async fn synchroniser(
         resultat.arbitrages.len(),
         resultat.manquants,
         chez_eux,
+        resultat.reprise,
     ))
 }
 

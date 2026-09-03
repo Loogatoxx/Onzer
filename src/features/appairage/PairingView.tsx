@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { ScannerQR } from "./ScannerQR";
 import {
+  formatDuration,
   ipc,
+  type ResumeOffer,
   type SyncNotice,
   type PairingInfo,
   type SyncReport,
@@ -417,6 +419,19 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
         {occupe ? "Échange en cours…" : "Synchroniser"}
       </button>
 
+      {rapport?.reprise != null && (
+        <Reprendre
+          offre={rapport.reprise}
+          onRepris={() => {
+            // Une fois reprise, la proposition n'a plus lieu d'être : c'est
+            // nous qui écoutons en dernier, désormais.
+            setRapport({ ...rapport, reprise: null });
+            onSynced();
+          }}
+          onErreur={setErreur}
+        />
+      )}
+
       {rapport !== null && <Resultat rapport={rapport} />}
 
       {rapport !== null && rapport.manquants.length > 0 && (
@@ -430,6 +445,62 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
       {bilanTransfert !== null && <BilanTransfert bilan={bilanTransfert} />}
       {erreur !== null && <Erreur texte={erreur} />}
     </section>
+  );
+}
+
+/**
+ * Reprendre l'écoute de l'autre appareil.
+ *
+ * # Pourquoi c'est un bouton et non un effet de la synchronisation
+ *
+ * Prendre la main sur le son de quelqu'un qui écoute déjà est le geste le plus
+ * brutal qu'un lecteur puisse faire. La synchronisation dit ce que l'autre
+ * appareil écoutait ; c'est un clic qui décide.
+ */
+function Reprendre({
+  offre,
+  onRepris,
+  onErreur,
+}: {
+  offre: ResumeOffer;
+  onRepris: () => void;
+  onErreur: (message: string) => void;
+}) {
+  const [occupe, setOccupe] = useState(false);
+
+  const minutes = Math.max(0, Math.round((Date.now() - offre.quand) / 60_000));
+  const quand =
+    minutes === 0 ? "à l'instant" : minutes < 60 ? `il y a ${minutes} min` : "plus tôt";
+
+  return (
+    <div className="mt-4 rounded-lg border border-accent/25 bg-accent/5 px-3.5 py-3">
+      <p className="text-[13px] font-medium text-ink">
+        {offre.appareil} écoutait {quand}
+      </p>
+      <p className="mt-0.5 truncate text-[13px] text-ink-muted">
+        {offre.artiste === null ? offre.titre : `${offre.artiste} — ${offre.titre}`}
+        {offre.positionMs > 0 && ` · ${formatDuration(offre.positionMs)}`}
+      </p>
+      <p className="mt-1 text-[12px] text-ink-faint">
+        {offre.file.length} morceau{offre.file.length > 1 ? "x" : ""} dans sa file.
+      </p>
+
+      <button
+        type="button"
+        disabled={occupe}
+        onClick={() => {
+          setOccupe(true);
+          void ipc
+            .resumePlayback(offre.file, offre.position, offre.positionMs)
+            .then(onRepris)
+            .catch((cause: unknown) => onErreur(String(cause)))
+            .finally(() => setOccupe(false));
+        }}
+        className="pression mt-3 w-full rounded-lg border border-line px-4 py-2.5 text-[13px] text-ink transition-colors hover:bg-elevated disabled:opacity-40"
+      >
+        {occupe ? "Reprise…" : "Reprendre ici"}
+      </button>
+    </div>
   );
 }
 

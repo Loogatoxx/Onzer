@@ -20,8 +20,13 @@ pub async fn open_pairing(
     appairage::ouvrir(Arc::new(EtatServeur {
         pool: state.pool.clone(),
         paths: state.paths.clone(),
-        prevenir: Arc::new(move |appareil, resultat| {
-            crate::sync::prevenir(&app, appareil, resultat);
+        prevenir: Arc::new({
+            let app = app.clone();
+            move |appareil, resultat| crate::sync::prevenir(&app, appareil, resultat)
+        }),
+        lecture: Arc::new(move || {
+            let app = app.clone();
+            Box::pin(async move { lecture_courante(&app).await })
         }),
     }))
     .await
@@ -43,6 +48,7 @@ pub async fn pairing_open() -> Result<bool> {
 /// Se connecte à l'autre appareil et fusionne.
 #[tauri::command]
 pub async fn sync_with_device(
+    app: AppHandle,
     state: State<'_, AppState>,
     host: String,
     port: u16,
@@ -52,7 +58,21 @@ pub async fn sync_with_device(
     // secret : les exiger ferait échouer une saisie pourtant correcte.
     let code = code.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
 
-    client::synchroniser(&state.pool, host.trim(), port, &code).await
+    let lecture = lecture_courante(&app).await;
+    client::synchroniser(&state.pool, host.trim(), port, &code, lecture).await
+}
+
+/// Ce que ce lecteur joue, s'il joue.
+///
+/// Rendre `None` plutôt qu'une erreur quand il n'y a pas de carte son : une
+/// synchronisation n'a aucune raison d'échouer parce qu'aucun son ne sort.
+async fn lecture_courante(app: &AppHandle) -> Option<crate::sync::fusion::LectureSync> {
+    use tauri::Manager;
+
+    let etat = app.state::<AppState>();
+    let player = etat.player().ok()?;
+
+    crate::sync::lecture_courante(&player.snapshot().await)
 }
 
 /// Découpe un lien `onzer://appairage?…` collé ou scanné.

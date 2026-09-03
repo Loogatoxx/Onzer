@@ -414,6 +414,19 @@ export interface MissingTrack {
   taille: number;
 }
 
+/** Miroir de `sync::fusion::Reprise`. */
+export interface ResumeOffer {
+  appareil: string;
+  titre: string;
+  artiste: string | null;
+  /** Quand l'autre appareil a joué pour la dernière fois. */
+  quand: number;
+  positionMs: number;
+  /** La file, traduite en **nos** chemins. */
+  file: string[];
+  position: number;
+}
+
 /** Miroir de `sync::client::RapportSync`. */
 export interface SyncReport {
   appareil: string;
@@ -426,6 +439,8 @@ export interface SyncReport {
   octetsManquants: number;
   /** Ce que nous avons et qui manque chez l'autre. Il devra venir le chercher. */
   manquantsLaBas: number;
+  /** L'écoute de l'autre, quand elle est plus récente. Proposée, pas appliquée. */
+  reprise: ResumeOffer | null;
 }
 
 /** Miroir de `sync::client::RapportTransfert`. */
@@ -706,6 +721,14 @@ export const ipc = {
   /** Déplace un morceau dans l'ordre de lecture. */
   moveInQueue: (from: number, to: number): Promise<PlaybackSnapshot> =>
     invoke<PlaybackSnapshot>("move_in_queue", { from, to }),
+
+  /** Reprend une écoute venue de l'autre appareil. */
+  resumePlayback: (
+    paths: string[],
+    position: number,
+    positionMs: number,
+  ): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("resume_playback", { paths, position, positionMs }),
 
   /**
    * Arme, réarme ou annule le minuteur de sommeil. `null` annule.

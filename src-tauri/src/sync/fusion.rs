@@ -89,6 +89,49 @@ pub struct PlaylistSync {
     pub morceaux: Vec<String>,
 }
 
+/// Ce qu'un appareil était en train d'écouter.
+///
+/// # Pourquoi la file voyage en entier
+///
+/// « Reprendre où j'en étais » ne veut pas dire « rejoue ce morceau » : cela
+/// veut dire retrouver la suite. Sans la file, on reprend un titre isolé et
+/// l'écoute s'arrête à sa fin, ce qui est plus déroutant que de ne rien
+/// reprendre du tout. Quelques milliers de chemins font une centaine de
+/// kilo-octets, à côté des six mégaoctets de paroles déjà échangés.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LectureSync {
+    /// La file, par chemins relatifs **de l'émetteur**.
+    pub file: Vec<String>,
+    /// Place du morceau en cours dans cette file.
+    pub position: usize,
+    pub position_ms: i64,
+    /// Quand cet appareil a joué pour la dernière fois.
+    pub quand: i64,
+    pub titre: String,
+    pub artiste: Option<String>,
+}
+
+/// Une écoute qu'on peut reprendre ici.
+///
+/// # Pourquoi c'est une proposition et non une application
+///
+/// Prendre la main sur le son de quelqu'un qui écoute déjà est le geste le
+/// plus brutal qu'un lecteur puisse faire. La synchronisation dit ce que
+/// l'autre appareil écoutait ; c'est un clic qui décide de reprendre.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reprise {
+    pub appareil: String,
+    pub titre: String,
+    pub artiste: Option<String>,
+    pub quand: i64,
+    pub position_ms: i64,
+    /// La file, traduite en **nos** chemins.
+    pub file: Vec<String>,
+    pub position: usize,
+}
+
 /// Tout ce qu'un appareil expose à l'autre.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +140,9 @@ pub struct EtatSync {
     pub appareil: String,
     pub morceaux: Vec<MorceauSync>,
     pub playlists: Vec<PlaylistSync>,
+    /// Ce que cet appareil écoutait. Absent s'il n'a jamais rien joué.
+    #[serde(default)]
+    pub lecture: Option<LectureSync>,
 }
 
 /// Ce qu'un appareil doit appliquer chez lui.
@@ -158,6 +204,8 @@ pub struct Fusion {
     pub arbitrages: Vec<Arbitrage>,
     /// Ce que l'autre a et que nous n'avons pas.
     pub manquants: Vec<Manquant>,
+    /// L'écoute de l'autre, quand elle est plus récente que la nôtre.
+    pub reprise: Option<Reprise>,
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -328,7 +376,65 @@ pub fn fusionner(
 
     fusionner_playlists(soi, autre, &paires, &mut fusion);
     fusion.manquants = manquants(&paires, autre);
+    fusion.reprise = reprise(soi, autre, &paires);
     fusion
+}
+
+/// L'écoute de l'autre, si elle est plus récente que la nôtre.
+///
+/// # Pourquoi la file est traduite et non transmise telle quelle
+///
+/// Elle est faite des chemins de l'autre appareil. Les rejouer ici
+/// désignerait des fichiers qui n'existent pas — les deux bibliothèques
+/// rangent les mêmes morceaux sous des noms qui ne concordent pas toujours.
+/// Ce qu'on ne sait pas traduire est simplement laissé de côté, et la place du
+/// morceau en cours suit ce qui a disparu devant lui.
+fn reprise(
+    soi: &EtatSync,
+    autre: &EtatSync,
+    paires: &[(&MorceauSync, &MorceauSync)],
+) -> Option<Reprise> {
+    let la_bas = autre.lecture.as_ref()?;
+
+    // Une écoute plus ancienne que la nôtre n'a rien à proposer : c'est nous
+    // qui sommes en avance.
+    if soi.lecture.as_ref().is_some_and(|ici| ici.quand >= la_bas.quand) {
+        return None;
+    }
+
+    let traduire: HashMap<&str, &str> = paires
+        .iter()
+        .map(|(local, distant)| (distant.chemin.as_str(), local.chemin.as_str()))
+        .collect();
+
+    let mut file = Vec::with_capacity(la_bas.file.len());
+    let mut position = 0;
+
+    for (rang, chemin) in la_bas.file.iter().enumerate() {
+        let Some(ici) = traduire.get(chemin.as_str()) else {
+            continue;
+        };
+
+        if rang <= la_bas.position {
+            position = file.len();
+        }
+
+        file.push((*ici).to_string());
+    }
+
+    if file.is_empty() {
+        return None;
+    }
+
+    Some(Reprise {
+        appareil: autre.appareil.clone(),
+        titre: la_bas.titre.clone(),
+        artiste: la_bas.artiste.clone(),
+        quand: la_bas.quand,
+        position_ms: la_bas.position_ms,
+        file,
+        position,
+    })
 }
 
 /// Les morceaux de l'autre qu'aucun des nôtres ne rejoint.
@@ -578,6 +684,7 @@ mod tests {
             appareil: nom.to_string(),
             morceaux,
             playlists: Vec::new(),
+            lecture: None,
         }
     }
 
@@ -862,6 +969,76 @@ mod tests {
         assert_eq!(fusion.manquants.len(), 1);
         assert_eq!(fusion.manquants[0].chemin, "deux.mp3");
         assert_eq!(fusion.manquants[0].taille, 4_000_000);
+    }
+
+    #[test]
+    fn la_reprise_traduit_la_file_et_ajuste_la_place() {
+        // Le Mac écoutait le troisième morceau d'une file de quatre. Le
+        // téléphone n'en a que trois — celui qui manque est **avant** le
+        // morceau en cours, donc la place recule d'un cran.
+        let ici = vec![
+            morceau("un.mp3", "Un", "A", false),
+            morceau("trois.mp3", "Trois", "C", false),
+            morceau("quatre.mp3", "Quatre", "D", false),
+        ];
+        let la_bas = vec![
+            morceau("un.mp3", "Un", "A", false),
+            morceau("deux.mp3", "Deux", "B", false),
+            morceau("trois.mp3", "Trois", "C", false),
+            morceau("quatre.mp3", "Quatre", "D", false),
+        ];
+
+        let mut tel = etat("Honor", ici);
+        tel.lecture = None;
+
+        let mut mac = etat("Mac", la_bas);
+        mac.lecture = Some(LectureSync {
+            file: vec![
+                "un.mp3".into(),
+                "deux.mp3".into(),
+                "trois.mp3".into(),
+                "quatre.mp3".into(),
+            ],
+            position: 2,
+            position_ms: 42_000,
+            quand: 1_000,
+            titre: "Trois".into(),
+            artiste: Some("C".into()),
+        });
+
+        let reprise = fusionner(&tel, &mac, &HashMap::new()).reprise.unwrap();
+
+        assert_eq!(reprise.file, vec!["un.mp3", "trois.mp3", "quatre.mp3"]);
+        assert_eq!(reprise.position, 1, "le morceau absent devant a décalé la place");
+        assert_eq!(reprise.position_ms, 42_000);
+    }
+
+    #[test]
+    fn une_ecoute_plus_ancienne_ne_se_propose_pas() {
+        // Celui qui a écouté en dernier n'a rien à reprendre de l'autre.
+        let un = morceau("un.mp3", "Un", "A", false);
+
+        let mut tel = etat("Honor", vec![un.clone()]);
+        tel.lecture = Some(LectureSync {
+            file: vec!["un.mp3".into()],
+            position: 0,
+            position_ms: 0,
+            quand: 5_000,
+            titre: "Un".into(),
+            artiste: None,
+        });
+
+        let mut mac = etat("Mac", vec![un]);
+        mac.lecture = Some(LectureSync {
+            file: vec!["un.mp3".into()],
+            position: 0,
+            position_ms: 0,
+            quand: 1_000,
+            titre: "Un".into(),
+            artiste: None,
+        });
+
+        assert!(fusionner(&tel, &mac, &HashMap::new()).reprise.is_none());
     }
 
     #[test]

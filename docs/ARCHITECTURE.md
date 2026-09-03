@@ -2561,6 +2561,36 @@ tiennent sur deux pages.
 
 ---
 
+## ADR-089 — Reprendre où l'on en était, sans prendre la main
+
+**Contexte.** C'est le seul vrai argument d'une synchronisation entre deux appareils : poser le
+téléphone, ouvrir le Mac, et continuer. La file et la position, elles, ne traversaient pas.
+
+**Décision.** L'état échangé porte désormais ce que l'appareil écoutait : sa file, la place du
+morceau en cours, le temps écoulé, et **quand**. Celui dont l'écoute est la plus récente a
+quelque chose à proposer ; l'autre reçoit une proposition.
+
+**Pourquoi une proposition et jamais une application.** Prendre la main sur le son de quelqu'un
+qui écoute déjà est le geste le plus brutal qu'un lecteur puisse faire. La synchronisation dit
+ce que l'autre appareil écoutait ; c'est un clic qui décide.
+
+**Pourquoi la file voyage en entier.** « Reprendre où j'en étais » ne veut pas dire « rejoue ce
+morceau » : cela veut dire retrouver la suite. Sans la file, on reprend un titre isolé et
+l'écoute s'arrête à sa fin — plus déroutant que de ne rien reprendre du tout. Quelques milliers
+de chemins font une centaine de kilo-octets, à côté des six mégaoctets de paroles déjà échangés.
+
+**Pourquoi la file est traduite, et ce que ça implique.** Elle est faite des chemins de l'autre
+appareil ; les rejouer ici désignerait des fichiers qui n'existent pas. Ce qu'on ne sait pas
+traduire est laissé de côté — et **la place du morceau en cours suit ce qui a disparu devant
+lui**. Sans cet ajustement, reprendre une file amputée d'un titre repartirait un morceau trop
+loin.
+
+**Pourquoi la source est une fonction et non une valeur.** La porte reste ouverte plusieurs
+minutes. Un état figé à l'ouverture annoncerait le morceau d'il y a cinq minutes — et l'autre
+appareil reprendrait une écoute périmée, ce qu'on cherche précisément à éviter.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

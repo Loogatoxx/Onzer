@@ -873,3 +873,100 @@ concentrer sur les dégradés déclarés. C'était l'essentiel du défaut.
 Chercher le défaut là où il est plutôt que là où on l'a supposé. Trois passes sur le fondu
 n'auraient jamais rien donné : ce n'était pas lui.
 
+---
+
+## Entrée 026 — Un aplat qui ne se coupe plus, et la couleur des pochettes
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+« prochaine etape fait les deux que tu vien de dire et la c'est devenu un peu moche avec une
+ligne qui s arrete net dans la biblioteque y a meme plus de fondu ta juste suprimer tout
+essaye de trouver une alternative plus belle sois tu revien sur du fondu mais bien gerer sois
+autre chose mais de plus coherent et artistique »
+
+**🤖 Réponse (résumé)**
+Une bande est une amplitude divisée par une distance. L'amplitude est
+intouchable — neuf niveaux entre le voile et la page. Restait la distance : le voile est plein
+sur toute sa hauteur et ne se dissout que sur ses **trente-deux derniers pixels**. Une marche
+tous les trois pixels et demi, soit deux dixièmes de millimètre.
+
+Pour la part « artistique », la charte du projet disait déjà, depuis le premier jour, que « les
+couleurs de l'écran viennent des albums, pas du châssis ». Le voile prend maintenant la
+**teinte** de la pochette — et seulement sa teinte : la luminosité et la saturation sont
+imposées, sans quoi une pochette blanche donnerait du blanc et le titre deviendrait illisible.
+
+**🔧 Modifications**
+- ➕ `src-tauri/src/library/teinte.rs` — vote de teinte par secteurs, huit tests
+- ➕ commande `artwork_tint`, avec cache par empreinte
+- ➕ `src/lib/useTeinte.ts` ; `PageHeader`, bande d'encoche et sélecteur d'onglets teintés
+- ✏️ `.fondu-tete` : aplat dissous sur 2 rem
+
+**🎯 Objectif**
+Sortir du faux choix entre un dégradé qui fait des marches et un aplat qui coupe net.
+
+---
+
+## Entrée 027 — Le menu d'une ligne sautait, et lançait des morceaux
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+« quand j appuye sur les trois petit point des titres l animation est un peu buggé vraiment pas
+fluide » puis « quand j appuye a cote ça ppuye derriere et ça peu lancre une autre musique »
+
+**🤖 Réponse (résumé)**
+Deux défauts, une seule cause de fond.
+
+La ligne portait `.pression`, qui lui applique une mise à l'échelle pendant l'appui. Or **un
+élément `fixed` placé dans un ancêtre transformé se positionne par rapport à lui**, pas par
+rapport à l'écran : le menu, ouvert au bout de l'appui long, naissait dans une ligne encore
+enfoncée puis sautait quand le doigt se levait.
+
+Le voile, lui, fermait au clic — qui n'arrive qu'après le relâchement, quand la feuille a déjà
+commencé sa sortie et que l'animation de sortie coupe les événements. Le clic tombait sur la
+ligne du dessous.
+
+**🔧 Modifications**
+- ✏️ La feuille est portée à la racine du document (`createPortal`)
+- ✏️ Le voile ferme au `pointerdown` et empêche le clic de naître ; il garde ses clics pendant
+  qu'il s'efface
+- ✏️ Les lignes s'éclairent au lieu de se mettre à l'échelle — c'est ce que font les listes
+  natives, et cela ne piège rien
+
+**🎯 Objectif**
+Qu'un menu s'ouvre là où on l'a demandé, et qu'en le fermant on ne lance rien.
+
+---
+
+## Entrée 028 — La liaison continue
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+« prochaine etape fait les deux que tu vien de dire » (synchronisation continue + reste de la
+liste Spotify), puis « quand tout sera setup tu testera la syncro continue par toi meme ».
+
+**🤖 Réponse (résumé)**
+Deux appareils avec chacun leurs haut-parleurs ne peuvent pas jouer ensemble : un seul tient le
+son, l'autre le voit et le commande. Une requête `GET` qui ne répond pas tout de suite remplace
+le WebSocket — même latence, aucune dépendance de plus à compiler pour quatre architectures.
+
+Une seule boucle des deux côtés ; seul le chemin d'accès au tableau change.
+
+**🔧 Modifications**
+- ➕ `src-tauri/src/sync/continu.rs` — le raisonnement pur, quatorze tests
+- ➕ `src-tauri/src/sync/liaison.rs` — le transport et la boucle, quatre tests
+- ➕ Routes `GET`/`POST /sync/v1/continu` ; commandes `link_command`, `link_open`, `stop_link`
+- ➕ `src/features/appairage/Telecommande.tsx`
+- ➕ Ordre d'origine dans le menu de tri ; bouton « + » dans l'en-tête mobile
+
+**🐞 Trois défauts trouvés par les tests, avant la moindre exécution**
+1. `watch::Sender::send` **échoue quand personne n'écoute** : le tableau ne se mettait jamais à
+   jour tant qu'aucune attente n'était en cours.
+2. Sans numéro d'ordre, le tableau relu en boucle rejouerait la même pause à l'infini.
+3. Deux appareils arrêtés chacun sur un morceau se disputaient le tableau à chaque seconde.
+
+**🎯 Objectif**
+Que le téléphone serve de télécommande au Mac, et réciproquement, sans compte ni serveur.
+

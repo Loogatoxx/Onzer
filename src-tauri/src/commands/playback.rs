@@ -72,6 +72,62 @@ pub async fn enqueue_tracks(
     Ok(state.player()?.snapshot().await)
 }
 
+/// Insère juste après le morceau en cours.
+///
+/// # Pourquoi l'ordre des identifiants est préservé
+///
+/// `tracks_by_ids` rend les morceaux dans l'ordre de la base, pas dans celui
+/// qu'on a demandé. Enfiler un album « à lire ensuite » le remettrait donc
+/// dans un ordre arbitraire — celui de son insertion dans la bibliothèque.
+#[tauri::command]
+pub async fn play_next(
+    state: State<'_, AppState>,
+    track_ids: Vec<i64>,
+) -> Result<PlaybackSnapshot> {
+    let tracks = repository::tracks_by_ids(&state.pool, &track_ids).await?;
+
+    let par_id: std::collections::HashMap<i64, QueueItem> = tracks
+        .into_iter()
+        .map(|track| (track.id, QueueItem::from(track)))
+        .collect();
+
+    let items: Vec<QueueItem> = track_ids
+        .iter()
+        .filter_map(|id| par_id.get(id).cloned())
+        .collect();
+
+    let paths = state.paths.read().await.clone();
+    state.player()?.play_next(&state.pool, &paths, items).await?;
+
+    Ok(state.player()?.snapshot().await)
+}
+
+/// Retire un morceau de la file, par sa place dans l'ordre de lecture.
+#[tauri::command]
+pub async fn remove_from_queue(
+    state: State<'_, AppState>,
+    position: usize,
+) -> Result<PlaybackSnapshot> {
+    let paths = state.paths.read().await.clone();
+    state
+        .player()?
+        .remove_from_queue(&state.pool, &paths, position)
+        .await?;
+
+    Ok(state.player()?.snapshot().await)
+}
+
+/// Déplace un morceau dans l'ordre de lecture.
+#[tauri::command]
+pub async fn move_in_queue(
+    state: State<'_, AppState>,
+    from: usize,
+    to: usize,
+) -> Result<PlaybackSnapshot> {
+    state.player()?.move_in_queue(from, to).await?;
+    Ok(state.player()?.snapshot().await)
+}
+
 #[tauri::command]
 pub async fn toggle_playback(state: State<'_, AppState>) -> Result<PlaybackSnapshot> {
     state.player()?.toggle().await?;

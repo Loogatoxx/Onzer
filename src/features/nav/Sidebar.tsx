@@ -21,6 +21,8 @@ export type Route =
   /** L'aide-mémoire des raccourcis clavier. */
   /** L'écran de lecture : pochette, infos, commandes. */
   | { kind: "playing" }
+  /** La file d'attente, modifiable. */
+  | { kind: "queue" }
   /** Un album, ouvert depuis la colonne d'une ligne. */
   | { kind: "album"; id: number; name: string; artist: string | null }
   /** La grille de tous les albums. */

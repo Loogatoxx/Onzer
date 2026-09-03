@@ -146,11 +146,77 @@ impl PlayerService {
         }
 
         if was_empty {
-            state.queue.jump_to(0);
+            state.queue.jump_to_position(0);
             state.source = PlaySource::Queue;
             return self.start_current(pool, paths, &mut state, true).await;
         }
 
+        Ok(())
+    }
+
+    /// Insère juste après le morceau en cours.
+    ///
+    /// # Pourquoi « ensuite » et « à la fin » sont deux gestes
+    ///
+    /// Sur une file de deux mille morceaux, « à la fin » veut dire jamais.
+    pub async fn play_next(
+        &self,
+        pool: &SqlitePool,
+        paths: &PathResolver,
+        items: Vec<QueueItem>,
+    ) -> Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let mut state = self.state.lock().await;
+        let was_empty = state.queue.is_empty();
+
+        // Insérés à l'envers : chacun se plaçant juste après le courant, le
+        // dernier inséré se retrouve devant. Les remettre à l'endroit demande
+        // de partir de la fin.
+        for item in items.into_iter().rev() {
+            state.queue.insert_next(item);
+        }
+
+        if was_empty {
+            state.source = PlaySource::Queue;
+            return self.start_current(pool, paths, &mut state, true).await;
+        }
+
+        Ok(())
+    }
+
+    /// Retire un morceau de la file.
+    ///
+    /// Retirer **celui qui joue** enchaîne sur le suivant : laisser tourner un
+    /// morceau qui ne fait plus partie de la file serait un état que rien
+    /// n'affiche.
+    pub async fn remove_from_queue(
+        &self,
+        pool: &SqlitePool,
+        paths: &PathResolver,
+        position: usize,
+    ) -> Result<()> {
+        let mut state = self.state.lock().await;
+
+        if !state.queue.remove_at(position) {
+            return Ok(());
+        }
+
+        self.close_current(pool, &mut state, EndReason::Replaced).await;
+
+        if state.queue.current().is_none() {
+            self.device.stop();
+            return Ok(());
+        }
+
+        self.start_current(pool, paths, &mut state, true).await
+    }
+
+    /// Déplace un morceau dans l'ordre de lecture.
+    pub async fn move_in_queue(&self, from: usize, to: usize) -> Result<()> {
+        self.state.lock().await.queue.move_position(from, to);
         Ok(())
     }
 
@@ -244,7 +310,7 @@ impl PlayerService {
 
         self.close_current(pool, &mut state, EndReason::Replaced).await;
 
-        if state.queue.jump_to(index).is_none() {
+        if state.queue.jump_to_position(index).is_none() {
             return Err(OnzerError::Invalid("position hors de la file".to_string()));
         }
 
@@ -352,8 +418,8 @@ impl PlayerService {
         PlaybackSnapshot {
             duration_ms: current.as_ref().map_or(0, |item| item.duration_ms),
             current,
-            queue: state.queue.items().to_vec(),
-            queue_index: state.queue.current_index(),
+            queue: state.queue.playback_items(),
+            queue_index: state.queue.playback_index(),
             is_playing: self.device.is_playing(),
             position_ms: self.device.position_ms(),
             volume: state.volume,

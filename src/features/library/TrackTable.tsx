@@ -56,6 +56,8 @@ interface TrackTableProps {
   onToggleLoved: (trackId: number) => void;
   /** Ajoute à la fin de la file, sans interrompre l'écoute. */
   onEnqueue: (trackId: number) => void;
+  /** Insère juste après le morceau en cours. */
+  onPlayNext: (trackId: number) => void;
   /** Ouvre la page de l'artiste principal du morceau. */
   onOpenArtist: (trackId: number) => void;
   /** Retire de la bibliothèque. Le fichier n'est pas touché. */
@@ -93,6 +95,14 @@ interface TrackTableProps {
   onAddToPlaylist: (playlistId: number, trackId: number) => void;
   /** Fourni uniquement dans une playlist : retirer la ligne à cette position. */
   onRemoveAt?: (position: number) => void;
+  /**
+   * Ce que « retirer » veut dire ici.
+   *
+   * Une playlist et une file d'attente se quittent différemment : l'une perd
+   * un morceau pour de bon, l'autre seulement pour cette écoute. Le même mot
+   * pour les deux ferait hésiter avant de cliquer.
+   */
+  libelleRetrait?: string;
   /**
    * Raison de présence, quand la liste vient du moteur de recommandation.
    * Une recommandation inexplicable inspire la méfiance.
@@ -173,6 +183,7 @@ export function TrackTable({
   onRadio,
   onToggleLoved,
   onEnqueue,
+  onPlayNext,
   onOpenArtist,
   onRemove,
   onCorrect,
@@ -184,6 +195,7 @@ export function TrackTable({
   playlists,
   onAddToPlaylist,
   onRemoveAt,
+  libelleRetrait = "Retirer de cette playlist",
   reasons,
   sort,
   onSort,
@@ -260,6 +272,7 @@ export function TrackTable({
             onToggleLoved={() => onToggleLoved(track.id)}
             isLoved={loved.has(track.id)}
             onEnqueue={() => onEnqueue(track.id)}
+            onPlayNext={() => onPlayNext(track.id)}
             onOpenArtist={() => onOpenArtist(track.id)}
             onRemove={() => onRemove(track.id)}
             onCorrect={() => onCorrect(track)}
@@ -269,6 +282,7 @@ export function TrackTable({
             onOpenPlaying={onOpenPlaying}
             playlists={playlists}
             onAddToPlaylist={(playlistId) => onAddToPlaylist(playlistId, track.id)}
+            libelleRetrait={libelleRetrait}
             {...(onRemoveAt === undefined
               ? {}
               : { onRemoveFromPlaylist: () => onRemoveAt(index) })}
@@ -292,12 +306,14 @@ interface TrackRowProps {
   onToggleLoved: () => void;
   isLoved: boolean;
   onEnqueue: () => void;
+  onPlayNext: () => void;
   onOpenArtist: () => void;
   onRemove: () => void;
   onCorrect: () => void;
   onMatch: () => void;
   onSyncLyrics: () => void;
   onOpenAlbum: () => void;
+  libelleRetrait: string;
   onOpenPlaying: () => void;
   playlists: PlaylistSummary[];
   onAddToPlaylist: (playlistId: number) => void;
@@ -323,7 +339,9 @@ function TrackRow({
   onToggleLoved,
   isLoved,
   onEnqueue,
+  onPlayNext,
   onOpenArtist,
+  libelleRetrait,
   onRemove,
   onCorrect,
   onMatch,
@@ -542,6 +560,8 @@ function TrackRow({
           onAddToPlaylist={onAddToPlaylist}
           onToggleLoved={onToggleLoved}
           onEnqueue={onEnqueue}
+          onPlayNext={onPlayNext}
+          libelleRetrait={libelleRetrait}
           onOpenArtist={onOpenArtist}
           onRemove={onRemove}
           onCorrect={onCorrect}
@@ -672,12 +692,14 @@ function RowMenu({
   onAddToPlaylist,
   onToggleLoved,
   onEnqueue,
+  onPlayNext,
   onOpenArtist,
   onRemove,
   onCorrect,
   onMatch,
   onSyncLyrics,
   onRemoveFromPlaylist,
+  libelleRetrait,
   open,
   onOpenChange,
 }: {
@@ -688,12 +710,14 @@ function RowMenu({
   onAddToPlaylist: (playlistId: number) => void;
   onToggleLoved: () => void;
   onEnqueue: () => void;
+  onPlayNext: () => void;
   onOpenArtist: () => void;
   onRemove: () => void;
   onCorrect: () => void;
   onMatch: () => void;
   onSyncLyrics: () => void;
   onRemoveFromPlaylist?: () => void;
+  libelleRetrait: string;
   /** L'ouverture appartient à la ligne : l'appui long la déclenche aussi. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -765,6 +789,14 @@ function RowMenu({
             Ajouter à la file d'attente
           </MenuItem>
 
+          {/* # Pourquoi les deux existent
+              « À la fin » d'une file de deux mille morceaux veut dire jamais.
+              « Ensuite » est l'autre moitié du geste : ce morceau-là, tout de
+              suite après, sans couper celui qui joue. */}
+          <MenuItem icon="play" onClick={() => choose(onPlayNext)}>
+            Lire ensuite
+          </MenuItem>
+
           <MenuItem
             icon={isLoved ? "heartFilled" : "heart"}
             onClick={() => choose(onToggleLoved)}
@@ -801,7 +833,7 @@ function RowMenu({
 
           {onRemoveFromPlaylist !== undefined && (
             <MenuItem icon="close" onClick={() => choose(onRemoveFromPlaylist)}>
-              Retirer de cette playlist
+              {libelleRetrait}
             </MenuItem>
           )}
 

@@ -2528,6 +2528,39 @@ Le sol n'est plus une page qu'on traverse en écoutant : c'est celle d'où l'on 
 
 ---
 
+## ADR-088 — La file qu'on montre est celle qu'on joue
+
+**Contexte.** En ajoutant de quoi réordonner la file, un défaut plus ancien est apparu :
+**« À suivre » mentait dès que l'aléatoire était allumé.**
+
+**Ce qui se passait.** La file garde deux choses. `items`, la liste dont on est parti — un
+album, une playlist —, et `order`, une permutation qui dit dans quel ordre la jouer. Ce qu'on
+affichait était `items`. En lecture normale les deux coïncident ; en aléatoire, « À suivre »
+annonçait la suite de l'album pendant que la lecture partait ailleurs.
+
+**Décision.** Ce qui sort de la file vers l'interface est désormais l'**ordre de lecture**.
+C'est la seule question qu'on pose à une file : qu'est-ce qui vient après ?
+
+Tout le reste en découle. Retirer, déplacer et sauter raisonnent en **places dans l'ordre de
+lecture**, pas en positions dans la liste d'origine.
+
+**Pourquoi déplacer touche `order` et pas `items`.** Remonter une ligne dans « À suivre » veut
+dire une chose et une seule : *joue-le plus tôt*. Réordonner `items` reviendrait à réécrire
+l'album dont on est parti, sans rien changer à ce qui sortira des enceintes.
+
+**Pourquoi « Lire ensuite » n'est pas « Ajouter à la file ».** Sur une file de deux mille
+morceaux, « à la fin » veut dire jamais. Les deux gestes existent parce qu'ils répondent à
+deux intentions ; en fournir un seul, c'est obliger à choisir entre attendre indéfiniment et
+couper ce qui joue.
+
+**Pourquoi une page séparée pour réordonner.** « À suivre » utilise les lignes de la
+bibliothèque — mêmes colonnes, même menu, même appui long. Une poignée de glissement au milieu
+de cela obligerait à deviner, à quelques pixels près, si un appui veut dire « joue celui-là »,
+« ouvre le menu » ou « déplace-le ». Les deux gestes ne tiennent pas sur la même ligne ; ils
+tiennent sur deux pages.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

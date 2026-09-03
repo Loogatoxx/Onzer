@@ -41,6 +41,7 @@ import { TopBar } from "@/features/nav/TopBar";
 import { NowPlayingPanel, type PanelTab } from "@/features/player/NowPlayingPanel";
 import { LyricsView } from "@/features/player/LyricsView";
 import { NowPlayingView } from "@/features/player/NowPlayingView";
+import { QueueView } from "@/features/player/QueueView";
 import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
 import { ShortcutsView } from "@/features/nav/ShortcutsView";
@@ -1005,6 +1006,9 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
     onEnqueue: (id: number) => {
       void playback.enqueue([id]);
     },
+    onPlayNext: (id: number) => {
+      void playback.playNext([id]);
+    },
     onOpenArtist: (id: number) => void openArtistOf(id),
     onCorrect: setCorrecting,
     onMatch: setMatching,
@@ -1079,9 +1083,22 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
   const tableauFile =
     suite.length === 0 ? null : (
       <section className="mt-9">
-        <h2 className="px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-          À suivre
-        </h2>
+        <div className="flex items-center justify-between px-3">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+            À suivre
+          </h2>
+
+          {/* Réordonner demande une poignée et une croix, que ces lignes-ci
+              n'ont pas : elles sont celles de la bibliothèque, et l'appui long
+              y ouvre déjà un menu. Les deux gestes tiennent sur deux pages. */}
+          <button
+            type="button"
+            onClick={() => navigate({ kind: "queue" })}
+            className="pression rounded-full px-2.5 py-1 text-[12px] text-ink-muted transition-colors hover:bg-elevated hover:text-ink"
+          >
+            Réordonner
+          </button>
+        </div>
 
         <TrackTable
           tracks={suite}
@@ -1089,6 +1106,11 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           isPlaying={false}
           onPlay={(index) => void playback.jump(departFile + index)}
           {...gestes}
+          // Retirer d'ici ne touche pas la bibliothèque : le morceau sort de
+          // cette écoute, rien de plus. Le libellé doit le dire, sans quoi on
+          // hésite avant de cliquer.
+          onRemoveAt={(index) => void playback.removeFromQueue(departFile + index)}
+          libelleRetrait="Retirer de la file"
         />
 
         {restantsFile > 0 && (
@@ -1289,6 +1311,9 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               importing={importing}
               onPlayAll={(shuffle) => void playAll(shuffle)}
               onEnqueueAll={enqueueAll}
+              onJumpInQueue={(position) => void playback.jump(position)}
+              onRemoveFromQueue={(position) => void playback.removeFromQueue(position)}
+              onMoveInQueue={(from, to) => void playback.moveInQueue(from, to)}
               onPlayTracks={(list, index) =>
                 void playback.play(list.map((track) => track.id), index)
               }
@@ -1463,6 +1488,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               onToggle={() => void playback.toggle()}
               onNext={() => void playback.next()}
               onOpen={() => navigate({ kind: "playing" })}
+              onOpenQueue={() => navigate({ kind: "queue" })}
               onSeek={(position) => void playback.seek(position)}
             />
           )}
@@ -1551,6 +1577,9 @@ interface PageProps {
   onCreatePlaylist: () => void;
   /** Tout ce qu'il faut à l'écran de lecture, ou `null` si rien ne joue. */
   playback: React.ComponentProps<typeof NowPlayingView> | null;
+  onJumpInQueue: (position: number) => void;
+  onRemoveFromQueue: (position: number) => void;
+  onMoveInQueue: (from: number, to: number) => void;
   /** Les outils de complétion en ligne sont-ils proposés ? */
   onlineCompletion: boolean;
   /** L'identification acoustique est-elle proposée ? */
@@ -1762,6 +1791,25 @@ function Page(props: PageProps) {
 
   if (route.kind === "settings") {
     return <SettingsView onChanged={props.onReload} libraryRoot={props.libraryRoot} />;
+  }
+
+  if (route.kind === "queue") {
+    if (props.playback === null) {
+      return (
+        <p className="px-6 py-20 text-center text-sm text-ink-muted">
+          Lance un morceau pour voir la file.
+        </p>
+      );
+    }
+
+    return (
+      <QueueView
+        state={props.playback.state}
+        onJump={props.onJumpInQueue}
+        onRemove={props.onRemoveFromQueue}
+        onMove={props.onMoveInQueue}
+      />
+    );
   }
 
   if (route.kind === "playing") {

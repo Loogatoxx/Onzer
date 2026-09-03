@@ -28,6 +28,7 @@ export function MiniPlayer({
   onToggle,
   onNext,
   onOpen,
+  onOpenQueue,
   onSeek,
 }: {
   state: PlaybackSnapshot;
@@ -35,6 +36,16 @@ export function MiniPlayer({
   onNext: () => void;
   /** Ouvre l'écran de lecture, où tout le reste se trouve. */
   onOpen: () => void;
+  /**
+   * Ouvre la file d'attente.
+   *
+   * # Pourquoi ici plutôt que dans le grand lecteur
+   *
+   * « Qu'est-ce qui vient après ? » est une question qu'on se pose en
+   * écoutant, pas en contemplant une pochette. Elle mérite d'être à un appui,
+   * depuis la barre qui ne quitte jamais l'écran.
+   */
+  onOpenQueue: () => void;
   onSeek: (positionMs: number) => void;
 }) {
   const geste = useSeekGesture(state.positionMs, state.durationMs, onSeek);
@@ -90,6 +101,15 @@ export function MiniPlayer({
           className="flex h-10 w-10 shrink-0 items-center justify-center text-ink-muted"
         >
           <Icon name="next" size={20} />
+        </button>
+
+        <button
+          type="button"
+          aria-label="File d'attente"
+          onClick={onOpenQueue}
+          className="flex h-10 w-10 shrink-0 items-center justify-center text-ink-muted"
+        >
+          <Icon name="queue" size={19} />
         </button>
       </div>
     </div>

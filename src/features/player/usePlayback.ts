@@ -97,6 +97,21 @@ export function usePlayback() {
     /** Ajoute à la file. Rend l'état pour que la file affichée suive. */
     enqueue: useCallback((ids: number[]) => run(() => ipc.enqueueTracks(ids)), [run]),
 
+    /** Insère juste après le morceau en cours. */
+    playNext: useCallback((ids: number[]) => run(() => ipc.playNext(ids)), [run]),
+
+    /** Retire de la file, par sa place dans l'ordre de lecture. */
+    removeFromQueue: useCallback(
+      (position: number) => run(() => ipc.removeFromQueue(position)),
+      [run],
+    ),
+
+    /** Déplace un morceau dans la file. */
+    moveInQueue: useCallback(
+      (from: number, to: number) => run(() => ipc.moveInQueue(from, to)),
+      [run],
+    ),
+
     seek: useCallback((positionMs: number) => run(() => ipc.seekTo(positionMs)), [run]),
     setVolume: useCallback((volume: number) => run(() => ipc.setVolume(volume)), [run]),
     toggleShuffle: useCallback(

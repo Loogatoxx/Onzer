@@ -695,6 +695,18 @@ export const ipc = {
 
   togglePlayback: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("toggle_playback"),
 
+  /** Insère juste après le morceau en cours. */
+  playNext: (trackIds: number[]): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("play_next", { trackIds }),
+
+  /** Retire un morceau de la file, par sa place dans l'ordre de lecture. */
+  removeFromQueue: (position: number): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("remove_from_queue", { position }),
+
+  /** Déplace un morceau dans l'ordre de lecture. */
+  moveInQueue: (from: number, to: number): Promise<PlaybackSnapshot> =>
+    invoke<PlaybackSnapshot>("move_in_queue", { from, to }),
+
   /**
    * Arme, réarme ou annule le minuteur de sommeil. `null` annule.
    *

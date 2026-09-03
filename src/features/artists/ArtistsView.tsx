@@ -74,8 +74,11 @@ function Disposition({
 
 export function ArtistsView({
   onOpen,
+  onPlay,
 }: {
   onOpen: (artist: ArtistSummary) => void;
+  /** Lance tout ce qu'on a de cet artiste, sans quitter la grille. */
+  onPlay: (artist: ArtistSummary) => void;
 }) {
   const [artists, setArtists] = useState<ArtistSummary[] | null>(null);
   const [query, setQuery] = useState("");
@@ -192,11 +195,18 @@ export function ArtistsView({
           }}
         >
           {shown.map((artist) => (
-            <button
+            /* # La pastille promettait une lecture et livrait une navigation
+
+               Le même rond noir, sur l'accueil, lance la musique. Ici il
+               ouvrait la page de l'artiste : le même signe pour deux choses,
+               ce qui revient à ne rien signifier du tout. Il fallait donc
+               qu'il devienne un vrai bouton — et un bouton dans un bouton
+               n'existe pas. La tuile est désormais faite de trois cibles
+               distinctes : la pochette et le nom mènent à l'artiste, la
+               pastille le joue. */
+            <div
               key={artist.id}
-              type="button"
-              onClick={() => onOpen(artist)}
-              className="pression group rounded-lg p-3 text-left hover:bg-surface"
+              className="group rounded-lg p-3 transition-colors hover:bg-surface"
             >
               <div className="relative">
                 <Artwork
@@ -204,20 +214,38 @@ export function ArtistsView({
                   className="aspect-square w-full rounded-full"
                 />
 
-                <span className="absolute bottom-1 right-1 flex h-10 w-10 items-center justify-center rounded-full bg-ink text-base opacity-0 shadow-xl shadow-black/40 transition-all duration-200 translate-y-2 group-hover:translate-y-0 group-hover:opacity-100">
+                <button
+                  type="button"
+                  aria-label={artist.name}
+                  onClick={() => onOpen(artist)}
+                  className="absolute inset-0 rounded-full"
+                />
+
+                <button
+                  type="button"
+                  aria-label={`Lire ${artist.name}`}
+                  onClick={() => onPlay(artist)}
+                  className="pression absolute bottom-1 right-1 z-10 flex h-10 w-10 translate-y-2 items-center justify-center rounded-full bg-ink text-base opacity-0 shadow-xl shadow-black/40 transition-[transform,opacity] duration-200 group-hover:translate-y-0 group-hover:opacity-100"
+                >
                   <span className="translate-x-[1px]">
                     <Icon name="play" size={16} />
                   </span>
-                </span>
+                </button>
               </div>
 
-              <p className="mt-3 truncate text-[15px] font-semibold text-ink">
-                {artist.name}
-              </p>
-              <p className="numerals mt-0.5 text-[12px] text-ink-faint">
-                {artist.trackCount} titre{artist.trackCount > 1 ? "s" : ""}
-              </p>
-            </button>
+              <button
+                type="button"
+                onClick={() => onOpen(artist)}
+                className="mt-3 block w-full text-left"
+              >
+                <p className="truncate text-[15px] font-semibold text-ink">
+                  {artist.name}
+                </p>
+                <p className="numerals mt-0.5 text-[12px] text-ink-faint">
+                  {artist.trackCount} titre{artist.trackCount > 1 ? "s" : ""}
+                </p>
+              </button>
+            </div>
           ))}
         </div>
       )}

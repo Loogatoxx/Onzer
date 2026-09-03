@@ -40,7 +40,23 @@ const PERIODS: { label: string; value: StatsPeriod }[] = [
   { label: "Depuis le début", value: "allTime" },
 ];
 
-export function WrappedView() {
+/**
+ * Ce que la rétrospective sait faire de ses chiffres.
+ *
+ * # Pourquoi elle n'en faisait rien
+ *
+ * Chaque rang porte une classe `group` et un `group-hover` : le nom s'éclaire
+ * quand la souris passe, la ligne répond — puis rien. C'est le pire des cas,
+ * pire qu'une ligne inerte : l'interface **promet** en s'allumant, et ne tient
+ * pas. Toutes les données étaient là, aucun geste n'était branché.
+ */
+interface GestesWrapped {
+  onOpenArtist: (id: number, name: string) => void;
+  onOpenAlbum: (id: number, name: string, artist: string | null) => void;
+  onPlayTrack: (id: number) => void;
+}
+
+export function WrappedView(gestes: GestesWrapped) {
   const [period, setPeriod] = useState<StatsPeriod>("allTime");
   const [data, setData] = useState<Wrapped | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,11 +83,11 @@ export function WrappedView() {
       {data.hasEnoughData ? (
         <>
           <Hero data={data} />
-          <TopArtists data={data} />
-          <TopTracks data={data} />
+          <TopArtists data={data} gestes={gestes} />
+          <TopTracks data={data} gestes={gestes} />
           <Clock data={data} />
           <PersonaSection data={data} />
-          <TopAlbums data={data} />
+          <TopAlbums data={data} gestes={gestes} />
           <KeyFigures data={data} />
           <Outro />
         </>
@@ -113,7 +129,7 @@ function Hero({ data }: { data: Wrapped }) {
 }
 
 /** L'artiste n°1 occupe l'écran ; les suivants se rangent dessous. */
-function TopArtists({ data }: { data: Wrapped }) {
+function TopArtists({ data, gestes }: { data: Wrapped; gestes: GestesWrapped }) {
   const reveal = useReveal<HTMLElement>();
   const [first, ...rest] = data.topArtists;
 
@@ -123,9 +139,13 @@ function TopArtists({ data }: { data: Wrapped }) {
     <Section ref={reveal.ref} className={reveal.className}>
       <Eyebrow>Ton artiste n°1</Eyebrow>
 
-      <p className="display-xl mt-5 text-[clamp(2.75rem,10vw,7rem)] text-ink">
+      <button
+        type="button"
+        onClick={() => gestes.onOpenArtist(first.id, first.name)}
+        className="display-xl mt-5 block max-w-full break-words text-left text-[clamp(2.75rem,10vw,7rem)] text-ink transition-colors hover:text-accent"
+      >
         {first.name}
-      </p>
+      </button>
 
       <p className="numerals mt-4 text-sm text-ink-muted">
         {first.plays} écoutes · {formatDurationLong(first.listenedMs)}
@@ -134,19 +154,22 @@ function TopArtists({ data }: { data: Wrapped }) {
       {rest.length > 0 && (
         <ol className="mt-14">
           {rest.slice(0, 4).map((artist, index) => (
-            <li
-              key={artist.id}
-              className="group flex items-baseline gap-5 border-t border-line py-4"
-            >
-              <span className="numerals display w-10 shrink-0 text-2xl text-ink-faint transition-colors group-hover:text-ink">
-                {index + 2}
-              </span>
-              <span className="display min-w-0 flex-1 truncate text-[clamp(1.25rem,3vw,2rem)] text-ink">
-                {artist.name}
-              </span>
-              <span className="numerals shrink-0 text-sm text-ink-faint">
-                {formatDurationLong(artist.listenedMs)}
-              </span>
+            <li key={artist.id} className="border-t border-line">
+              <button
+                type="button"
+                onClick={() => gestes.onOpenArtist(artist.id, artist.name)}
+                className="pression group flex w-full items-baseline gap-5 py-4 text-left"
+              >
+                <span className="numerals display w-10 shrink-0 text-2xl text-ink-faint transition-colors group-hover:text-ink">
+                  {index + 2}
+                </span>
+                <span className="display min-w-0 flex-1 truncate text-[clamp(1.25rem,3vw,2rem)] text-ink">
+                  {artist.name}
+                </span>
+                <span className="numerals shrink-0 text-sm text-ink-faint">
+                  {formatDurationLong(artist.listenedMs)}
+                </span>
+              </button>
             </li>
           ))}
         </ol>
@@ -155,7 +178,7 @@ function TopArtists({ data }: { data: Wrapped }) {
   );
 }
 
-function TopTracks({ data }: { data: Wrapped }) {
+function TopTracks({ data, gestes }: { data: Wrapped; gestes: GestesWrapped }) {
   const reveal = useReveal<HTMLElement>();
   if (data.topTracks.length === 0) return null;
 
@@ -165,28 +188,31 @@ function TopTracks({ data }: { data: Wrapped }) {
 
       <ol className="mt-8">
         {data.topTracks.slice(0, 5).map((track, index) => (
-          <li
-            key={track.id}
-            className="group flex items-center gap-5 border-t border-line py-4"
-          >
-            <span className="numerals display w-10 shrink-0 text-[clamp(1.75rem,4vw,2.5rem)] text-ink-faint transition-colors group-hover:text-ink">
-              {index + 1}
-            </span>
+          <li key={track.id} className="border-t border-line">
+            <button
+              type="button"
+              onClick={() => gestes.onPlayTrack(track.id)}
+              className="pression group flex w-full items-center gap-5 py-4 text-left"
+            >
+              <span className="numerals display w-10 shrink-0 text-[clamp(1.75rem,4vw,2.5rem)] text-ink-faint transition-colors group-hover:text-ink">
+                {index + 1}
+              </span>
 
-            <Artwork hash={track.artworkHash} className="h-14 w-14 rounded-md" />
+              <Artwork hash={track.artworkHash} className="h-14 w-14 rounded-md" />
 
-            <div className="min-w-0 flex-1 pl-1">
-              <p className="display truncate text-[clamp(1.15rem,2.6vw,1.75rem)] text-ink">
-                {track.title}
-              </p>
-              <p className="truncate text-sm text-ink-muted">
-                {track.artist ?? "Artiste inconnu"}
-              </p>
-            </div>
+              <div className="min-w-0 flex-1 pl-1">
+                <p className="display truncate text-[clamp(1.15rem,2.6vw,1.75rem)] text-ink">
+                  {track.title}
+                </p>
+                <p className="truncate text-sm text-ink-muted">
+                  {track.artist ?? "Artiste inconnu"}
+                </p>
+              </div>
 
-            <span className="numerals shrink-0 text-right text-sm text-ink-faint">
-              {track.plays} ×
-            </span>
+              <span className="numerals shrink-0 text-right text-sm text-ink-faint">
+                {track.plays} ×
+              </span>
+            </button>
           </li>
         ))}
       </ol>
@@ -285,7 +311,7 @@ function PersonaSection({ data }: { data: Wrapped }) {
   );
 }
 
-function TopAlbums({ data }: { data: Wrapped }) {
+function TopAlbums({ data, gestes }: { data: Wrapped; gestes: GestesWrapped }) {
   const reveal = useReveal<HTMLElement>();
   if (data.topAlbums.length === 0) return null;
 
@@ -295,7 +321,12 @@ function TopAlbums({ data }: { data: Wrapped }) {
 
       <div className="mt-8 grid grid-cols-2 gap-6 sm:grid-cols-3">
         {data.topAlbums.slice(0, 6).map((album, index) => (
-          <div key={album.id} className="group">
+          <button
+            key={album.id}
+            type="button"
+            onClick={() => gestes.onOpenAlbum(album.id, album.title, album.artist)}
+            className="pression group text-left"
+          >
             <div className="relative overflow-hidden rounded-xl">
               <Artwork hash={album.artworkHash} className="aspect-square w-full" />
               {/* Le voile part du bas et meurt au tiers : sans lui, un chiffre
@@ -316,7 +347,7 @@ function TopAlbums({ data }: { data: Wrapped }) {
             <p className="truncate text-xs text-ink-faint">
               {album.artist ?? "Artiste inconnu"}
             </p>
-          </div>
+          </button>
         ))}
       </div>
     </Section>

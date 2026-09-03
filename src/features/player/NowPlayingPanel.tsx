@@ -19,6 +19,16 @@ interface NowPlayingPanelProps {
   onSeek: (positionMs: number) => void;
   onJump: (index: number) => void;
   onRadio: (trackId: number) => void;
+  /**
+   * Y aller.
+   *
+   * Le même bloc, sur téléphone, est fait de deux boutons depuis toujours
+   * (`NowPlayingView`). Ici c'était du texte inerte : le même nom, au même
+   * endroit, vivant d'un côté et mort de l'autre. C'est l'incohérence qui
+   * trompe le plus — on apprend un geste, puis il cesse de fonctionner.
+   */
+  onOpenArtist: () => void;
+  onOpenAlbum: () => void;
   /** Ouvre les paroles en pleine largeur. */
   onExpandLyrics: () => void;
   /**
@@ -60,12 +70,28 @@ export function NowPlayingPanel(props: NowPlayingPanelProps) {
         <div className="mt-4 flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <p className="display truncate text-xl text-ink">{track.title}</p>
-            <p className="mt-1 truncate text-[13px] text-ink-muted">
-              {track.artist ?? "Artiste inconnu"}
+            <p className="mt-1 flex min-w-0 items-center text-[13px] text-ink-muted">
+              {track.artist === null ? (
+                <span className="truncate">Artiste inconnu</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={props.onOpenArtist}
+                  className="truncate transition-colors hover:text-ink hover:underline"
+                >
+                  {track.artist}
+                </button>
+              )}
               {track.album !== null && (
                 <>
-                  <span className="mx-1.5 text-ink-faint">·</span>
-                  {track.album}
+                  <span className="mx-1.5 shrink-0 text-ink-faint">·</span>
+                  <button
+                    type="button"
+                    onClick={props.onOpenAlbum}
+                    className="truncate transition-colors hover:text-ink hover:underline"
+                  >
+                    {track.album}
+                  </button>
                 </>
               )}
             </p>

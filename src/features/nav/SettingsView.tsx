@@ -1,3 +1,4 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 
 import { Icon } from "@/components/Icon";
@@ -14,9 +15,12 @@ import { ipc, type Preferences, type RebuildReport, type ScanSummary } from "@/l
  */
 export function SettingsView({
   onChanged,
+  onRacineChangee,
   libraryRoot,
 }: {
   onChanged: () => void;
+  /** Le dossier de la musique vient de changer : l'application se relit. */
+  onRacineChangee: () => void;
   /** D'où viennent les fichiers. Affiché ici et nulle part ailleurs. */
   libraryRoot: string;
 }) {
@@ -53,7 +57,7 @@ export function SettingsView({
       </h1>
 
       <div className="mt-8 max-w-2xl space-y-3">
-        <DossierSetting chemin={libraryRoot} />
+        <DossierSetting chemin={libraryRoot} onChange={onRacineChangee} />
 
         <RelireSetting racine={libraryRoot} onChanged={onChanged} />
 
@@ -119,14 +123,64 @@ export function SettingsView({
  * Musique », un chemin de machine posé au milieu d'un lecteur de musique. On le
  * consulte une fois — après un import, quand on doute de l'endroit — et jamais
  * plus. Sa place est ici, à côté du bouton qui le change.
+ *
+ * # Le bouton que cette phrase promettait
+ *
+ * Elle est écrite depuis le début, et le bouton n'existait pas : le chemin
+ * s'affichait seul, à changer nulle part. Le sélecteur de dossier, lui, était
+ * déjà écrit — dans l'écran d'installation, qu'on ne revoit jamais.
  */
-function DossierSetting({ chemin }: { chemin: string }) {
+function DossierSetting({
+  chemin,
+  onChange,
+}: {
+  chemin: string;
+  onChange: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function choisir() {
+    setError(null);
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Choisir le dossier de la bibliothèque",
+    });
+    if (typeof selected !== "string") return;
+
+    setBusy(true);
+    try {
+      await ipc.setLibraryRoot(selected);
+      onChange();
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="rounded-xl bg-surface px-4 py-3.5">
-      <p className="text-sm font-medium text-ink">Dossier de la musique</p>
-      <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-ink-faint">
-        {chemin}
-      </p>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-ink">Dossier de la musique</p>
+          <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-ink-faint">
+            {chemin}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void choisir()}
+          className="pression shrink-0 rounded-full bg-raised px-3 py-1.5 text-[12px] font-semibold text-ink-muted hover:text-ink disabled:opacity-40"
+        >
+          {busy ? "…" : "Changer"}
+        </button>
+      </div>
+
+      {error !== null && <p className="mt-2 text-[11px] text-danger">{error}</p>}
     </div>
   );
 }

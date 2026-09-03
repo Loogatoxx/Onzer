@@ -25,11 +25,23 @@ export function QueueView({
   onJump,
   onRemove,
   onMove,
+  onOpenPlaying,
+  onOpenLibrary,
 }: {
   state: PlaybackSnapshot;
   onJump: (position: number) => void;
   onRemove: (position: number) => void;
   onMove: (from: number, to: number) => void;
+  /**
+   * Ouvre l'écran de lecture.
+   *
+   * Le bloc « En cours » est bâti exactement comme les lignes du dessous —
+   * pochette, titre, artiste — et celles-là répondent au doigt. Le seul qu'on
+   * regarde vraiment était le seul mort.
+   */
+  onOpenPlaying: () => void;
+  /** La bibliothèque, quand la file est vide et qu'il faut la remplir. */
+  onOpenLibrary: () => void;
 }) {
   const depart = (state.queueIndex ?? -1) + 1;
   const suite = state.queue.slice(depart);
@@ -126,7 +138,11 @@ export function QueueView({
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
             En cours
           </h2>
-          <div className="mt-2 flex items-center gap-3 rounded-lg bg-elevated px-3 py-2">
+          <button
+            type="button"
+            onClick={onOpenPlaying}
+            className="pression mt-2 flex w-full items-center gap-3 rounded-lg bg-elevated px-3 py-2 text-left hover:bg-raised"
+          >
             <Artwork hash={state.current.artworkHash} className="h-10 w-10 shrink-0 rounded" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[15px] font-medium leading-tight text-accent">
@@ -136,7 +152,7 @@ export function QueueView({
                 {state.current.artist ?? "Artiste inconnu"}
               </span>
             </span>
-          </div>
+          </button>
         </section>
       )}
 
@@ -146,10 +162,21 @@ export function QueueView({
         </h2>
 
         {suite.length === 0 ? (
-          <p className="mt-3 text-[13px] leading-relaxed text-ink-muted">
-            Rien après celui-ci. Ajoute un album ou une playlist à la file
-            depuis son bouton, ou « Lire ensuite » depuis un morceau.
-          </p>
+          <div className="mt-3">
+            <p className="text-[13px] leading-relaxed text-ink-muted">
+              Rien après celui-ci. Ajoute un album ou une playlist à la file
+              depuis son bouton, ou « Lire ensuite » depuis un morceau.
+            </p>
+            {/* Le texte nomme deux gestes qui se font ailleurs : sans porte
+                vers cet ailleurs, il ne fait que décrire. */}
+            <button
+              type="button"
+              onClick={onOpenLibrary}
+              className="pression mt-3 rounded-full bg-elevated px-4 py-2 text-[13px] font-medium text-ink hover:bg-raised"
+            >
+              Aller à la bibliothèque
+            </button>
+          </div>
         ) : (
           <ul className="mt-2 select-none">
             {suite.map((item, index) => {

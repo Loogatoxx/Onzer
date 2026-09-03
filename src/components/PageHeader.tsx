@@ -4,6 +4,18 @@ import { Icon, type IconName } from "@/components/Icon";
 
 interface PageHeaderProps {
   eyebrow: string;
+  /**
+   * Quand elle est fournie, la ligne du dessus devient un lien.
+   *
+   * # Pourquoi elle ne l'est pas toujours
+   *
+   * L'*eyebrow* porte d'ordinaire une catégorie — « Playlist », « Artiste »,
+   * « Ambiance » — qui ne mène nulle part. Sur la page d'un album, elle porte
+   * un **nom propre**, typographié comme une étiquette : le seul endroit de
+   * l'application où le nom d'un artiste ne conduisait pas à l'artiste, alors
+   * qu'il y conduit dans chaque ligne du tableau juste en dessous.
+   */
+  onEyebrow?: () => void;
   title: string;
   /** Ligne d'information sous le titre : nombre de titres, durée totale… */
   meta: React.ReactNode;
@@ -68,6 +80,7 @@ interface PageHeaderProps {
  */
 export function PageHeader({
   eyebrow,
+  onEyebrow,
   title,
   meta,
   cover,
@@ -116,9 +129,19 @@ export function PageHeader({
         </div>
 
         <div className="min-w-0 flex-1 pb-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-muted">
-            {eyebrow}
-          </p>
+          {onEyebrow === undefined ? (
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-muted">
+              {eyebrow}
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={onEyebrow}
+              className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-muted transition-colors hover:text-ink hover:underline"
+            >
+              {eyebrow}
+            </button>
+          )}
 
           {draft === null ? (
             <h1

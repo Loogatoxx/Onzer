@@ -21,10 +21,20 @@ import { ipc, type ExportedList, type RescueReport } from "@/lib/ipc";
 export function OfflineBar({
   count,
   onChanged,
+  onVoir,
 }: {
   count: number;
   /** Prévient la coquille : les compteurs de l'en-tête ont changé. */
   onChanged: () => void;
+  /**
+   * Ouvre la liste.
+   *
+   * Le bandeau proposait de l'**exporter** sans jamais proposer de la voir —
+   * et la page qui la montre existe. On lit « 154 morceaux hors ligne », on
+   * veut savoir lesquels : c'est la première question, elle passait après
+   * l'export.
+   */
+  onVoir: () => void;
 }) {
   const [exported, setExported] = useState<ExportedList | null>(null);
   const [busy, setBusy] = useState(false);
@@ -73,9 +83,17 @@ export function OfflineBar({
 
         <button
           type="button"
+          onClick={onVoir}
+          className="pression shrink-0 rounded-full bg-raised px-3 py-1 text-[11px] font-semibold text-ink-muted hover:text-ink"
+        >
+          Voir
+        </button>
+
+        <button
+          type="button"
           disabled={busy}
           onClick={() => void exportList()}
-          className="shrink-0 rounded-full bg-raised px-3 py-1 text-[11px] font-semibold text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
+          className="pression shrink-0 rounded-full bg-raised px-3 py-1 text-[11px] font-semibold text-ink-muted hover:text-ink disabled:opacity-40"
         >
           {busy ? "…" : "Exporter la liste"}
         </button>

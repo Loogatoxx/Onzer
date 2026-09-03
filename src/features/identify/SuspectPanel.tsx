@@ -22,7 +22,24 @@ import { ipc, type SuspectTrack } from "@/lib/ipc";
  * `_Doublons` : Onzer ne les a jamais retagués, ils portent donc encore ce que
  * le fichier annonçait au téléchargement.
  */
-export function SuspectPanel({ onRestored }: { onRestored: () => void }) {
+export function SuspectPanel({
+  onRestored,
+  onPlay,
+}: {
+  onRestored: () => void;
+  /**
+   * Écouter le morceau douteux.
+   *
+   * # Pourquoi il manquait
+   *
+   * On demande ici de trancher entre deux versions d'un même titre. Le
+   * panneau des doublons, qui pose exactement la même question, offre le
+   * bouton depuis toujours : sans lui, il faut quitter la page, retrouver le
+   * morceau dans la bibliothèque, l'écouter, revenir. Trancher sans entendre,
+   * c'est deviner.
+   */
+  onPlay: (trackId: number) => void;
+}) {
   const [suspects, setSuspects] = useState<SuspectTrack[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
@@ -85,6 +102,18 @@ export function SuspectPanel({ onRestored }: { onRestored: () => void }) {
               key={suspect.id}
               className="flex items-center gap-3 rounded-lg px-1 py-1.5"
             >
+              <button
+                type="button"
+                title={`Écouter ${suspect.title}`}
+                aria-label={`Écouter ${suspect.title}`}
+                onClick={() => onPlay(suspect.id)}
+                className="pression flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-raised text-ink-muted hover:bg-ink hover:text-base"
+              >
+                <span className="translate-x-[1px]">
+                  <Icon name="play" size={12} />
+                </span>
+              </button>
+
               <div className="min-w-0 flex-1">
                 {/* Le fichier d'abord : c'est la version que l'utilisateur
                     reconnaît, et celle qu'il récupérera s'il restaure. */}

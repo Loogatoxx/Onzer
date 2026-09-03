@@ -121,7 +121,14 @@ const PAGE_SIZE = 100;
  * permet aux paroles de continuer à défiler pendant qu'on fouille sa
  * bibliothèque.
  */
-export function AppShell({ libraryRoot }: { libraryRoot: string }) {
+export function AppShell({
+  libraryRoot,
+  onRacineChangee,
+}: {
+  libraryRoot: string;
+  /** Le dossier de la musique a changé : tout l'état est à relire. */
+  onRacineChangee: () => void;
+}) {
   // ── Navigation ────────────────────────────────────────────────────────
   // Une pile plutôt qu'un simple état courant : les flèches précédent/suivant
   // de la barre du haut n'ont de sens que s'il y a un historique.
@@ -1362,6 +1369,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               tracks={tracks}
               counts={counts}
               libraryRoot={libraryRoot}
+              onRacineChangee={onRacineChangee}
               playlists={playlists}
               generated={generated}
               importing={importing}
@@ -1386,6 +1394,16 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
                   coverHash: artist.coverHash,
                 })
               }
+              onOpenArtistOfTrack={(id) => void openArtistOf(id)}
+              onPlayArtist={(artistId) => {
+                void ipc
+                  .artistTracks(artistId)
+                  .then((liste) => {
+                    if (liste.length === 0) return;
+                    return playback.play(liste.map((track) => track.id), 0);
+                  })
+                  .catch((cause: unknown) => setError(String(cause)));
+              }}
               onPlayOne={(id) => void playback.play([id], 0)}
               isPlaying={playback.state?.isPlaying ?? false}
               currentTrack={current}
@@ -1487,6 +1505,8 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
             onSeek={(position) => void playback.seek(position)}
             onJump={(index) => void playback.jump(index)}
             onRadio={startRadio}
+            onOpenArtist={() => void openArtistOf(current.trackId)}
+            onOpenAlbum={() => void openAlbumOf(current.trackId)}
             onExpandLyrics={() => openLyrics()}
             lyricsExpanded={route.kind === "lyrics"}
           />
@@ -1627,6 +1647,9 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
             if (current !== null) void toggleLoved(current.trackId);
           }}
           onOpenPlayer={() => navigate({ kind: "playing" })}
+          onOpenArtist={() => {
+            if (current !== null) void openArtistOf(current.trackId);
+          }}
           onOpenPanel={(tab) => {
             // Les paroles s'ouvrent en grand : c'est ce qu'on veut quand on
             // clique dessus. Le panneau latéral reste accessible depuis
@@ -1652,6 +1675,7 @@ interface PageProps {
   tracks: TrackSummary[];
   counts: LibraryCounts | null;
   libraryRoot: string;
+  onRacineChangee: () => void;
   playlists: PlaylistSummary[];
   generated: GeneratedPlaylist | null;
   importing: boolean;
@@ -1670,6 +1694,16 @@ interface PageProps {
     name: string;
     coverHash: string | null;
   }) => void;
+  /**
+   * L'artiste d'un morceau, quand on n'a que le morceau.
+   *
+   * La page d'un album connaît le nom de son artiste — il est écrit en tête —
+   * mais pas son identifiant. Le cœur sait le retrouver depuis n'importe
+   * lequel de ses morceaux.
+   */
+  onOpenArtistOfTrack: (trackId: number) => void;
+  /** Lance tous les morceaux d'un artiste. */
+  onPlayArtist: (artistId: number) => void;
   /** Écoute un morceau seul, sans toucher à la file affichée. */
   onPlayOne: (trackId: number) => void;
   isPlaying: boolean;
@@ -1818,7 +1852,17 @@ function Page(props: PageProps) {
   const selectionner = tracks.length === 0 ? undefined : props.onSelectMode;
 
   if (route.kind === "stats") {
-    return <WrappedView />;
+    return (
+      <WrappedView
+        onOpenArtist={(id, name) =>
+          props.onOpenArtist({ id, name, coverHash: null })
+        }
+        onOpenAlbum={(id, name, artist) =>
+          props.onNavigate({ kind: "album", id, name, artist })
+        }
+        onPlayTrack={props.onPlayOne}
+      />
+    );
   }
 
   if (route.kind === "home") {
@@ -1954,15 +1998,30 @@ function Page(props: PageProps) {
   }
 
   if (route.kind === "settings") {
-    return <SettingsView onChanged={props.onReload} libraryRoot={props.libraryRoot} />;
+    return (
+      <SettingsView
+        onChanged={props.onReload}
+        onRacineChangee={props.onRacineChangee}
+        libraryRoot={props.libraryRoot}
+      />
+    );
   }
 
   if (route.kind === "queue") {
     if (props.playback === null) {
+      // Trois mots qui décrivent une action, et aucun moyen de la faire.
+      // La bibliothèque est à un clic : autant l'offrir.
       return (
-        <p className="px-6 py-20 text-center text-sm text-ink-muted">
-          Lance un morceau pour voir la file.
-        </p>
+        <div className="flex flex-col items-center px-6 py-20 text-center">
+          <p className="text-sm text-ink-muted">Lance un morceau pour voir la file.</p>
+          <button
+            type="button"
+            onClick={() => props.onNavigate({ kind: "library" })}
+            className="pression mt-4 rounded-full bg-elevated px-4 py-2 text-[13px] font-medium text-ink hover:bg-raised"
+          >
+            Choisir dans la bibliothèque
+          </button>
+        </div>
       );
     }
 
@@ -1972,16 +2031,27 @@ function Page(props: PageProps) {
         onJump={props.onJumpInQueue}
         onRemove={props.onRemoveFromQueue}
         onMove={props.onMoveInQueue}
+        onOpenPlaying={() => props.onNavigate({ kind: "playing" })}
+        onOpenLibrary={() => props.onNavigate({ kind: "library" })}
       />
     );
   }
 
   if (route.kind === "playing") {
     if (props.playback === null) {
+      // Trois mots qui décrivent une action, et aucun moyen de la faire.
+      // La bibliothèque est à un clic : autant l'offrir.
       return (
-        <p className="px-6 py-20 text-center text-sm text-ink-muted">
-          Lance un morceau pour le voir ici.
-        </p>
+        <div className="flex flex-col items-center px-6 py-20 text-center">
+          <p className="text-sm text-ink-muted">Lance un morceau pour le voir ici.</p>
+          <button
+            type="button"
+            onClick={() => props.onNavigate({ kind: "library" })}
+            className="pression mt-4 rounded-full bg-elevated px-4 py-2 text-[13px] font-medium text-ink hover:bg-raised"
+          >
+            Choisir dans la bibliothèque
+          </button>
+        </div>
       );
     }
 
@@ -1999,7 +2069,12 @@ function Page(props: PageProps) {
   }
 
   if (route.kind === "artists") {
-    return <ArtistsView onOpen={props.onOpenArtist} />;
+    return (
+      <ArtistsView
+        onOpen={props.onOpenArtist}
+        onPlay={(artist) => props.onPlayArtist(artist.id)}
+      />
+    );
   }
 
   if (route.kind === "artist") {
@@ -2041,10 +2116,16 @@ function Page(props: PageProps) {
   }
 
   if (route.kind === "album") {
+    // Le premier morceau sert de représentant : c'est par lui que le cœur
+    // retrouve l'artiste de l'album.
+    const premier = tracks[0];
     return (
       <>
         <PageHeader
           eyebrow={route.artist ?? "Album"}
+          {...(route.artist === null || premier === undefined
+            ? {}
+            : { onEyebrow: () => props.onOpenArtistOfTrack(premier.id) })}
           title={route.name}
           meta={meta}
           cover={
@@ -2164,16 +2245,40 @@ function Page(props: PageProps) {
                 <span className="font-semibold text-ink">
                   {props.counts.tracks.toLocaleString("fr-FR")} morceaux
                 </span>
+                {/* # Trois nombres qui nomment trois pages
+
+                    « 412 artistes » désigne une page qui existe, « 380 albums »
+                    aussi, et « 154 hors ligne » était **la seule mention de
+                    cette page sur tout le bureau** — la barre latérale n'y
+                    mène pas. On lit un compte, on veut voir ce qu'il compte :
+                    c'est le geste le plus naturel qui soit, et il ne menait
+                    nulle part. */}
                 <span className="text-ink-faint">·</span>
-                <span>{props.counts.artists.toLocaleString("fr-FR")} artistes</span>
+                <button
+                  type="button"
+                  onClick={() => props.onNavigate({ kind: "artists" })}
+                  className="transition-colors hover:text-ink hover:underline"
+                >
+                  {props.counts.artists.toLocaleString("fr-FR")} artistes
+                </button>
                 <span className="text-ink-faint">·</span>
-                <span>{props.counts.albums.toLocaleString("fr-FR")} albums</span>
+                <button
+                  type="button"
+                  onClick={() => props.onNavigate({ kind: "albums" })}
+                  className="transition-colors hover:text-ink hover:underline"
+                >
+                  {props.counts.albums.toLocaleString("fr-FR")} albums
+                </button>
                 {props.counts.unavailable > 0 && (
                   <>
                     <span className="text-ink-faint">·</span>
-                    <span className="text-warn">
+                    <button
+                      type="button"
+                      onClick={() => props.onNavigate({ kind: "offline" })}
+                      className="text-warn transition-colors hover:underline"
+                    >
                       {props.counts.unavailable} hors ligne
-                    </span>
+                    </button>
                   </>
                 )}
               </>
@@ -2203,7 +2308,7 @@ function Page(props: PageProps) {
           {props.autoIdentification && (
             <>
               <IdentifyPanel />
-              <SuspectPanel onRestored={props.onReload} />
+              <SuspectPanel onRestored={props.onReload} onPlay={props.onPlayOne} />
             </>
           )}
 
@@ -2226,7 +2331,11 @@ function Page(props: PageProps) {
               machine. Elle reste donc proposée même complétion éteinte. */}
           <ListenBar />
 
-          <OfflineBar count={props.counts?.unavailable ?? 0} onChanged={props.onReload} />
+          <OfflineBar
+            count={props.counts?.unavailable ?? 0}
+            onChanged={props.onReload}
+            onVoir={() => props.onNavigate({ kind: "offline" })}
+          />
           </MaintenanceCard>
         </div>
 

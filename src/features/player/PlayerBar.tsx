@@ -28,6 +28,8 @@ interface PlayerBarProps {
    * mène depuis la barre du bas.
    */
   onOpenPlayer: () => void;
+  /** La page de l'artiste en cours. */
+  onOpenArtist: () => void;
 }
 
 /**
@@ -69,11 +71,29 @@ export function PlayerBar(props: PlayerBarProps) {
             <Artwork hash={track.artworkHash} className="h-14 w-14 rounded-md" />
           </button>
 
+          {/* La pochette juste à côté ouvre le lecteur ; le titre, collé à
+              elle, ne faisait rien. Deux centimètres de différence pour deux
+              destins opposés — on clique sur le nom parce qu'on croit lire un
+              lien, et c'est vrai partout ailleurs dans l'application. */}
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-ink">{track.title}</p>
-            <p className="truncate text-xs text-ink-muted">
-              {track.artist ?? "Artiste inconnu"}
-            </p>
+            <button
+              type="button"
+              onClick={props.onOpenPlayer}
+              className="block max-w-full truncate text-left text-sm font-semibold text-ink transition-colors hover:underline"
+            >
+              {track.title}
+            </button>
+            {track.artist === null ? (
+              <p className="truncate text-xs text-ink-muted">Artiste inconnu</p>
+            ) : (
+              <button
+                type="button"
+                onClick={props.onOpenArtist}
+                className="block max-w-full truncate text-left text-xs text-ink-muted transition-colors hover:text-ink hover:underline"
+              >
+                {track.artist}
+              </button>
+            )}
           </div>
 
           <button

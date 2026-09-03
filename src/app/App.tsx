@@ -58,7 +58,10 @@ export function App() {
     <div className="flex h-full flex-col bg-base">
       {!status.libraryOnline && <OfflineBanner root={status.libraryRoot} />}
       <div className="min-h-0 flex-1">
-        <AppShell libraryRoot={status.libraryRoot} />
+        {/* Changer de dossier change de bibliothèque : c'est l'état de
+            l'application entier qu'il faut relire, pas seulement la liste
+            affichée. */}
+        <AppShell libraryRoot={status.libraryRoot} onRacineChangee={refresh} />
       </div>
     </div>
   );

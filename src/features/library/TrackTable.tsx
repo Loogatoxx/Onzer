@@ -624,6 +624,7 @@ function TrackRow({
           onPlayNext={onPlayNext}
           libelleRetrait={libelleRetrait}
           onOpenArtist={onOpenArtist}
+          onOpenAlbum={onOpenAlbum}
           onRemove={onRemove}
           onCorrect={onCorrect}
           onMatch={onMatch}
@@ -760,6 +761,7 @@ function RowMenu({
   onEnqueue,
   onPlayNext,
   onOpenArtist,
+  onOpenAlbum,
   onRemove,
   onCorrect,
   onMatch,
@@ -782,6 +784,7 @@ function RowMenu({
   onCorrect: () => void;
   onMatch: () => void;
   onSyncLyrics: () => void;
+  onOpenAlbum: () => void;
   onRemoveFromPlaylist?: () => void;
   libelleRetrait: string;
   /** L'ouverture appartient à la ligne : l'appui long la déclenche aussi. */
@@ -880,6 +883,18 @@ function RowMenu({
           {track.artist !== null && (
             <MenuItem icon="artist" onClick={() => choose(onOpenArtist)}>
               Accéder à l'artiste
+            </MenuItem>
+          )}
+
+          {/* # Pourquoi il manquait, et pourquoi cela comptait
+              Le nom de l'album n'est cliquable que dans sa colonne, et cette
+              colonne disparaît en dessous de mille vingt-quatre pixels. Sur un
+              téléphone, il n'existait donc **aucun** chemin d'un morceau vers
+              son album — alors que celui vers l'artiste était là, juste
+              au-dessus, dans ce même menu. */}
+          {track.album !== null && (
+            <MenuItem icon="library" onClick={() => choose(onOpenAlbum)}>
+              Accéder à l&apos;album
             </MenuItem>
           )}
 

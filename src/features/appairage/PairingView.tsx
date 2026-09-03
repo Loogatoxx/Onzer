@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Icon } from "@/components/Icon";
+import { ScannerQR } from "./ScannerQR";
 import {
   ipc,
   type PairingInfo,
@@ -201,6 +202,7 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
   const [occupe, setOccupe] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [rapport, setRapport] = useState<SyncReport | null>(null);
+  const [scanne, setScanne] = useState(false);
   const [transfert, setTransfert] = useState<TransferProgress | null>(null);
   const [bilanTransfert, setBilanTransfert] = useState<TransferReport | null>(null);
 
@@ -228,7 +230,9 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
     const lu = await ipc.readPairingLink(texte).catch(() => null);
     if (lu === null) return;
 
-    setHote(lu.host);
+    // Le port voyage dans le lien : le perdre obligerait à le retaper le jour
+    // où le port habituel est pris.
+    setHote(lu.port === 47812 ? lu.host : `${lu.host}:${lu.port}`);
     setCode(lu.code);
   }
 
@@ -294,6 +298,31 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
         Recopie ce que l&apos;autre appareil affiche. Ou colle le lien du QR :
         les deux champs se remplissent seuls.
       </p>
+
+      {/* # Pourquoi le bouton n'apparaît pas toujours
+          Un ordinateur de bureau sans caméra le proposerait pour rien. Et sur
+          une page qui ne serait pas un contexte sûr, `mediaDevices` n'existe
+          même pas — mieux vaut ne rien montrer qu'un bouton qui échoue. */}
+      {typeof navigator !== "undefined" && navigator.mediaDevices !== undefined && (
+        <button
+          type="button"
+          onClick={() => setScanne(true)}
+          className="pression mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-line px-4 py-2.5 text-[13px] text-ink transition-colors hover:bg-elevated"
+        >
+          <Icon name="grid" size={15} />
+          Scanner le QR
+        </button>
+      )}
+
+      {scanne && (
+        <ScannerQR
+          onFermer={() => setScanne(false)}
+          onLu={(contenu) => {
+            setScanne(false);
+            void coller(contenu);
+          }}
+        />
+      )}
 
       <label className="mt-5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
         Adresse

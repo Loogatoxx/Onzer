@@ -85,8 +85,66 @@ unsafe fn installer_le_contexte(raw: *mut RawJavaVM) -> Result<(), String> {
     let contexte = global.as_raw().cast::<c_void>();
     ndk_context::initialize_android_context(raw.cast::<c_void>(), contexte);
 
+    installer_le_verificateur_tls(&mut env, global.as_raw());
+
     std::mem::forget(global);
     Ok(())
+}
+
+/// Donne à `rustls` de quoi vérifier un certificat.
+///
+/// # Le défaut que ça corrige
+///
+/// Sur Android, `reqwest` en `rustls` s'en remet au magasin de confiance du
+/// système, via `rustls-platform-verifier`. Ce vérificateur exige d'être
+/// initialisé avec le contexte de l'application — et quand il ne l'est pas, il
+/// ne rend pas une erreur : il appelle `abort()`.
+///
+/// L'application disparaît donc **à la première connexion HTTPS**, sans rien
+/// afficher, sans rien écrire dans un journal lisible. Le message n'existe que
+/// dans le tombstone du système :
+///
+/// ```text
+/// signal 6 (SIGABRT) · Abort message: 'Expect rustls-platform-verifier to be initialized'
+/// ```
+///
+/// Toute la moitié en ligne d'Onzer passait par là : les paroles, les
+/// pochettes, les albums, la comparaison d'une playlist. Rien de tout cela ne
+/// pouvait fonctionner sur le téléphone, et l'écran ne montrait qu'une
+/// application qui se ferme.
+///
+/// # Pourquoi les pointeurs bruts
+///
+/// Ce crate parle `jni` 0.22, notre pont parle 0.21. Les deux versions
+/// cohabitent dans le binaire sans se connaître, et aucun de leurs types n'est
+/// convertible en l'autre. Ce qu'elles partagent, c'est ce que la machine
+/// virtuelle leur a donné : deux pointeurs, identiques des deux côtés.
+///
+/// # Pourquoi un échec n'est pas fatal
+///
+/// Sans vérificateur, la partie hors ligne — c'est-à-dire l'essentiel —
+/// fonctionne. La perdre pour un magasin de certificats serait absurde.
+unsafe fn installer_le_verificateur_tls(env: &mut JNIEnv<'_>, contexte: jni::sys::jobject) {
+    let brut = env.get_raw();
+    let mut emprunte = jni22::EnvUnowned::from_raw(brut.cast());
+
+    // Le résultat sort par une variable et non par la valeur de retour : cette
+    // dernière est destinée à être rendue à Java, ce qui n'a pas de sens ici.
+    let mut resultat = Ok(());
+
+    let _ = emprunte.with_env_no_catch(|env22| {
+        let contexte22 = jni22::objects::JObject::from_raw(env22, contexte.cast());
+        resultat = rustls_platform_verifier::android::init_with_env(env22, contexte22);
+        Ok::<(), jni22::errors::Error>(())
+    });
+
+    match resultat {
+        Ok(()) => tracing::info!("vérificateur TLS installé"),
+        Err(erreur) => tracing::error!(
+            %erreur,
+            "vérificateur TLS non installé : les services en ligne seront indisponibles"
+        ),
+    }
 }
 
 /// L'objet `Application`, obtenu sans passer par une activité.

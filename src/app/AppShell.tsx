@@ -888,9 +888,28 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
    * vraie, qui est à un onglet de là.
    */
   const departFile = (playback.state?.queueIndex ?? -1) + 1;
+
+  /**
+   * Combien de morceaux à venir sont affichés.
+   *
+   * Vingt pour commencer, puis vingt de plus à chaque demande. Le décompte
+   * seul — « et 56 autres dans la file » — énonçait un fait sans rien en
+   * faire : on apprenait qu'il y avait autre chose, et qu'on n'y avait pas
+   * accès.
+   */
+  const [suiteVisible, setSuiteVisible] = useState(20);
+
+  // Un nouveau morceau, une nouvelle file : la fenêtre repart de vingt.
+  useEffect(() => {
+    setSuiteVisible(20);
+  }, [playback.state?.current?.trackId]);
+
   const idsSuite = useMemo(
-    () => (playback.state?.queue ?? []).slice(departFile, departFile + 20).map((item) => item.trackId),
-    [playback.state?.queue, departFile],
+    () =>
+      (playback.state?.queue ?? [])
+        .slice(departFile, departFile + suiteVisible)
+        .map((item) => item.trackId),
+    [playback.state?.queue, departFile, suiteVisible],
   );
 
   const [suite, setSuite] = useState<TrackSummary[]>([]);
@@ -1025,9 +1044,18 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
         />
 
         {restantsFile > 0 && (
-          <p className="px-3 pb-6 text-[12px] text-ink-faint">
-            et {restantsFile} autre{restantsFile > 1 ? "s" : ""} dans la file.
-          </p>
+          <div className="px-3 pb-6">
+            <button
+              type="button"
+              onClick={() => setSuiteVisible((visible) => visible + 20)}
+              className="pression w-full rounded-lg border border-line px-4 py-2.5 text-[13px] text-ink-muted transition-colors hover:bg-elevated hover:text-ink"
+            >
+              Montrer plus
+              <span className="numerals ml-1.5 text-ink-faint">
+                ({restantsFile} restant{restantsFile > 1 ? "s" : ""})
+              </span>
+            </button>
+          </div>
         )}
       </section>
     );
@@ -1092,7 +1120,15 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
         <main
           ref={scroller}
           {...glissement}
-          className={`min-h-0 min-w-0 flex-1 overflow-y-auto bg-surface ${
+          // # Pourquoi l'horizontale est fermée
+          //
+          // La page se déplace latéralement pendant un glissement entre
+          // onglets. Ce déplacement déborde du conteneur, et le conteneur fait
+          // ce qu'on lui a appris à faire : il propose une barre de défilement
+          // horizontale. Une barre grise apparaissait donc en bas de l'écran à
+          // chaque geste, avec son curseur — un rouage interne rendu visible
+          // par une animation.
+          className={`min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-surface ${
             mobile ? "" : "rounded-xl"
           }`}
         >

@@ -105,6 +105,19 @@ if-addrs = "0.15.0"
 jni = "0.21"
 ndk-context = "0.1"
 
+# Le vérificateur de certificats d'Android, celui que `reqwest` utilise sous
+# `rustls`. Il exige d'être initialisé avec le contexte de l'application ; sans
+# cela, la **première** connexion HTTPS ne rend pas une erreur : elle
+# `abort()`. L'application disparaît, et le message n'existe que dans le
+# tombstone du système.
+rustls-platform-verifier = "0.7"
+
+# Ce crate parle `jni` 0.22 quand notre pont parle 0.21. Les deux versions
+# cohabitent sans se voir ; on les fait se rencontrer par les pointeurs bruts,
+# qui sont les mêmes des deux côtés. Le renommage rend cette dualité visible à
+# la lecture plutôt qu'au premier message du compilateur.
+jni22 = { package = "jni", version = "0.22", default-features = false }
+
 # Les touches multimédia n'existent que sur un bureau : ce greffon n'a ni
 # implémentation ni sens sur Android, et l'y embarquer casse la compilation
 # pour cette cible.

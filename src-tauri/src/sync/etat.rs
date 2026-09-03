@@ -52,7 +52,8 @@ pub async fn lire(pool: &SqlitePool) -> Result<EtatSync> {
                    JOIN artists a ON a.id = ta.artist_id
                   WHERE ta.track_id = t.id AND ta.role = 'main'
                   ORDER BY ta.position LIMIT 1) AS artist,
-                al.title AS album, t.duration_ms, t.file_size, t.is_loved, t.loved_at, t.lyrics
+                al.title AS album, t.duration_ms, t.file_size, t.is_available,
+                t.is_loved, t.loved_at, t.lyrics
            FROM tracks t
       LEFT JOIN albums al ON al.id = t.album_id
           WHERE t.deleted_at IS NULL",
@@ -85,6 +86,7 @@ pub async fn lire(pool: &SqlitePool) -> Result<EtatSync> {
                 aime_le: ligne.loved_at,
                 paroles,
                 paroles_synchronisees: synchronisees,
+                disponible: ligne.is_available,
             }
         })
         .collect();
@@ -104,6 +106,7 @@ struct LigneMorceau {
     album: Option<String>,
     duration_ms: i64,
     file_size: i64,
+    is_available: bool,
     is_loved: bool,
     loved_at: Option<i64>,
     lyrics: Option<String>,

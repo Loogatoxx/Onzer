@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// Un morceau, tel qu'il traverse le réseau.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MorceauSync {
     /// Chemin relatif à la racine de bibliothèque. Première clé d'appariement.
@@ -38,6 +38,45 @@ pub struct MorceauSync {
     pub aime_le: Option<i64>,
     pub paroles: Option<String>,
     pub paroles_synchronisees: bool,
+    /// Le fichier est-il là ?
+    ///
+    /// Un morceau **hors ligne** garde sa fiche, ses favoris et sa place dans
+    /// les playlists : il participe donc pleinement à la fusion. Mais il n'a
+    /// plus de fichier à donner, et l'annoncer comme manquant chez l'autre
+    /// revient à promettre ce qu'on ne peut pas tenir — trois morceaux du
+    /// premier transfert réel ont échoué pour cette raison.
+    #[serde(default = "vrai")]
+    pub disponible: bool,
+}
+
+/// Un état venu d'une version qui ignorait la disponibilité parle de morceaux
+/// présents : c'est ce qu'ils étaient tous avant que la question se pose.
+fn vrai() -> bool {
+    true
+}
+
+/// # Pourquoi `Default` est écrit à la main
+///
+/// Le dérivé donnerait `disponible: false`, c'est-à-dire « hors ligne » — le
+/// contraire de ce qu'un morceau est par défaut. Un test qui construit un
+/// morceau sans y penser en obtiendrait un fantôme, et vérifierait autre chose
+/// que ce qu'il croit.
+impl Default for MorceauSync {
+    fn default() -> Self {
+        Self {
+            chemin: String::new(),
+            titre: String::new(),
+            artiste: None,
+            album: None,
+            duree_ms: 0,
+            taille: 0,
+            aime: false,
+            aime_le: None,
+            paroles: None,
+            paroles_synchronisees: false,
+            disponible: true,
+        }
+    }
 }
 
 /// Une playlist, avec l'ordre de ses morceaux.
@@ -288,6 +327,10 @@ fn manquants(paires: &[(&MorceauSync, &MorceauSync)], autre: &EtatSync) -> Vec<M
         .morceaux
         .iter()
         .filter(|morceau| !apparies.contains(morceau.chemin.as_str()))
+        // Un morceau dont l'autre appareil a perdu le fichier ne peut pas
+        // être donné. L'annoncer, c'est promettre un téléchargement qui
+        // échouera — et faire passer pour une panne un cas parfaitement normal.
+        .filter(|morceau| morceau.disponible)
         .map(|morceau| Manquant {
             chemin: morceau.chemin.clone(),
             titre: morceau.titre.clone(),
@@ -796,6 +839,22 @@ mod tests {
         assert_eq!(fusion.manquants.len(), 1);
         assert_eq!(fusion.manquants[0].chemin, "deux.mp3");
         assert_eq!(fusion.manquants[0].taille, 4_000_000);
+    }
+
+    #[test]
+    fn un_morceau_hors_ligne_chez_l_autre_n_est_pas_propose() {
+        // Trois morceaux ont échoué au premier transfert réel pour cette
+        // raison : leur fiche existait chez l'expéditeur, leur fichier non.
+        let mac = etat("Mac", vec![morceau("un.mp3", "Un", "A", false)]);
+
+        let mut fantome = morceau("deux.mp3", "Deux", "B", false);
+        fantome.disponible = false;
+        let tel = etat("Honor", vec![morceau("un.mp3", "Un", "A", false), fantome]);
+
+        assert!(
+            fusionner(&mac, &tel).manquants.is_empty(),
+            "on ne propose pas un fichier que l'autre n'a plus"
+        );
     }
 
     #[test]

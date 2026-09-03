@@ -2312,6 +2312,72 @@ la mesure a dit non.
 
 ---
 
+## ADR-079 — La moitié en ligne ne pouvait pas fonctionner sur le téléphone
+
+**Contexte.** Un bouton de « Ce qui me manque » fermait l'application. Pas une erreur, pas un
+message : l'écran d'accueil d'Android, d'un coup.
+
+**Ce qui se passait.** Le tombstone du système, seul endroit où quelque chose était écrit :
+
+```text
+signal 6 (SIGABRT)
+Abort message: 'Expect rustls-platform-verifier to be initialized'
+```
+
+Sur Android, `reqwest` en `rustls` s'en remet au magasin de confiance du système, par
+`rustls-platform-verifier`. Ce vérificateur exige d'être initialisé avec le contexte de
+l'application — et quand il ne l'est pas, il ne rend pas une erreur : il appelle `abort()`.
+
+**Ce que ça condamnait.** Tout ce qui parle HTTPS, c'est-à-dire toute la moitié en ligne
+d'Onzer : les paroles, les pochettes, les albums, la comparaison d'une playlist. Rien ne
+pouvait fonctionner sur le téléphone, et l'écran ne montrait qu'une application qui se ferme.
+
+La synchronisation entre appareils, elle, marchait — parce qu'elle parle HTTP en clair sur le
+réseau local et ne touche jamais à TLS. Le défaut était donc invisible depuis la seule
+fonction réseau qu'on avait éprouvée.
+
+**Décision.** Initialiser le vérificateur dans `JNI_OnLoad`, là où le contexte de
+l'application est déjà en main pour `ndk_context` et pour la classe du service.
+
+**Un détail qui coûte trois lignes.** Le crate parle `jni` 0.22, notre pont parle 0.21. Les
+deux versions cohabitent dans le binaire sans se connaître, et aucun de leurs types n'est
+convertible en l'autre. Ce qu'elles partagent, c'est ce que la machine virtuelle leur a donné :
+deux pointeurs, identiques des deux côtés.
+
+**Pourquoi un échec n'est pas fatal.** Sans vérificateur, la partie hors ligne — c'est-à-dire
+l'essentiel — fonctionne. La perdre pour un magasin de certificats serait absurde : l'erreur
+est journalisée, et le reste continue.
+
+---
+
+## ADR-080 — Lire le QR sans quitter l'application
+
+**Contexte.** Le QR d'appairage se scannait avec l'appareil photo du téléphone, qui ouvrait un
+lien à recopier. C'était un contournement assumé — et un aller-retour de trop.
+
+**Ce qui rendait le scanner possible sans rien ajouter au système.** Deux conditions, déjà
+remplies sans qu'on ait eu à les créer :
+
+- La page est servie depuis `tauri.localhost`, que Chromium tient pour un **contexte sûr**.
+  Sans cela, `getUserMedia` n'existe simplement pas.
+- La coquille Android de Tauri implémente déjà `onPermissionRequest` : elle demande
+  l'autorisation d'accès à la caméra d'elle-même. Il ne manquait que la ligne du manifeste.
+
+**Pourquoi le décodage est en JavaScript.** L'image vient de la caméra et vit déjà dans la
+page. La faire descendre jusqu'au cœur Rust demanderait de convertir chaque trame et de la
+pousser à travers le pont plusieurs fois par seconde — un mégaoctet par seconde pour lire vingt
+caractères.
+
+**Pourquoi la trame est réduite à 480 pixels.** Un QR de vingt caractères s'y lit parfaitement,
+et l'analyse coûte quatre fois moins qu'en pleine définition. C'est ce qui décide entre un
+aperçu fluide et un diaporama.
+
+**Ce qui reste.** Les huit chiffres. Un appareil sans caméra, une autorisation refusée, une
+lumière trop faible : le chemin manuel n'a pas disparu, et le bouton du scanner ne s'affiche
+que là où une caméra existe.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

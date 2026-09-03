@@ -2020,6 +2020,69 @@ mémoire de celui qui lance la commande.
 
 ---
 
+## ADR-071 — R8 ne voit pas ce que JNI appelle
+
+**Contexte.** L'application s'ouvrait, la bibliothèque s'affichait, et au premier morceau
+lancé elle disparaissait de l'écran. Rien ne jouait. En debug, tout marchait.
+
+**Ce qui se passait.** Le service de lecture n'est appelé par aucun code Java : c'est Rust
+qui, par JNI, cherche sa classe par son nom et sa méthode par sa signature. R8 ne voit donc
+**aucun appelant** et fait ce pour quoi il est fait — il renomme `pousser` en `a`.
+
+```text
+  Rust ──"pousser"──►  ???        R8 a renommé la méthode en `a`.
+                                  Personne n'a menti : le compilateur Kotlin
+                                  a raison, R8 a raison, Rust a raison.
+```
+
+Les méthodes `natif*` survivaient, elles : les règles par défaut préservent les méthodes
+natives. C'est le sens inverse — Java appelé depuis Rust — que rien ne protège.
+
+**Pourquoi le défaut n'apparaît qu'en release.** `isMinifyEnabled` est faux en debug. Tout
+ce qui se vérifie en développement passe donc à côté, et la seule trace est dans un journal
+que le constructeur du téléphone chiffre. Elle se lit dans le `dropbox` du système :
+
+```text
+  java.lang.NoSuchMethodError: no static method
+  "Lcom/loogatoxx/onzer/PlaybackService;.pousser(…)V"
+```
+
+**Décision.** Une règle de conservation dans `proguard-onzer.pro` — et **un test qui la
+vérifie**. Le test lit le pont Rust, y relève chaque classe touchée par JNI (`find_class`
+dans un sens, `Java_com_loogatoxx_onzer_…` dans l'autre), puis exige pour chacune une règle
+qui préserve tous ses membres. Il tourne sur le Mac, sans Android ni téléphone.
+
+Un lien qu'aucun compilateur ne vérifie doit être vérifié par quelque chose : sinon la
+prochaine méthode appelée depuis Rust rejouera exactement la même scène, six mois plus tard,
+sans que personne ne se souvienne de celle-ci.
+
+---
+
+## ADR-072 — Le minuteur de sommeil vit dans le cœur
+
+**Contexte.** « Arrêter dans 30 minutes » sert à s'endormir. C'est-à-dire l'écran éteint,
+l'application en arrière-plan — exactement l'état dans lequel le système **gèle** la page web
+et ses minuteries.
+
+**Décision.** Le compte à rebours est en Rust ; l'écran ne fait que le poser et l'afficher.
+Un `setTimeout` en JavaScript aurait marché à chaque essai fait sous les yeux du
+développeur, et échoué à chaque usage réel.
+
+**Pourquoi un numéro de demande plutôt qu'une annulation.** La tâche qui attend ne peut pas
+être interrompue proprement : elle dort. Le numéro renverse la question — à son réveil, elle
+vérifie qu'elle est toujours la dernière. C'est la seule façon d'éviter qu'un minuteur annulé
+puis reposé ne coupe la musique à l'heure de l'ancien.
+
+**Pourquoi il met en pause et ne bascule pas.** Le minuteur arrive quand il arrive. Si
+l'écoute s'est déjà arrêtée entre-temps, une bascule la **relancerait** : le réveil parfait
+pour qui s'endormait.
+
+**Pourquoi « fin du morceau » est un délai comme les autres.** Guetter la fin de la piste
+dans le cœur serait un second mécanisme, avec sa propre façon de se tromper, pour un résultat
+que l'arithmétique donne déjà : ce qu'il reste à jouer est une durée.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

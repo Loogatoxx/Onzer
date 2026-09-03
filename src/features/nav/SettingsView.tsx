@@ -12,7 +12,14 @@ import { ipc, type Preferences, type RebuildReport } from "@/lib/ipc";
  * cette portée n'a rien à faire dans un menu déroulant, où l'on clique vite :
  * elle mérite une page, une explication et une confirmation.
  */
-export function SettingsView({ onChanged }: { onChanged: () => void }) {
+export function SettingsView({
+  onChanged,
+  libraryRoot,
+}: {
+  onChanged: () => void;
+  /** D'où viennent les fichiers. Affiché ici et nulle part ailleurs. */
+  libraryRoot: string;
+}) {
   const [preferences, setPreferences] = useState<Preferences | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,6 +53,8 @@ export function SettingsView({ onChanged }: { onChanged: () => void }) {
       </h1>
 
       <div className="mt-8 max-w-2xl space-y-3">
+        <DossierSetting chemin={libraryRoot} />
+
         <NameSetting
           value={preferences?.displayName ?? ""}
           onSave={(name) => {
@@ -99,6 +108,27 @@ export function SettingsView({ onChanged }: { onChanged: () => void }) {
  * avant de laisser entrer serait une formalité de plus ; l'inventer serait
  * pire. Vide, l'accueil dit simplement « Bonsoir ».
  */
+/**
+ * D'où viennent les fichiers.
+ *
+ * # Pourquoi ce chemin a quitté la bibliothèque
+ *
+ * Il s'affichait au-dessus de la liste des morceaux : « /storage/emulated/0/
+ * Musique », un chemin de machine posé au milieu d'un lecteur de musique. On le
+ * consulte une fois — après un import, quand on doute de l'endroit — et jamais
+ * plus. Sa place est ici, à côté du bouton qui le change.
+ */
+function DossierSetting({ chemin }: { chemin: string }) {
+  return (
+    <div className="rounded-xl bg-surface px-4 py-3.5">
+      <p className="text-sm font-medium text-ink">Dossier de la musique</p>
+      <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-ink-faint">
+        {chemin}
+      </p>
+    </div>
+  );
+}
+
 function NameSetting({
   value,
   onSave,

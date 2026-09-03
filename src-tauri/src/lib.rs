@@ -267,6 +267,8 @@ pub fn run() {
             commands::playback::set_repeat,
             commands::playback::set_shuffle,
             commands::playback::stop_playback,
+            commands::playback::set_sleep_timer,
+            commands::playback::sleep_timer,
             commands::playback::playback_state,
             commands::reco::start_radio,
             commands::reco::start_for_now,
@@ -615,4 +617,84 @@ async fn publier_vers_android(handle: &tauri::AppHandle, player: &audio::PlayerS
         snapshot.duration_ms,
         &pochette,
     );
+}
+
+#[cfg(test)]
+mod garde_jni {
+    //! Le pont JNI ne peut pas se vérifier à la compilation.
+    //!
+    //! Rust cherche une classe par son nom et une méthode par sa signature, au
+    //! moment de l'appel. Ni le compilateur Rust, ni le compilateur Kotlin, ni
+    //! R8 ne voient ce lien : chacun a raison de son côté, et l'application
+    //! meurt à l'exécution. Ce test lit les deux bouts et vérifie qu'ils se
+    //! tiennent.
+
+    /// Les classes que le cœur touche par JNI, lues dans le pont lui-même.
+    fn classes_appelees(source: &str) -> Vec<String> {
+        let mut noms = Vec::new();
+
+        // `find_class("com/loogatoxx/onzer/X")`
+        for morceau in source.split("find_class(\"").skip(1) {
+            if let Some(chemin) = morceau.split('"').next() {
+                if let Some(nom) = chemin.strip_prefix("com/loogatoxx/onzer/") {
+                    noms.push(nom.to_string());
+                }
+            }
+        }
+
+        // `Java_com_loogatoxx_onzer_X_maMethode` — l'autre sens du pont.
+        for morceau in source.split("Java_com_loogatoxx_onzer_").skip(1) {
+            if let Some(nom) = morceau.split('_').next() {
+                noms.push(nom.to_string());
+            }
+        }
+
+        noms.sort();
+        noms.dedup();
+        noms
+    }
+
+    #[test]
+    fn toute_classe_appelee_depuis_rust_est_preservee_de_r8() {
+        let racine = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+
+        let pont = std::fs::read_to_string(racine.join("src/android.rs"))
+            .expect("le pont JNI doit être lisible");
+
+        let mut regles = String::new();
+        let dossier = racine.join("gen/android/app");
+        for entree in std::fs::read_dir(&dossier).expect("le projet Android doit exister") {
+            let chemin = entree.expect("entrée lisible").path();
+
+            // exFAT sème des jumeaux `._nom` à côté de chaque fichier : ce sont
+            // des blocs binaires, pas des règles, et les lire fait échouer le
+            // test pour une raison qui n'a rien à voir avec ce qu'il vérifie.
+            let nom = chemin.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if nom.starts_with("._") {
+                continue;
+            }
+
+            if chemin.extension().is_some_and(|e| e == "pro") {
+                regles.push_str(&std::fs::read_to_string(&chemin).expect("règle lisible"));
+            }
+        }
+
+        let classes = classes_appelees(&pont);
+        assert!(
+            !classes.is_empty(),
+            "aucune classe trouvée : l'analyse du pont ne repère plus rien"
+        );
+
+        for classe in classes {
+            // La règle doit préserver **tous** les membres : garder la classe
+            // sans ses méthodes laisse exactement le même défaut, en plus
+            // discret.
+            let attendue = format!("-keep class com.loogatoxx.onzer.{classe} {{ *; }}");
+            assert!(
+                regles.contains(&attendue),
+                "{classe} est appelée depuis Rust mais R8 peut la renommer.\n\
+                 Ajouter dans gen/android/app/proguard-onzer.pro :\n  {attendue}"
+            );
+        }
+    }
 }

@@ -54,7 +54,7 @@ export function MobileTabs({
               if (onglet.key === "search") onSearch();
               else onNavigate(onglet.route);
             }}
-            className={`flex flex-1 flex-col items-center gap-1 py-2 transition-colors ${
+            className={`pression flex flex-1 flex-col items-center gap-1 py-2 transition-colors ${
               courant ? "text-ink" : "text-ink-faint"
             }`}
           >

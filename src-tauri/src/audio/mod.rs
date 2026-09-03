@@ -154,6 +154,27 @@ impl PlayerService {
         Ok(())
     }
 
+    /// Met en pause, sans jamais relancer.
+    ///
+    /// # Pourquoi ce n'est pas `toggle`
+    ///
+    /// Le minuteur de sommeil arrive quand il arrive : si l'écoute s'est déjà
+    /// arrêtée entre-temps, une bascule la **relancerait** — le réveil parfait
+    /// pour qui s'endormait.
+    pub async fn pause(&self) -> Result<()> {
+        let mut state = self.state.lock().await;
+        let Some(play) = state.current.as_mut() else {
+            return Ok(());
+        };
+
+        if !play.is_paused() {
+            play.pause(crate::core::now_ms());
+            self.device.pause();
+        }
+
+        Ok(())
+    }
+
     /// Bascule lecture / pause.
     pub async fn toggle(&self) -> Result<()> {
         let mut state = self.state.lock().await;

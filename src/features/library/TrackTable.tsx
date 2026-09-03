@@ -20,7 +20,7 @@ import { Artwork } from "./Artwork";
  * manque — la date d'ajout d'abord, l'album ensuite. Le titre, lui, ne
  * disparaît jamais.
  */
-const GRID =
+const COLONNES =
   // # Deux dispositions, une seule grille
 //
 // En dessous de `lg`, il ne reste que le numéro, le titre et le menu : les
@@ -31,7 +31,9 @@ const GRID =
 // Au-dessus, la place existe : l'album et la date d'ajout reprennent leur
 // colonne, parce que les masquer sur un écran large serait gâcher l'espace
 // qu'on vient de gagner.
-"grid grid-cols-[1.25rem_minmax(0,1fr)_auto] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_auto] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.25rem_auto] items-center gap-2.5 lg:gap-4";
+"grid-cols-[1.25rem_minmax(0,1fr)_auto] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_auto] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.25rem_auto] items-center gap-2.5 lg:gap-4";
+
+const GRID = `grid ${COLONNES}`;
 
 interface TrackTableProps {
   tracks: TrackSummary[];
@@ -184,6 +186,10 @@ export function TrackTable({
 
   return (
     <div className="px-1 pb-8 lg:px-3">
+      {onSort !== undefined && (
+        <TriCompact sort={sort} onSort={onSort} />
+      )}
+
       <div
         // # Pourquoi le décalage suit la coquille et non la ligne
         //
@@ -197,7 +203,7 @@ export function TrackTable({
         // deux seuils différents parce qu'ils répondent à deux questions
         // différentes — la place pour des colonnes, la place pour une barre
         // latérale. Celui-ci doit suivre la barre.
-        className={`${GRID} sticky top-0 z-10 mb-1 border-b border-line bg-surface/85 px-1.5 py-2 md:top-[64px] lg:px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint backdrop-blur`}
+        className={`${COLONNES} hidden lg:grid sticky top-0 z-10 mb-1 border-b border-line bg-surface/85 px-1.5 py-2 md:top-[64px] lg:px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint backdrop-blur`}
       >
         <span className="text-center">#</span>
         <SortHeader column="title" label="Titre" sort={sort} onSort={onSort} />
@@ -370,7 +376,7 @@ function TrackRow({
       onPointerUp={() => clearTimeout(minuteur.current)}
       onPointerLeave={() => clearTimeout(minuteur.current)}
       onPointerCancel={() => clearTimeout(minuteur.current)}
-      className={`${GRID} group rounded-md px-1.5 py-2 transition-colors hover:bg-elevated lg:px-3 ${
+      className={`${GRID} pression group rounded-md px-1.5 py-2 transition-colors hover:bg-elevated lg:px-3 ${
         isCurrent ? "bg-elevated/60" : ""
       } ${unavailable ? "opacity-40" : ""}`}
     >
@@ -539,6 +545,108 @@ function TrackRow({
   );
 }
 
+/** Ce que chaque colonne triable s'appelle, pour l'écrit et pour le menu. */
+const NOMS_DE_TRI: Record<SortColumn, string> = {
+  title: "Titre",
+  album: "Album",
+  duration: "Durée",
+  added: "Ajouté",
+};
+
+/**
+ * Le tri, sur un écran sans colonnes.
+ *
+ * # Pourquoi l'en-tête ne convenait pas
+ *
+ * Trier se faisait en visant « TITRE » ou « ALBUM » écrits en petites
+ * majuscules espacées, avec une flèche de treize pixels pour tout retour. Sur
+ * un téléphone, l'en-tête coûtait une ligne entière pour deux mots qu'on ne
+ * pense pas à toucher — rien ne dit qu'un titre de colonne est un bouton.
+ *
+ * Un bouton qui **dit son état** (« Titre ▾ ») coûte la même place et se
+ * comprend sans qu'on ait à l'essayer. Le second appui sur le critère déjà
+ * actif inverse le sens, comme un en-tête de tableau.
+ */
+function TriCompact({
+  sort,
+  onSort,
+}: {
+  sort: TrackSort | undefined;
+  onSort: (column: SortColumn) => void;
+}) {
+  const [ouvert, setOuvert] = useState(false);
+  const ancre = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ouvert) return;
+
+    const fermer = (event: MouseEvent) => {
+      if (!ancre.current?.contains(event.target as Node)) setOuvert(false);
+    };
+    const echapper = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOuvert(false);
+    };
+
+    document.addEventListener("mousedown", fermer);
+    document.addEventListener("keydown", echapper);
+    return () => {
+      document.removeEventListener("mousedown", fermer);
+      document.removeEventListener("keydown", echapper);
+    };
+  }, [ouvert]);
+
+  const courant = sort === undefined ? "Titre" : NOMS_DE_TRI[sort.column];
+
+  return (
+    <div ref={ancre} className="relative flex justify-end px-1.5 pb-1 lg:hidden">
+      <button
+        type="button"
+        onClick={() => setOuvert(!ouvert)}
+        aria-expanded={ouvert}
+        className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[12px] text-ink-muted transition-colors active:bg-elevated"
+      >
+        <Icon name="list" size={14} />
+        {courant}
+        <span
+          className={`transition-transform duration-200 ${
+            sort?.descending === true ? "" : "rotate-180"
+          }`}
+        >
+          <Icon name="chevronDown" size={12} />
+        </span>
+      </button>
+
+      {ouvert && (
+        <div className="animate-surgir absolute right-1.5 top-8 z-30 w-44 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60">
+          {(Object.keys(NOMS_DE_TRI) as SortColumn[]).map((colonne) => {
+            const actif = sort?.column === colonne;
+            return (
+              <button
+                key={colonne}
+                type="button"
+                onClick={() => {
+                  onSort(colonne);
+                  setOuvert(false);
+                }}
+                className={`flex w-full items-center justify-between px-3 py-2 text-left text-[13px] transition-colors active:bg-elevated ${
+                  actif ? "text-ink" : "text-ink-muted"
+                }`}
+              >
+                {NOMS_DE_TRI[colonne]}
+                {actif && (
+                  <span className={sort?.descending === true ? "" : "rotate-180"}>
+                    <Icon name="chevronDown" size={12} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Menu contextuel d'une ligne.
  *
@@ -630,7 +738,7 @@ function RowMenu({
       />
 
       {open && (
-        <div className="absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60">
+        <div className="animate-surgir absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60">
           <MenuItem icon="queue" onClick={() => choose(onEnqueue)}>
             Ajouter à la file d'attente
           </MenuItem>

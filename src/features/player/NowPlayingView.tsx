@@ -1,9 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Artwork } from "@/features/library/Artwork";
 import { useSeekGesture } from "./useSeekGesture";
 import { Icon } from "@/components/Icon";
-import { formatDuration, type PlaybackSnapshot } from "@/lib/ipc";
+import { formatDuration, ipc, type PlaybackSnapshot } from "@/lib/ipc";
 
 /**
  * L'écran de lecture : ce qu'on regarde quand on écoute.
@@ -36,6 +36,7 @@ export function NowPlayingView({
   onShuffle,
   onRepeat,
   onClose,
+  fileDAttente,
 }: {
   state: PlaybackSnapshot;
   isLoved: boolean;
@@ -51,6 +52,18 @@ export function NowPlayingView({
   onRepeat: () => void;
   /** Referme l'écran, appelé par le glissement vers le bas. */
   onClose: () => void;
+  /**
+   * La suite de la file, rendue par la coquille.
+   *
+   * # Pourquoi elle vient de l'extérieur
+   *
+   * Ces lignes doivent être **exactement** celles de la bibliothèque : même
+   * numéro, même pastille de paroles, mêmes trois points, mêmes bords. Les
+   * redessiner ici garantirait qu'elles s'en écartent à la première
+   * correction — c'est déjà ce qui est arrivé avec l'en-tête et la grille.
+   * La coquille tient le tableau et tous ses gestes ; elle le prête.
+   */
+  fileDAttente: React.ReactNode;
 }) {
   const [agrandie, setAgrandie] = useState(false);
   const geste = useSeekGesture(state.positionMs, state.durationMs, onSeek);
@@ -256,7 +269,115 @@ export function NowPlayingView({
           <Icon name="lyrics" size={16} />
           Paroles
         </button>
+
+        <Minuteur restantDuMorceau={Math.max(0, state.durationMs - state.positionMs)} />
       </div>
+
+      {/* La file rend les mêmes lignes que la bibliothèque : elle doit donc
+          avoir la même largeur qu'elle. Les vingt-quatre pixels de marge de
+          cet écran, qui aèrent la pochette et le titre, rétréciraient des
+          lignes déjà calculées pour tenir sur 375 px. */}
+      <div className="-mx-6">{fileDAttente}</div>
+    </div>
+  );
+}
+
+/**
+ * Le minuteur de sommeil.
+ *
+ * # Pourquoi le compte à rebours n'est pas ici
+ *
+ * Une minuterie en JavaScript s'arrête quand le système gèle la page — c'est-à-
+ * dire exactement quand on éteint l'écran, le seul moment où ce minuteur sert.
+ * Le cœur tient l'échéance ; cet écran ne fait que la demander et l'afficher.
+ *
+ * # Pourquoi « fin du morceau » est un délai comme un autre
+ *
+ * On pourrait guetter la fin de la piste dans le cœur. Ce serait un second
+ * mécanisme, avec sa propre façon de se tromper, pour un résultat que
+ * l'arithmétique donne déjà : ce qu'il reste à jouer est une durée.
+ */
+function Minuteur({ restantDuMorceau }: { restantDuMorceau: number }) {
+  const [ouvert, setOuvert] = useState(false);
+  const [restant, setRestant] = useState<number | null>(null);
+  const ancre = useRef<HTMLDivElement>(null);
+
+  // Rafraîchi toutes les quinze secondes : le bouton n'affiche que des
+  // minutes, et interroger le cœur plus souvent ne changerait rien à l'écran.
+  useEffect(() => {
+    const lire = () => void ipc.sleepTimer().then(setRestant).catch(() => undefined);
+    lire();
+
+    const battement = setInterval(lire, 15_000);
+    return () => clearInterval(battement);
+  }, []);
+
+  useEffect(() => {
+    if (!ouvert) return;
+
+    const fermer = (event: MouseEvent) => {
+      if (!ancre.current?.contains(event.target as Node)) setOuvert(false);
+    };
+    document.addEventListener("mousedown", fermer);
+    return () => document.removeEventListener("mousedown", fermer);
+  }, [ouvert]);
+
+  function armer(delai: number | null) {
+    setOuvert(false);
+    void ipc
+      .setSleepTimer(delai)
+      .then(setRestant)
+      .catch(() => undefined);
+  }
+
+  const arme = restant !== null && restant > 0;
+  const minutes = arme ? Math.max(1, Math.round(restant / 60_000)) : 0;
+
+  const choix: { libelle: string; delai: number }[] = [
+    { libelle: "15 minutes", delai: 15 * 60_000 },
+    { libelle: "30 minutes", delai: 30 * 60_000 },
+    { libelle: "1 heure", delai: 60 * 60_000 },
+    { libelle: "Fin du morceau", delai: restantDuMorceau },
+  ];
+
+  return (
+    <div ref={ancre} className="relative">
+      <button
+        type="button"
+        onClick={() => setOuvert(!ouvert)}
+        aria-expanded={ouvert}
+        className={`pression flex items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-medium transition-colors ${
+          arme ? "bg-elevated text-accent" : "bg-elevated text-ink-muted hover:text-ink"
+        }`}
+      >
+        <Icon name="moon" size={16} />
+        {arme ? `${minutes} min` : "Minuteur"}
+      </button>
+
+      {ouvert && (
+        <div className="animate-surgir absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60">
+          {choix.map((entree) => (
+            <button
+              key={entree.libelle}
+              type="button"
+              onClick={() => armer(entree.delai)}
+              className="flex w-full px-3 py-2 text-left text-[13px] text-ink-muted transition-colors hover:bg-elevated hover:text-ink"
+            >
+              {entree.libelle}
+            </button>
+          ))}
+
+          {arme && (
+            <button
+              type="button"
+              onClick={() => armer(null)}
+              className="mt-1 flex w-full border-t border-line px-3 py-2 text-left text-[13px] text-ink transition-colors hover:bg-elevated"
+            >
+              Arrêter le minuteur
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

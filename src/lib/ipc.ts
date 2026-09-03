@@ -610,6 +610,19 @@ export const ipc = {
     invoke<PlaybackSnapshot>("play_tracks", { trackIds, startAt, source }),
 
   togglePlayback: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("toggle_playback"),
+
+  /**
+   * Arme, réarme ou annule le minuteur de sommeil. `null` annule.
+   *
+   * Le compte à rebours vit dans le cœur et non ici : une minuterie en
+   * JavaScript s'arrête quand le système gèle la page — c'est-à-dire
+   * exactement quand on éteint l'écran, le seul moment où ce minuteur sert.
+   */
+  setSleepTimer: (delayMs: number | null): Promise<number | null> =>
+    invoke<number | null>("set_sleep_timer", { delayMs }),
+
+  /** Ce qu'il reste au minuteur, en millisecondes. */
+  sleepTimer: (): Promise<number | null> => invoke<number | null>("sleep_timer"),
   nextTrack: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("next_track"),
   previousTrack: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("previous_track"),
   stopPlayback: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("stop_playback"),

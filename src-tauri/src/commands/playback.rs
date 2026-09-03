@@ -4,7 +4,7 @@
 //! réagit immédiatement, sans attendre le prochain battement de la boucle de
 //! surveillance.
 
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::audio::queue::{QueueItem, RepeatMode};
 use crate::audio::tracking::PlaySource;
@@ -134,4 +134,94 @@ pub async fn stop_playback(state: State<'_, AppState>) -> Result<PlaybackSnapsho
 #[tauri::command]
 pub async fn playback_state(state: State<'_, AppState>) -> Result<PlaybackSnapshot> {
     Ok(state.player()?.snapshot().await)
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Minuteur de sommeil
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Échéance en cours, et le numéro de la demande qui l'a posée.
+///
+/// # Pourquoi un numéro plutôt qu'une annulation
+///
+/// La tâche qui attend ne peut pas être interrompue proprement une fois
+/// lancée : on peut lui demander de s'arrêter, mais elle dort. Le numéro
+/// renverse la question — à son réveil, elle vérifie qu'elle est toujours la
+/// dernière. Une demande plus récente l'a-t-elle remplacée ? Elle ne fait rien.
+/// C'est la seule façon de garantir qu'un minuteur annulé puis reposé ne coupe
+/// pas la musique à l'heure de l'ancien.
+static SOMMEIL: std::sync::Mutex<Option<(std::time::Instant, u64)>> =
+    std::sync::Mutex::new(None);
+
+/// Numéro de la dernière demande. Croît, ne redescend jamais.
+static DEMANDE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Ce qu'il reste à attendre, en millisecondes.
+fn restant() -> Option<i64> {
+    let garde = SOMMEIL.lock().ok()?;
+    let (echeance, _) = (*garde)?;
+
+    let reste = echeance.saturating_duration_since(std::time::Instant::now());
+    if reste.is_zero() {
+        None
+    } else {
+        Some(reste.as_millis() as i64)
+    }
+}
+
+/// Arme, réarme ou annule le minuteur.
+///
+/// `delay_ms` à `None` annule. Le délai est en millisecondes et non en minutes :
+/// « à la fin du morceau » ne tombe jamais sur une minute ronde.
+#[tauri::command]
+pub async fn set_sleep_timer(app: tauri::AppHandle, delay_ms: Option<i64>) -> Result<Option<i64>> {
+    use std::sync::atomic::Ordering;
+
+    let numero = DEMANDE.fetch_add(1, Ordering::SeqCst) + 1;
+
+    let Some(delai) = delay_ms.filter(|valeur| *valeur > 0) else {
+        if let Ok(mut garde) = SOMMEIL.lock() {
+            *garde = None;
+        }
+        return Ok(None);
+    };
+
+    let duree = std::time::Duration::from_millis(delai as u64);
+    let echeance = std::time::Instant::now() + duree;
+
+    if let Ok(mut garde) = SOMMEIL.lock() {
+        *garde = Some((echeance, numero));
+    }
+
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(duree).await;
+
+        // Une demande plus récente est passée : celle-ci n'a plus rien à dire.
+        let toujours_valide = SOMMEIL
+            .lock()
+            .ok()
+            .and_then(|garde| *garde)
+            .is_some_and(|(_, pose)| pose == numero);
+
+        if !toujours_valide {
+            return;
+        }
+
+        if let Ok(mut garde) = SOMMEIL.lock() {
+            *garde = None;
+        }
+
+        let etat = app.state::<AppState>();
+        if let Ok(player) = etat.player() {
+            let _ = player.pause().await;
+        }
+    });
+
+    Ok(Some(delai))
+}
+
+/// Ce qu'il reste au minuteur, ou `None` s'il n'y en a pas.
+#[tauri::command]
+pub async fn sleep_timer() -> Result<Option<i64>> {
+    Ok(restant())
 }

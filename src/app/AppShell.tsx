@@ -23,6 +23,13 @@ import { TrackTable } from "@/features/library/TrackTable";
 import { Sidebar, routeKey, type Route } from "@/features/nav/Sidebar";
 import type { SortColumn, TrackSort } from "@/features/library/TrackTable";
 import { MobileTabs } from "@/features/nav/MobileTabs";
+import { useSwipeOnglets } from "@/features/nav/useSwipeOnglets";
+import {
+  BarreFiltres,
+  ListeRegroupements,
+  useRegroupements,
+  type FiltreRecherche,
+} from "@/features/search/SearchFilters";
 import { MiniPlayer } from "@/features/player/MiniPlayer";
 import { useIsMobile } from "@/lib/useIsMobile";
 import {
@@ -320,6 +327,21 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
    * rétrécie a le même problème qu'un téléphone, et la même réponse lui va.
    */
   const mobile = useIsMobile();
+
+  // Le geste ne vaut que sur les quatre racines, et jamais pendant une
+  // recherche : le résultat affiché n'appartient à aucun onglet.
+  const glissement = useSwipeOnglets(route, navigate, mobile && !searching);
+
+  const [filtre, setFiltre] = useState<FiltreRecherche>("titres");
+  const regroupements = useRegroupements(searching ? (results ?? []) : []);
+
+  // Une nouvelle requête ne rend pas forcément des albums : rester sur un
+  // filtre vide afficherait une page blanche pour des résultats qui existent.
+  // Retomber sur les titres vaut mieux que ne rien montrer.
+  const filtreVide =
+    (filtre === "artistes" && regroupements.artistes.length === 0) ||
+    (filtre === "albums" && regroupements.albums.length === 0);
+  const filtreActif: FiltreRecherche = filtreVide ? "titres" : filtre;
 
   /** Sur mobile, la recherche est un mode et non une page. */
   const [searchOpen, setSearchOpen] = useState(false);
@@ -783,47 +805,112 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
 
   // ── Rendu ─────────────────────────────────────────────────────────────
 
+  /**
+   * Les vingt prochains morceaux de la file, en entier.
+   *
+   * # Pourquoi une requête et non ce que la file contient déjà
+   *
+   * La file porte le strict nécessaire pour jouer : un titre, un artiste, un
+   * chemin. Pas de pastille de paroles, pas de favori, pas d'album cliquable —
+   * et ce sont précisément les colonnes qui font une ligne de bibliothèque.
+   * Vingt identifiants suffisent à les récupérer.
+   *
+   * # Pourquoi vingt
+   *
+   * La file en contient des milliers. Les afficher tous ferait de cet écran
+   * une seconde bibliothèque, sans tri ni recherche — moins bonne que la
+   * vraie, qui est à un onglet de là.
+   */
+  const departFile = (playback.state?.queueIndex ?? -1) + 1;
+  const idsSuite = useMemo(
+    () => (playback.state?.queue ?? []).slice(departFile, departFile + 20).map((item) => item.trackId),
+    [playback.state?.queue, departFile],
+  );
+
+  const [suite, setSuite] = useState<TrackSummary[]>([]);
+
+  useEffect(() => {
+    if (idsSuite.length === 0) {
+      setSuite([]);
+      return;
+    }
+
+    let vivant = true;
+    void ipc
+      .tracksByIds(idsSuite)
+      .then((fiches) => {
+        if (!vivant) return;
+
+        // La requête rend les morceaux dans l'ordre de la base, et un même
+        // morceau peut figurer deux fois dans la file : c'est la file qui
+        // décide de l'ordre, jamais la base.
+        const parId = new Map(fiches.map((fiche) => [fiche.id, fiche]));
+        setSuite(
+          idsSuite
+            .map((id) => parId.get(id))
+            .filter((fiche): fiche is TrackSummary => fiche !== undefined),
+        );
+      })
+      .catch(() => undefined);
+
+    return () => {
+      vivant = false;
+    };
+  }, [idsSuite]);
+
+  /**
+   * Les gestes d'une ligne, définis une seule fois.
+   *
+   * La file d'attente affiche le **même** tableau que la bibliothèque : même
+   * numéro, même pastille de paroles, mêmes trois points, mêmes bords. Deux
+   * jeux de gestes séparés garantiraient qu'un menu gagne une entrée d'un côté
+   * et pas de l'autre.
+   */
+  const gestes = {
+    onRadio: startRadio,
+    onToggleLoved: (id: number) => void toggleLoved(id),
+    onEnqueue: (id: number) => {
+      void playback.enqueue([id]);
+    },
+    onOpenArtist: (id: number) => void openArtistOf(id),
+    onCorrect: setCorrecting,
+    onMatch: setMatching,
+    onSyncLyrics: syncLyrics,
+    onOpenPlaying: () => navigate({ kind: "playing" }),
+    onOpenAlbum: (track: TrackSummary) => {
+      if (track.albumId !== null) {
+        navigate({
+          kind: "album",
+          id: track.albumId,
+          name: track.album ?? "Album",
+          artist: track.artist,
+        });
+      }
+    },
+    onRemove: (id: number) => {
+      void ipc
+        .removeTrack(id)
+        .then(() => {
+          setCounts(null);
+          void ipc.libraryCounts().then(setCounts).catch(() => undefined);
+          bump();
+        })
+        .catch((cause: unknown) => setError(String(cause)));
+    },
+    loved,
+    playlists,
+    onAddToPlaylist: addToPlaylist,
+  };
+
   const table = (
     <TrackTable
       tracks={shown}
       currentTrackId={playback.state?.current?.trackId ?? null}
       isPlaying={playback.state?.isPlaying ?? false}
       onPlay={playFrom}
-      onRadio={startRadio}
-      onToggleLoved={(id) => void toggleLoved(id)}
-      onEnqueue={(id) => {
-        void playback.enqueue([id]);
-      }}
-      onOpenArtist={(id) => void openArtistOf(id)}
-      onCorrect={setCorrecting}
-      onMatch={setMatching}
-      onSyncLyrics={syncLyrics}
+      {...gestes}
       {...(sort === null ? {} : { sort })}
       onSort={toggleSort}
-      onOpenPlaying={() => navigate({ kind: "playing" })}
-      onOpenAlbum={(track) => {
-        if (track.albumId !== null) {
-          navigate({
-            kind: "album",
-            id: track.albumId,
-            name: track.album ?? "Album",
-            artist: track.artist,
-          });
-        }
-      }}
-      onRemove={(id) => {
-        void ipc
-          .removeTrack(id)
-          .then(() => {
-            setCounts(null);
-            void ipc.libraryCounts().then(setCounts).catch(() => undefined);
-            bump();
-          })
-          .catch((cause: unknown) => setError(String(cause)));
-      }}
-      loved={loved}
-      playlists={playlists}
-      onAddToPlaylist={addToPlaylist}
       {...(route.kind === "playlist" && !searching
         ? {
             onRemoveAt: (position: number) => {
@@ -851,6 +938,33 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       }
     />
   );
+
+  /** « À suivre », rendu avec le tableau de la bibliothèque. */
+  const restantsFile =
+    (playback.state?.queue.length ?? 0) - departFile - suite.length;
+
+  const tableauFile =
+    suite.length === 0 ? null : (
+      <section className="mt-9">
+        <h2 className="px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+          À suivre
+        </h2>
+
+        <TrackTable
+          tracks={suite}
+          currentTrackId={null}
+          isPlaying={false}
+          onPlay={(index) => void playback.jump(departFile + index)}
+          {...gestes}
+        />
+
+        {restantsFile > 0 && (
+          <p className="px-3 pb-6 text-[12px] text-ink-faint">
+            et {restantsFile} autre{restantsFile > 1 ? "s" : ""} dans la file.
+          </p>
+        )}
+      </section>
+    );
 
   // La pagination ne concerne que la bibliothèque : ailleurs, tout est déjà
   // là. Elle disparaît aussi pendant une recherche, dont les résultats sont
@@ -911,6 +1025,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
 
         <main
           ref={scroller}
+          {...glissement}
           className={`min-h-0 min-w-0 flex-1 overflow-y-auto bg-surface ${
             mobile ? "" : "rounded-xl"
           }`}
@@ -952,7 +1067,34 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           ) : searching ? (
             <>
               <SearchHeader query={query} count={shown.length} />
-              {paged}
+
+              <BarreFiltres
+                actif={filtreActif}
+                onChange={setFiltre}
+                compte={{
+                  titres: shown.length,
+                  artistes: regroupements.artistes.length,
+                  albums: regroupements.albums.length,
+                }}
+              />
+
+              {filtreActif === "titres" ? (
+                paged
+              ) : (
+                <ListeRegroupements
+                  entrees={
+                    filtreActif === "artistes"
+                      ? regroupements.artistes
+                      : regroupements.albums
+                  }
+                  rond={filtreActif === "artistes"}
+                  onOuvrir={(trackId) =>
+                    void (filtreActif === "artistes"
+                      ? openArtistOf(trackId)
+                      : openAlbumOf(trackId))
+                  }
+                />
+              )}
             </>
           ) : (
             <Page
@@ -1004,6 +1146,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
                       onRepeat: () =>
                         void playback.cycleRepeat(playback.state?.repeat ?? "off"),
                       onClose: () => setCursor((position) => Math.max(0, position - 1)),
+                      fileDAttente: tableauFile,
                     }
               }
               onlineCompletion={onlineCompletion}
@@ -1425,7 +1568,7 @@ function Page(props: PageProps) {
   }
 
   if (route.kind === "settings") {
-    return <SettingsView onChanged={props.onReload} />;
+    return <SettingsView onChanged={props.onReload} libraryRoot={props.libraryRoot} />;
   }
 
   if (route.kind === "playing") {
@@ -1664,9 +1807,6 @@ function Page(props: PageProps) {
           </MaintenanceCard>
         </div>
 
-        <p className="mt-3 truncate font-mono text-[11px] text-ink-faint">
-          {props.libraryRoot}
-        </p>
       </div>
 
       {props.children}

@@ -14,11 +14,27 @@ import { ipc } from "@/lib/ipc";
  */
 const cache = new Map<string, Promise<string | null>>();
 
+/**
+ * Ce qui est déjà arrivé.
+ *
+ * Le cache de promesses dit « c'est demandé » ; celui-ci dit « c'est là ». La
+ * différence compte au moment de peindre : une pochette qu'on possède déjà
+ * doit paraître **sans fondu**, sinon toute la liste clignote à chaque
+ * défilement. Seule celle qui vient d'arriver mérite d'apparaître.
+ */
+const resolus = new Map<string, string | null>();
+
 function load(hash: string): Promise<string | null> {
   const cached = cache.get(hash);
   if (cached !== undefined) return cached;
 
-  const pending = ipc.artworkDataUri(hash).catch(() => null);
+  const pending = ipc
+    .artworkDataUri(hash)
+    .catch(() => null)
+    .then((uri) => {
+      resolus.set(hash, uri);
+      return uri;
+    });
   cache.set(hash, pending);
   return pending;
 }
@@ -34,7 +50,11 @@ interface ArtworkProps {
 }
 
 export function Artwork({ hash, className = "h-10 w-10 rounded" }: ArtworkProps) {
-  const [source, setSource] = useState<string | null>(null);
+  const [source, setSource] = useState<string | null>(() =>
+    hash === null ? null : (resolus.get(hash) ?? null),
+  );
+  /** Vrai seulement quand l'image vient d'arriver, et doit donc se fondre. */
+  const [fondu, setFondu] = useState(false);
 
   useEffect(() => {
     if (hash === null) {
@@ -42,10 +62,20 @@ export function Artwork({ hash, className = "h-10 w-10 rounded" }: ArtworkProps)
       return;
     }
 
+    const deja = resolus.get(hash);
+    if (deja !== undefined) {
+      setSource(deja);
+      setFondu(false);
+      return;
+    }
+
     let active = true;
     void load(hash).then((uri) => {
       // Le composant a pu être démonté, ou le morceau changé, entre-temps.
-      if (active) setSource(uri);
+      if (active) {
+        setSource(uri);
+        setFondu(true);
+      }
     });
 
     return () => {
@@ -59,5 +89,11 @@ export function Artwork({ hash, className = "h-10 w-10 rounded" }: ArtworkProps)
     return <div aria-hidden className={`shrink-0 bg-elevated ${className}`} />;
   }
 
-  return <img src={source} alt="" className={`shrink-0 object-cover ${className}`} />;
+  return (
+    <img
+      src={source}
+      alt=""
+      className={`shrink-0 object-cover ${fondu ? "animate-apparaitre" : ""} ${className}`}
+    />
+  );
 }

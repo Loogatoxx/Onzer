@@ -293,10 +293,14 @@ function Seekbar({
         }}
         className="group relative h-3 flex-1 cursor-pointer py-1"
       >
+        {/* Le remplissage n'avait aucune transition : il se replaçait d'un
+            bond tous les 250 ms, la durée d'un tic du cœur. On lui donne
+            exactement cette durée, en ligne droite — la barre coule au lieu
+            de cliqueter. */}
         <div className="h-1 overflow-hidden rounded-full bg-raised">
           <div
-            className="h-full rounded-full bg-ink-muted transition-colors group-hover:bg-accent"
-            style={{ width: `${ratio * 100}%` }}
+            className="h-full origin-left rounded-full bg-ink-muted transition-[transform,background-color] duration-[250ms] ease-linear group-hover:bg-accent"
+            style={{ transform: `scaleX(${ratio})` }}
           />
         </div>
 
@@ -304,7 +308,7 @@ function Seekbar({
             l'œil sur un réglage qu'on ne touche presque jamais. */}
         <span
           aria-hidden
-          className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink opacity-0 transition-opacity group-hover:opacity-100"
+          className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink opacity-0 transition-[left,opacity] duration-[250ms] ease-linear group-hover:opacity-100"
           style={{ left: `${ratio * 100}%` }}
         />
       </div>

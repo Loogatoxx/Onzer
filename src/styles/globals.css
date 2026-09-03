@@ -33,10 +33,13 @@
   --color-ink-muted: #a2a2aa;
   --color-ink-faint: #6b6b74;
 
-  /* L'accent. Rare, par principe. */
+  /* L'accent. Rare, par principe — et **seul**.
+     Un second accent (le cyan #22d3ee) a vécu ici le temps de quelques
+     dégradés. Il n'a jamais servi en aplat : il n'était que le point d'arrivée
+     d'un fondu, c'est-à-dire une décoration. Une interface qui a deux couleurs
+     d'accent n'en a aucune. */
   --color-accent: #8b5cf6;
   --color-accent-soft: #a78bfa;
-  --color-accent-alt: #22d3ee;
 
   /* États. */
   --color-ok: #4ade80;
@@ -54,6 +57,20 @@
   /* Une seule courbe pour toute l'application : c'est ce qui donne
      l'impression que tout bouge du même geste. */
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* # Pourquoi il faut le dire à Tailwind aussi
+     La phrase ci-dessus était un vœu. Cent quarante-trois lignes de l'interface
+     écrivent `transition-colors` ou `transition-transform` sans préciser de
+     courbe : elles tombaient donc sur celle de Tailwind — cubic-bezier(0.4, 0,
+     0.2, 1), symétrique et molle — pendant que la nôtre, forte à la
+     décélération, ne régissait que les huit animations écrites dans ce
+     fichier. La quasi-totalité de ce que l'on ressent obéissait à l'autre.
+
+     Deux mouvements qui ne décélèrent pas pareil, c'est deux mains
+     différentes sur la même interface. C'est très exactement ce qu'on
+     entend par « ça fait brut ». */
+  --default-transition-timing-function: var(--ease-out-soft);
+  --default-transition-duration: 150ms;
 }
 
 @layer base {
@@ -218,9 +235,39 @@
   }
 }
 
+/* Et ce qui se referme.
+
+   La sortie n'existait pas : le menu était retiré du document, donc il
+   s'évaporait. Un peu plus court que l'entrée — on regarde naître, on ne
+   regarde pas mourir — et `forwards`, pour qu'il reste éteint jusqu'à ce que
+   React le retire pour de bon. */
+@keyframes onzer-disparaitre {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
 .animate-surgir {
-  animation: onzer-surgir 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: onzer-surgir 140ms var(--ease-out-soft);
   transform-origin: top right;
+}
+
+.animate-disparaitre {
+  animation: onzer-disparaitre 110ms var(--ease-out-soft) forwards;
+  transform-origin: top right;
+  pointer-events: none;
+}
+
+/* Deux menus sur quatre s'ouvrent vers le haut — ils sont ancrés en bas de
+   leur bouton. Ils se déployaient pourtant depuis leur coin supérieur : leur
+   animation racontait l'inverse de leur mouvement. */
+.vers-le-haut {
+  transform-origin: bottom right;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -323,11 +370,175 @@
    reçu. Un enfoncement d'un pour cent le confirme — c'est peu, et c'est
    exactement ce qu'on attend d'une touche. */
 .pression {
-  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* # Pourquoi les deux sens n'ont pas la même durée
+     Une matière qu'on presse cède vite et revient lentement. Une durée unique
+     dans les deux sens donne le « clic de plastique » : l'élément remonte
+     aussi sec qu'il est descendu, et le geste paraît brutal. Quatre-vingt-dix
+     millisecondes pour descendre, deux cent soixante pour remonter.
+
+     # Pourquoi la liste des propriétés est écrite en entier
+
+     Cette règle vit hors de toute couche ; les utilitaires de Tailwind vivent
+     dans `@layer utilities`. Le non-couché l'emporte toujours. En écrivant
+     simplement `transition: transform`, on **effaçait** donc le
+     `transition-colors` des dix-sept éléments qui portent les deux classes —
+     dont chaque ligne de la bibliothèque : leur fond changeait d'un coup, et
+     la faute n'était visible nulle part. On déclare donc aussi les couleurs,
+     à leur durée à elles. */
+  transition-property: transform, color, background-color, border-color, opacity;
+  transition-duration: 260ms, 150ms, 150ms, 150ms, 150ms;
+  transition-timing-function: var(--ease-out-soft);
 }
 
 .pression:active {
-  transform: scale(0.985);
+  transform: scale(0.97);
+  transition-duration: 90ms, 150ms, 150ms, 150ms, 150ms;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Le grain
+
+   # Pourquoi un fondu sur le noir fait un escalier
+
+   Un écran ne connaît que 256 niveaux par canal. Le fondu de l'en-tête va de
+   #1c1c20 à 70 % vers le transparent, sur le fond #08080a : une fois composé,
+   il ne traverse que **quinze niveaux**. Étalés sur deux cent cinquante
+   pixels, il en manque deux cent trente-cinq pour faire un dégradé continu.
+
+   Une marche, ce n'est pas une colonne de pixels identiques — c'est une
+   **ligne entière** d'une seule teinte. Mesuré en composant le fondu dans un
+   canevas, sur deux cents pixels de large : **83 lignes sur 250 sont unies**,
+   et l'on compte 1,7 teinte par ligne. Ce sont ces 83 lignes que l'œil suit
+   comme des marches.
+
+   Ajouter des étapes au dégradé n'y change rien : les niveaux manquants
+   n'existent pas. La seule issue est de **tramer**. Même mesure, avec le grain
+   ci-dessous à 3,5 % : **14 lignes unies sur 250**, 3,5 teintes par ligne, et
+   le sommet du dégradé n'est éclairci que de deux niveaux (25 → 27). Monter à
+   5 % ne fait gagner que quatre lignes et en coûte un de plus.
+
+   # Pourquoi le grain porte le même masque que le dégradé
+
+   Un grain uniforme s'arrêterait net là où le dégradé s'éteint, et l'on
+   verrait la frontière du grain à la place de celle des bandes. Il reçoit
+   donc le même fondu : fort là où le dégradé travaille, absent là où il n'y
+   a plus rien à cacher.
+   ════════════════════════════════════════════════════════════════════════ */
+.grain {
+  position: relative;
+  /* Le contexte d'empilement est ce qui permet au grain de se glisser
+     **entre** le fond et le contenu : dans un contexte isolé, un z-index
+     négatif se peint après le fond de l'élément et avant ses enfants. Sans
+     lui, la trame passerait devant le texte. */
+  isolation: isolate;
+}
+
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)'/%3E%3C/svg%3E");
+  opacity: var(--grain-force, 0.035);
+  -webkit-mask-image: var(--grain-masque, linear-gradient(to bottom, #000, transparent));
+  mask-image: var(--grain-masque, linear-gradient(to bottom, #000, transparent));
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Le bouton d'accent
+
+   # Pourquoi une couleur et pas deux
+
+   Il était en dégradé du violet vers le cyan. Deux teintes qui ne se
+   ressemblent pas, sur un rectangle de deux cents pixels : c'est la signature
+   des interfaces faites à la va-vite, et cela contredit la règle écrite en
+   tête de ce fichier — aucun dégradé sur de grandes surfaces.
+
+   Une seule couleur, et c'est le survol qui l'éclaircit — pas l'opacité.
+   Baisser l'opacité d'un bouton le fait **se dissoudre dans le fond** : il
+   pâlit au lieu de s'allumer, et sur un fond sombre, un bouton qui pâlit
+   ressemble à un bouton désactivé.
+   ════════════════════════════════════════════════════════════════════════ */
+.bouton-accent {
+  background-color: var(--color-accent);
+  color: var(--color-base);
+  transition:
+    background-color 180ms var(--ease-out-soft),
+    transform 260ms var(--ease-out-soft);
+}
+
+.bouton-accent:hover:not(:disabled) {
+  background-color: color-mix(in oklab, var(--color-accent) 86%, white);
+}
+
+.bouton-accent:active:not(:disabled) {
+  background-color: color-mix(in oklab, var(--color-accent) 90%, black);
+  transform: scale(0.97);
+  transition-duration: 90ms;
+}
+
+.bouton-accent:disabled {
+  background-color: var(--color-raised);
+  color: var(--color-ink-faint);
+}
+
+/* Une pochette qui arrive.
+
+   Elle remplaçait le creux gris d'un seul coup : sur une liste qu'on fait
+   défiler, cela donne un crépitement permanent. Deux cent vingt millisecondes
+   de fondu, et seulement pour celles qu'on n'avait pas encore — celles qu'on
+   possède déjà se peignent instantanément, sinon le défilement clignote pour
+   une autre raison. */
+@keyframes onzer-apparaitre {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-apparaitre {
+  animation: onzer-apparaitre 220ms var(--ease-out-soft);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   La barre flottante
+
+   Elle apparaissait et disparaissait d'un coup, au ras de l'écran. Or une
+   barre posée en bas n'a qu'un seul endroit d'où venir, et c'est le bas :
+   toute autre entrée oblige l'œil à la chercher.
+   ════════════════════════════════════════════════════════════════════════ */
+@keyframes onzer-barre-monte {
+  from {
+    opacity: 0;
+    transform: translateY(120%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes onzer-barre-descend {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(120%);
+  }
+}
+
+.barre-monte {
+  animation: onzer-barre-monte 220ms var(--ease-out-soft);
+}
+
+.barre-descend {
+  animation: onzer-barre-descend 180ms var(--ease-out-soft) forwards;
+  pointer-events: none;
 }
 
 /* Le respect du réglage système n'est pas une option : pour qui souffre de
@@ -336,7 +547,11 @@
   .page-entree,
   .page-depuis-droite,
   .page-depuis-gauche,
-  .animate-surgir {
+  .animate-surgir,
+  .animate-disparaitre,
+  .animate-apparaitre,
+  .barre-monte,
+  .barre-descend {
     animation: none;
   }
 

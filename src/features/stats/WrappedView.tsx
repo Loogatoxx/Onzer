@@ -229,7 +229,7 @@ function Clock({ data }: { data: Wrapped }) {
               className="group relative h-full flex-1"
             >
               <div
-                className={`absolute bottom-0 w-full rounded-t-sm transition-all duration-700 ${
+                className={`absolute bottom-0 w-full rounded-t-sm transition-[height] duration-700 ${
                   isPeak ? "bg-accent" : "bg-elevated group-hover:bg-ink-faint"
                 }`}
                 // 2 % de hauteur minimale : une heure sans écoute reste
@@ -305,7 +305,7 @@ function TopAlbums({ data }: { data: Wrapped }) {
                 className="absolute inset-x-0 bottom-0 h-1/3"
                 style={{
                   backgroundImage:
-                    "linear-gradient(to top, rgba(8,8,10,0.75), transparent)",
+                    "linear-gradient(to top, color-mix(in srgb, var(--color-base) 75%, transparent), transparent)",
                 }}
               />
               <span className="numerals display absolute bottom-2 left-3 text-4xl text-ink">
@@ -396,11 +396,34 @@ function NotEnoughYet({ data }: { data: Wrapped }) {
 //  Éléments partagés
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Positions possibles du dégradé de fond d'une section. */
-const WASHES = {
-  top: "radial-gradient(48rem 26rem at 30% -6rem, rgba(139,92,246,0.09), transparent 70%)",
-  center: "radial-gradient(44rem 24rem at 72% 20%, rgba(245,245,246,0.05), transparent 70%)",
-  left: "radial-gradient(44rem 24rem at 12% 30%, rgba(139,92,246,0.07), transparent 70%)",
+/**
+ * Positions possibles du dégradé de fond d'une section.
+ *
+ * # Géométrie et teinte séparées
+ *
+ * La forme sert deux fois : une fois pour peindre le lavis, une fois pour
+ * découper la trame qui l'empêche de faire des anneaux. Les écrire ensemble
+ * garantissait qu'elles finissent par diverger.
+ *
+ * # Cinq pour cent de blanc, c'est quatre niveaux
+ *
+ * Le lavis « center » traverse quatre niveaux de luminance sur sept cents
+ * pixels : c'est le pire rapport de tout le projet, et un écran 8 bits ne
+ * peut le rendre qu'en quatre bandes. Le grain les remplit.
+ */
+const LAVIS = {
+  top: {
+    forme: "48rem 26rem at 30% -6rem",
+    teinte: "color-mix(in srgb, var(--color-accent) 9%, transparent)",
+  },
+  center: {
+    forme: "44rem 24rem at 72% 20%",
+    teinte: "color-mix(in srgb, var(--color-ink) 5%, transparent)",
+  },
+  left: {
+    forme: "44rem 24rem at 12% 30%",
+    teinte: "color-mix(in srgb, var(--color-accent) 7%, transparent)",
+  },
 } as const;
 
 /**
@@ -417,16 +440,21 @@ function Section({
 }: {
   children: React.ReactNode;
   className?: string;
-  wash?: keyof typeof WASHES;
+  wash?: keyof typeof LAVIS;
   ref?: React.Ref<HTMLElement>;
 }) {
   return (
     <section
       ref={ref}
-      className={`relative px-8 py-24 sm:px-14 sm:py-28 ${className}`}
+      className={`relative px-8 py-24 sm:px-14 sm:py-28 ${wash === undefined ? "" : "grain"} ${className}`}
       {...(wash === undefined
         ? {}
-        : { style: { backgroundImage: WASHES[wash] } })}
+        : {
+            style: {
+              backgroundImage: `radial-gradient(${LAVIS[wash].forme}, ${LAVIS[wash].teinte}, transparent 70%)`,
+              "--grain-masque": `radial-gradient(${LAVIS[wash].forme}, #000, transparent 70%)`,
+            } as React.CSSProperties,
+          })}
     >
       <div className="relative mx-auto max-w-3xl">{children}</div>
     </section>

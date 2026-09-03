@@ -58,7 +58,7 @@ export function ListenBar() {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2.5 text-left"
+        className="pression flex w-full items-center gap-2.5 rounded-md text-left"
       >
         <span
           className={`shrink-0 ${status.running ? "animate-pulse text-accent" : "text-ink-faint"}`}
@@ -83,7 +83,7 @@ export function ListenBar() {
       {status.running && (
         <div className="mt-2 h-1 overflow-hidden rounded-full bg-raised">
           <div
-            className="h-full rounded-full bg-accent transition-[width] duration-500"
+            className="h-full rounded-full bg-accent transition-[width] duration-300"
             style={{ width: `${status.total === 0 ? 0 : (status.done / status.total) * 100}%` }}
           />
         </div>

@@ -117,7 +117,7 @@ export function LyricsBar({ onChanged }: { onChanged: () => void }) {
       {progress.running && (
         <div className="mt-2 h-1 overflow-hidden rounded-full bg-raised">
           <div
-            className="h-full rounded-full bg-accent transition-[width] duration-500"
+            className="h-full rounded-full bg-accent transition-[width] duration-300"
             style={{ width: `${ratio * 100}%` }}
           />
         </div>

@@ -49,7 +49,7 @@ export function AlbumRow({
             key={album.id}
             type="button"
             onClick={() => onOpen(album)}
-            className="w-32 shrink-0 text-left transition-opacity hover:opacity-80"
+            className="pression w-32 shrink-0 text-left hover:opacity-80"
           >
             <Artwork hash={album.artworkHash} className="aspect-square w-full rounded-md" />
 

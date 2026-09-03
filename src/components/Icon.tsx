@@ -288,7 +288,7 @@ export function IconButton({
       aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
-      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-30 ${
+      className={`pression flex h-8 w-8 shrink-0 items-center justify-center rounded-full disabled:opacity-30 ${
         active
           ? "text-accent"
           : "text-ink-muted hover:bg-elevated hover:text-ink"

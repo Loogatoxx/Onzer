@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Artwork } from "@/features/library/Artwork";
 import { Icon } from "@/components/Icon";
 import { formatDuration, ipc, type PlaybackSnapshot } from "@/lib/ipc";
+import { useFermeture } from "@/lib/useFermeture";
 
 /**
  * L'écran de lecture : ce qu'on regarde quand on écoute.
@@ -21,6 +22,24 @@ import { formatDuration, ipc, type PlaybackSnapshot } from "@/lib/ipc";
  * commandes reviendrait à remplacer la seule chose qu'on regarde par des
  * choses qu'on cherche.
  */
+/**
+ * La page est-elle déjà tout en haut ?
+ *
+ * Sans cette question, tirer vers le bas au milieu d'une page qui défile
+ * emporterait la feuille **et** la liste : deux réponses à un seul geste.
+ */
+function auSommet(depuis: HTMLElement): boolean {
+  let noeud: HTMLElement | null = depuis;
+
+  while (noeud !== null) {
+    const style = window.getComputedStyle(noeud).overflowY;
+    if (style === "auto" || style === "scroll") return noeud.scrollTop <= 0;
+    noeud = noeud.parentElement;
+  }
+
+  return true;
+}
+
 export function NowPlayingView({
   state,
   isLoved,
@@ -75,6 +94,18 @@ export function NowPlayingView({
    * commence exactement de la même façon.
    */
   const depart = useRef<number | null>(null);
+  /**
+   * Ce que le doigt a tiré vers le bas, en pixels.
+   *
+   * L'écran ne suivait pas du tout : on tirait, rien ne bougeait, puis à cent
+   * vingt pixels il **disparaissait d'un coup**. Rien ne disait que le geste
+   * était compris, ni combien il en restait — et la sortie n'existait pas.
+   */
+  const [tire, setTire] = useState(0);
+  /** Vrai le temps que la feuille achève de descendre. */
+  const [ferme, setFerme] = useState(false);
+  /** Le geste n'a le droit de tirer que si la page est déjà en haut. */
+  const enHaut = useRef(true);
   const track = state.current;
 
   if (track === null) {
@@ -101,9 +132,31 @@ export function NowPlayingView({
       // Le glissement vers le bas, lui, se lit sur les événements tactiles :
       // le pointeur est annulé dès que le navigateur croit à un défilement, et
       // un glissement vers le bas est précisément ce qui y ressemble le plus.
+      style={{
+        transform: ferme ? "translateY(100%)" : `translateY(${tire}px)`,
+        // Le fondu accompagne la descente : à mi-chemin on voit déjà que
+        // l'écran s'en va, ce qui rend le seuil devinable sans l'écrire.
+        opacity: ferme ? 0 : 1 - Math.min(0.45, tire / 500),
+        // Pendant qu'on tient, aucune transition : la moindre en ferait un
+        // retard. Au relâchement, la feuille rejoint sa place ou s'en va.
+        transition:
+          tire > 0 && !ferme
+            ? "none"
+            : "transform 260ms var(--ease-out-soft), opacity 260ms var(--ease-out-soft)",
+      }}
       onTouchStart={(event) => {
         const doigt = event.touches[0];
         depart.current = doigt === undefined ? null : doigt.clientY;
+        enHaut.current = auSommet(event.currentTarget);
+      }}
+      onTouchMove={(event) => {
+        const origine = depart.current;
+        const doigt = event.touches[0];
+        if (origine === null || doigt === undefined || !enHaut.current) return;
+
+        // Vers le bas seulement : tirer vers le haut ne ferme rien, et
+        // décoller la feuille de son bord donnerait un jeu qui n'existe pas.
+        setTire(Math.max(0, doigt.clientY - origine));
       }}
       onTouchEnd={(event) => {
         const origine = depart.current;
@@ -111,11 +164,17 @@ export function NowPlayingView({
 
         const doigt = event.changedTouches[0];
         if (origine !== null && doigt !== undefined && doigt.clientY - origine > 120) {
-          onClose();
+          // Elle finit sa descente avant de céder la page : une fermeture qui
+          // se voit est une fermeture qu'on a comprise.
+          setFerme(true);
+          setTimeout(onClose, 220);
+          return;
         }
+        setTire(0);
       }}
       onTouchCancel={() => {
         depart.current = null;
+        setTire(0);
       }}
     >
       {/* # Toucher la pochette l'agrandit
@@ -127,7 +186,7 @@ export function NowPlayingView({
         type="button"
         aria-label="Agrandir la pochette"
         onClick={() => setAgrandie(true)}
-        className="w-full"
+        className="pression w-full"
       >
         <Artwork
           hash={track.artworkHash}
@@ -140,7 +199,7 @@ export function NowPlayingView({
           role="dialog"
           aria-label="Pochette"
           onClick={() => setAgrandie(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-base/95 p-4"
         >
           <Artwork hash={track.artworkHash} className="max-h-full w-full rounded-xl" />
         </div>
@@ -314,6 +373,7 @@ export function NowPlayingView({
  */
 function Minuteur({ restantDuMorceau }: { restantDuMorceau: number }) {
   const [ouvert, setOuvert] = useState(false);
+  const monte = useFermeture(ouvert);
   const [restant, setRestant] = useState<number | null>(null);
   const ancre = useRef<HTMLDivElement>(null);
 
@@ -369,8 +429,10 @@ function Minuteur({ restantDuMorceau }: { restantDuMorceau: number }) {
         {arme ? `${minutes} min` : "Minuteur"}
       </button>
 
-      {ouvert && (
-        <div className="animate-surgir absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60">
+      {monte && (
+        <div
+          className={`${ouvert ? "animate-surgir" : "animate-disparaitre"} vers-le-haut absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60`}
+        >
           {choix.map((entree) => (
             <button
               key={entree.libelle}

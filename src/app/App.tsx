@@ -76,22 +76,38 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Géométrie du halo, partagée par le dégradé et par sa trame. */
+const HALO = "60rem 32rem at 50% -12rem";
+
 /**
  * Halo d'ambiance de l'écran d'accueil.
  *
  * Un dégradé radial, et non un cercle flouté : un disque en `blur` garde un
  * bord — très doux, mais présent — que l'œil finit toujours par repérer sur un
  * fond aussi sombre. Le dégradé, lui, s'éteint mathématiquement à zéro.
+ *
+ * # Mais zéro en mathématiques n'est pas zéro à l'écran
+ *
+ * Dix pour cent de violet sur du #08080a, cela fait six niveaux de luminance
+ * répartis sur cinq cents pixels de rayon. Un écran n'en a pas d'autres à
+ * offrir : il dessine donc six anneaux concentriques là où l'on croyait poser
+ * un souffle. Le grain remplit ces anneaux — c'est la seule issue, et c'est
+ * celle qu'emploie tout ce qui affiche des noirs pour de bon.
  */
 function AmbientGlow() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0"
-      style={{
-        backgroundImage:
-          "radial-gradient(60rem 32rem at 50% -12rem, rgba(139,92,246,0.10), transparent 70%)",
-      }}
+      className="grain pointer-events-none absolute inset-0"
+      style={
+        {
+          backgroundImage: `radial-gradient(${HALO}, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 70%)`,
+          // La trame épouse la forme du halo : elle s'éteint là où il s'éteint,
+          // faute de quoi on verrait la frontière du grain à la place des
+          // anneaux qu'il efface.
+          "--grain-masque": `radial-gradient(${HALO}, #000, transparent 70%)`,
+        } as React.CSSProperties
+      }
     />
   );
 }
@@ -99,7 +115,7 @@ function AmbientGlow() {
 function Branding() {
   return (
     <div className="text-center">
-      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-accent-alt shadow-lg shadow-accent/20">
+      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-accent">
         <svg viewBox="0 0 24 24" className="h-8 w-8 text-base" aria-hidden>
           <path fill="currentColor" d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6Z" />
         </svg>

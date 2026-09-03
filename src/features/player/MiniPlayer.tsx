@@ -60,10 +60,21 @@ export function MiniPlayer({
     // qu'on fait quand on rate une phrase, et il n'a nulle part où se poser
     // sur une barre haute de cinquante pixels.
     <div className="shrink-0 touch-pan-y border-t border-line bg-elevated" {...geste}>
+      {/* # Deux cent cinquante millisecondes, et en ligne droite
+
+          Le cœur pousse la position toutes les 250 ms. La barre s'animait sur
+          500 : elle mettait deux tics à rejoindre une valeur qui en avait déjà
+          changé, et ne rattrapait donc jamais rien — elle flottait.
+
+          En ligne droite, aussi : une barre de lecture avance à vitesse
+          constante. Lui donner une courbe de décélération la fait bondir puis
+          ramper à chaque tic, ce qui est exactement le contraire de ce qu'elle
+          raconte. Et c'est une mise à l'échelle, pas une largeur : la largeur
+          se recalcule, l'échelle se compose. */}
       <div className="h-[2px] bg-raised">
         <div
-          className="h-full bg-accent transition-[width] duration-500"
-          style={{ width: `${ratio * 100}%` }}
+          className="h-full origin-left bg-accent transition-transform duration-[250ms] ease-linear"
+          style={{ transform: `scaleX(${ratio})` }}
         />
       </div>
 
@@ -71,7 +82,7 @@ export function MiniPlayer({
         <button
           type="button"
           onClick={onOpen}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          className="pression flex min-w-0 flex-1 items-center gap-3 text-left"
         >
           <Artwork hash={track.artworkHash} className="h-11 w-11 shrink-0 rounded-md" />
 
@@ -89,7 +100,7 @@ export function MiniPlayer({
           type="button"
           aria-label={state.isPlaying ? "Pause" : "Lire"}
           onClick={onToggle}
-          className="flex h-10 w-10 shrink-0 items-center justify-center text-ink"
+          className="pression flex h-10 w-10 shrink-0 items-center justify-center text-ink"
         >
           <Icon name={state.isPlaying ? "pause" : "play"} size={22} />
         </button>
@@ -98,7 +109,7 @@ export function MiniPlayer({
           type="button"
           aria-label="Morceau suivant"
           onClick={onNext}
-          className="flex h-10 w-10 shrink-0 items-center justify-center text-ink-muted"
+          className="pression flex h-10 w-10 shrink-0 items-center justify-center text-ink-muted"
         >
           <Icon name="next" size={20} />
         </button>
@@ -107,7 +118,7 @@ export function MiniPlayer({
           type="button"
           aria-label="File d'attente"
           onClick={onOpenQueue}
-          className="flex h-10 w-10 shrink-0 items-center justify-center text-ink-muted"
+          className="pression flex h-10 w-10 shrink-0 items-center justify-center text-ink-muted"
         >
           <Icon name="queue" size={19} />
         </button>

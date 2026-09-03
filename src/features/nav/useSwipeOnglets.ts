@@ -31,8 +31,36 @@ const SEUIL = 70;
  */
 const RESISTANCE = 0.32;
 
-/** Au-delà, la page ne s'écarte plus : le geste est déjà largement acquis. */
+/**
+ * L'écart dont la page s'approche sans jamais l'atteindre.
+ *
+ * # Pourquoi une asymptote et non un plafond
+ *
+ * L'écart était simplement écrêté : jusqu'à quatre-vingt-dix pixels la page
+ * suivait, puis elle se **figeait** sous un doigt qui continuait d'avancer. La
+ * résistance passait de 0,32 à zéro d'un seul coup — un mur, là où l'on
+ * attend un élastique. C'est très exactement ce qu'on ressent comme « brut » :
+ * une matière qui change de nature en cours de geste.
+ *
+ * La tangente hyperbolique donne la même pente au départ et s'approche de la
+ * limite sans l'atteindre. La page résiste de plus en plus, et jamais
+ * brutalement.
+ */
 const ECART_MAX = 90;
+
+/**
+ * Vitesse, en pixels par milliseconde, à partir de laquelle un geste compte
+ * même s'il est court.
+ *
+ * Un coup de pouce vif de soixante pixels est un geste parfaitement clair, et
+ * il ne se passait rien : seule la distance était regardée. Une application
+ * qui ignore l'élan oblige à faire de grands gestes lents — et c'est ce qui
+ * donne l'impression qu'elle ne comprend pas.
+ */
+const VITESSE_MIN = 0.45;
+
+/** En dessous, même lancé, ce n'est pas un geste mais un frémissement. */
+const DISTANCE_MIN = 24;
 
 /** D'où la nouvelle page arrive. */
 export type Sens = "gauche" | "droite";
@@ -95,6 +123,16 @@ export function useSwipeOnglets(
   onEcart: (ecart: number) => void,
 ) {
   const depart = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * Le geste a-t-il été reconnu comme horizontal ?
+   *
+   * Sans ce verrou, repasser sous les douze pixels en cours de mouvement
+   * remettait l'écart à zéro : la page repartait en animation de retour
+   * pendant que le doigt était encore posé, et le suivi décrochait.
+   */
+  const horizontal = useRef(false);
+  /** Les deux dernières positions, pour mesurer l'élan au relâchement. */
+  const dernier = useRef<{ x: number; t: number } | null>(null);
 
   const index = PAGES.findIndex((page) => page.kind === route.kind);
   const applicable = actif && index !== -1;
@@ -108,6 +146,8 @@ export function useSwipeOnglets(
     onTouchStart: (event: React.TouchEvent) => {
       const doigt = event.touches[0];
 
+      horizontal.current = false;
+      dernier.current = null;
       depart.current =
         doigt === undefined || event.touches.length > 1
           ? null
@@ -130,21 +170,32 @@ export function useSwipeOnglets(
       const dx = doigt.clientX - origine.x;
       const dy = doigt.clientY - origine.y;
 
-      if (Math.abs(dx) < 12 || Math.abs(dx) < Math.abs(dy) * 2) {
-        onEcart(0);
-        return;
+      // Un repère tous les cinquante millisecondes, pas à chaque image : la
+      // vitesse mesurée sur seize millisecondes est du bruit, pas un élan.
+      const trace = dernier.current;
+      if (trace === null || event.timeStamp - trace.t > 50) {
+        dernier.current = { x: doigt.clientX, t: event.timeStamp };
+      }
+
+      // Une fois reconnu, le geste le reste : on ne redemande pas au doigt de
+      // prouver son intention à chaque image.
+      if (!horizontal.current) {
+        if (Math.abs(dx) < 12 || Math.abs(dx) < Math.abs(dy) * 2) {
+          onEcart(0);
+          return;
+        }
+        horizontal.current = true;
       }
 
       // Sans page de ce côté, l'écart est divisé par trois : le geste répond,
       // mais son inutilité se sent avant qu'on n'aille au bout.
       const resistance = existe(dx) ? RESISTANCE : RESISTANCE / 3;
-      const ecart = Math.max(-ECART_MAX, Math.min(ECART_MAX, dx * resistance));
-
-      onEcart(ecart);
+      onEcart(ECART_MAX * Math.tanh((dx * resistance) / ECART_MAX));
     },
     onTouchEnd: (event: React.TouchEvent) => {
       const origine = depart.current;
       depart.current = null;
+      horizontal.current = false;
       onEcart(0);
 
       const doigt = event.changedTouches[0];
@@ -152,7 +203,20 @@ export function useSwipeOnglets(
 
       const dx = doigt.clientX - origine.x;
       const dy = doigt.clientY - origine.y;
-      if (Math.abs(dx) < SEUIL || Math.abs(dx) < Math.abs(dy) * 2) return;
+      if (Math.abs(dx) < Math.abs(dy) * 2) return;
+
+      // L'élan des derniers instants, et non la moyenne depuis le départ : un
+      // geste qui hésite puis part vif est un geste vif.
+      const trace = dernier.current;
+      const duree = trace === null ? 0 : event.timeStamp - trace.t;
+      const vitesse =
+        trace === null || duree <= 0
+          ? 0
+          : Math.abs(doigt.clientX - trace.x) / duree;
+
+      const assezLoin = Math.abs(dx) >= SEUIL;
+      const assezVif = vitesse >= VITESSE_MIN && Math.abs(dx) >= DISTANCE_MIN;
+      if (!assezLoin && !assezVif) return;
 
       const cible = PAGES[index + (dx < 0 ? 1 : -1)];
       // Le doigt part vers la gauche : la page suivante arrive **par la
@@ -162,6 +226,7 @@ export function useSwipeOnglets(
     },
     onTouchCancel: () => {
       depart.current = null;
+      horizontal.current = false;
       onEcart(0);
     },
   };

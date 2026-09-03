@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/Icon";
 import type { PlaylistSummary } from "@/lib/ipc";
+import { useFermeture } from "@/lib/useFermeture";
 
 /**
  * Ce qu'on fait d'une poignée de morceaux.
@@ -22,6 +23,7 @@ export function BarreSelection({
   onLove,
   onAll,
   onClose,
+  sortie,
 }: {
   nombre: number;
   playlists: PlaylistSummary[];
@@ -31,8 +33,11 @@ export function BarreSelection({
   onLove: () => void;
   onAll: () => void;
   onClose: () => void;
+  /** Vrai pendant qu'elle redescend : la sélection est déjà vide. */
+  sortie: boolean;
 }) {
   const [choixPlaylist, setChoixPlaylist] = useState(false);
+  const monteChoix = useFermeture(choixPlaylist);
   const ancre = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,7 +52,9 @@ export function BarreSelection({
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:pb-6">
-      <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full bg-raised px-2 py-1.5 shadow-2xl shadow-black/60">
+      <div
+        className={`${sortie ? "barre-descend" : "barre-monte"} pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full bg-raised px-2 py-1.5 shadow-2xl shadow-black/60`}
+      >
         <span className="numerals shrink-0 px-2 text-[13px] font-semibold text-ink">
           {nombre}
         </span>
@@ -63,8 +70,10 @@ export function BarreSelection({
             onClick={() => setChoixPlaylist(!choixPlaylist)}
           />
 
-          {choixPlaylist && (
-            <div className="animate-surgir absolute bottom-11 right-0 max-h-64 w-56 overflow-y-auto rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60">
+          {monteChoix && (
+            <div
+              className={`${choixPlaylist ? "animate-surgir" : "animate-disparaitre"} vers-le-haut absolute bottom-11 right-0 max-h-64 w-56 overflow-y-auto rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60`}
+            >
               {playlists.length === 0 ? (
                 <p className="px-3 py-2 text-[12px] leading-snug text-ink-faint">
                   Aucune playlist. Crée-en une d&apos;abord.

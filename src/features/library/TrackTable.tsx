@@ -8,6 +8,7 @@ import {
   type TrackSummary,
 } from "@/lib/ipc";
 import { Artwork } from "./Artwork";
+import { useFermeture } from "@/lib/useFermeture";
 
 /**
  * Gabarit de colonnes, partagé par l'en-tête et les lignes.
@@ -176,7 +177,11 @@ function SortHeader({
     >
       {children ?? label}
       {actif && (
-        <span className={sort?.descending === true ? "" : "rotate-180"}>
+        <span
+                    className={`transition-transform duration-200 ${
+                      sort?.descending === true ? "" : "rotate-180"
+                    }`}
+                  >
           <Icon name="chevronDown" size={13} />
         </span>
       )}
@@ -458,21 +463,31 @@ function TrackRow({
             <Icon name="check" size={11} />
           </span>
         ) : isCurrent ? (
-          <span className="group-hover:hidden">
+          <span className="absolute transition-opacity group-hover:opacity-0">
             <PlayingIndicator animated={isPlaying} />
           </span>
         ) : (
-          <span className="numerals text-sm text-ink-faint group-hover:hidden">
+          <span className="numerals absolute text-sm text-ink-faint transition-opacity group-hover:opacity-0">
             {index + 1}
           </span>
         )}
 
+        {/* # Pourquoi une opacité et non un `display`
+
+            Le numéro disparaissait et le bouton apparaissait par bascule de
+            `display` : deux permutations sans état intermédiaire, sur la même
+            case, à chaque ligne survolée. C'était le clignotement le plus
+            visible de la bibliothèque.
+
+            Les clics restent inertes tant que le bouton est transparent :
+            sur un écran tactile le survol n'existe pas, et un bouton invisible
+            posé sur le numéro capterait les appuis destinés à la ligne. */}
         <button
           type="button"
           disabled={unavailable}
           aria-label={`Lire ${track.title}`}
           onClick={onPlay}
-          className="hidden text-ink group-hover:flex disabled:cursor-not-allowed"
+          className="pointer-events-none absolute flex text-ink opacity-0 transition-opacity disabled:cursor-not-allowed group-hover:pointer-events-auto group-hover:opacity-100"
         >
           <Icon name={isCurrent && isPlaying ? "pause" : "play"} size={15} />
         </button>
@@ -652,6 +667,7 @@ function TriCompact({
   onSort: (column: SortColumn) => void;
 }) {
   const [ouvert, setOuvert] = useState(false);
+  const monte = useFermeture(ouvert);
   const ancre = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -693,8 +709,8 @@ function TriCompact({
         </span>
       </button>
 
-      {ouvert && (
-        <div className="animate-surgir absolute right-1.5 top-8 z-30 w-44 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60">
+      {monte && (
+        <div className={`${ouvert ? "animate-surgir" : "animate-disparaitre"} absolute right-1.5 top-8 z-30 w-44 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60`}>
           {(Object.keys(NOMS_DE_TRI) as SortColumn[]).map((colonne) => {
             const actif = sort?.column === colonne;
             return (
@@ -711,7 +727,11 @@ function TriCompact({
               >
                 {NOMS_DE_TRI[colonne]}
                 {actif && (
-                  <span className={sort?.descending === true ? "" : "rotate-180"}>
+                  <span
+                    className={`transition-transform duration-200 ${
+                      sort?.descending === true ? "" : "rotate-180"
+                    }`}
+                  >
                     <Icon name="chevronDown" size={12} />
                   </span>
                 )}
@@ -769,6 +789,7 @@ function RowMenu({
   onOpenChange: (open: boolean) => void;
 }) {
   const setOpen = onOpenChange;
+  const monte = useFermeture(open);
   /** Deuxième clic exigé avant de retirer de la bibliothèque. */
   const [armed, setArmed] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
@@ -829,8 +850,10 @@ function RowMenu({
         className={open ? "" : "lg:opacity-0 lg:focus:opacity-100 lg:group-hover:opacity-100"}
       />
 
-      {open && (
-        <div className="animate-surgir absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60">
+      {monte && (
+        <div
+          className={`${open ? "animate-surgir" : "animate-disparaitre"} absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60`}
+        >
           <MenuItem icon="queue" onClick={() => choose(onEnqueue)}>
             Ajouter à la file d'attente
           </MenuItem>
@@ -955,7 +978,7 @@ function MenuItem({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 px-3 py-2 text-left text-[13px] text-ink-muted transition-colors hover:bg-elevated hover:text-ink"
+      className="pression flex w-full items-center gap-3 px-3 py-2 text-left text-[13px] text-ink-muted hover:bg-elevated hover:text-ink"
     >
       <Icon name={icon} size={16} />
       <span className="truncate">{children}</span>

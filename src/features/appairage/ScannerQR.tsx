@@ -126,7 +126,7 @@ export function ScannerQR({
     <div
       role="dialog"
       aria-label="Scanner le code"
-      className="fixed inset-0 z-50 flex flex-col bg-black"
+      className="fixed inset-0 z-50 flex flex-col bg-base"
     >
       <div className="flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <p className="text-sm font-medium text-ink">Vise le QR de l&apos;autre appareil</p>
@@ -146,14 +146,14 @@ export function ScannerQR({
           autoPlay
           playsInline
           muted
-          className="h-full w-full bg-black object-cover"
+          className="h-full w-full bg-base object-cover"
         />
 
         {/* Un cadre au centre : sans repère, on ne sait pas où viser, et l'on
             approche le téléphone jusqu'à ce que le QR sorte du champ. */}
         {erreur === null && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="h-56 w-56 rounded-2xl border-2 border-white/70" />
+            <div className="h-56 w-56 rounded-2xl border-2 border-ink/70" />
           </div>
         )}
 
@@ -162,7 +162,7 @@ export function ScannerQR({
             un rectangle vide et rien d'autre : l'explication existait, hors du
             regard. */}
         {erreur !== null && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black px-8 text-center">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-base px-8 text-center">
             <span className="text-warn">
               <Icon name="close" size={28} />
             </span>

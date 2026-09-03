@@ -117,7 +117,7 @@ function Recevoir() {
           type="button"
           disabled={occupe}
           onClick={() => void ouvrir()}
-          className="pression mt-5 w-full rounded-xl bg-gradient-to-br from-accent to-accent-alt px-4 py-3 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="mt-5 w-full rounded-xl bouton-accent px-4 py-3 text-sm font-medium"
         >
           {occupe ? "Ouverture…" : "Ouvrir la porte"}
         </button>
@@ -414,7 +414,7 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
         type="button"
         disabled={!pret || occupe}
         onClick={() => void lancer()}
-        className="pression mt-5 w-full rounded-xl bg-gradient-to-br from-accent to-accent-alt px-4 py-3 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"
+        className="mt-5 w-full rounded-xl bouton-accent px-4 py-3 text-sm font-medium"
       >
         {occupe ? "Échange en cours…" : "Synchroniser"}
       </button>

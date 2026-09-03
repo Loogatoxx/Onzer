@@ -92,7 +92,7 @@ export function PageHeader({
   }
 
   return (
-    <header className="relative bg-gradient-to-b from-elevated/70 to-transparent px-6 pb-4 pt-6">
+    <header className="grain relative bg-gradient-to-b from-elevated/70 to-transparent px-6 pb-4 pt-6">
       {/* Sur un écran étroit, la pochette et le titre côte à côte laissent au
           titre une colonne de cent pixels. Ils s'empilent donc, pochette
           centrée au-dessus — la disposition que tous les lecteurs de téléphone
@@ -263,7 +263,7 @@ export function HeaderAction({
       aria-label={label}
       aria-pressed={active}
       onClick={onClick}
-      className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+      className={`pression flex h-10 w-10 items-center justify-center rounded-full ${
         active ? "text-accent" : "text-ink-muted hover:text-ink"
       }`}
     >
@@ -282,7 +282,7 @@ export function CoverTile({
 }) {
   return (
     <div
-      className={`flex items-center justify-center bg-gradient-to-br from-raised to-elevated ${size}`}
+      className={`flex items-center justify-center bg-raised ${size}`}
     >
       <Icon name={name} size={56} className="text-ink-muted" />
     </div>

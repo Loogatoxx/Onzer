@@ -25,6 +25,7 @@ import type { SortColumn, TrackSort } from "@/features/library/TrackTable";
 import { MobileTabs } from "@/features/nav/MobileTabs";
 import { useSwipeOnglets, type Sens } from "@/features/nav/useSwipeOnglets";
 import { BarreSelection } from "@/features/library/BarreSelection";
+import { useFermeture } from "@/lib/useFermeture";
 import {
   BarreFiltres,
   ListeRegroupements,
@@ -800,6 +801,15 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
    */
   const [selection, setSelection] = useState<ReadonlySet<number> | null>(null);
 
+  /* La barre de sélection doit survivre à la disparition de la sélection, le
+     temps de redescendre. On garde donc la dernière connue : sans elle, le
+     compteur tomberait à zéro pendant l'animation, et l'on verrait « 0
+     morceau sélectionné » s'en aller. */
+  const derniereSelection = useRef<ReadonlySet<number>>(new Set());
+  if (selection !== null) derniereSelection.current = selection;
+  const selectionVisible = selection ?? derniereSelection.current;
+  const monteSelection = useFermeture(selection !== null, 200);
+
   // Changer de destination ferme la sélection : elle portait sur des morceaux
   // qu'on ne voit plus, et agir dessus depuis ailleurs serait une surprise.
   const cleRoute = routeKey(route);
@@ -1495,21 +1505,25 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
         />
       )}
 
-      {selection !== null && (
+      {/* Elle reste montée le temps de redescendre. Pendant ces deux cents
+          millisecondes la sélection est déjà vide : c'est la dernière connue
+          qui alimente le compteur, et la barre n'accepte plus les clics. */}
+      {monteSelection && (
         <BarreSelection
-          nombre={selection.size}
+          sortie={selection === null}
+          nombre={selectionVisible.size}
           playlists={playlists}
           onEnqueue={() => {
-            void playback.enqueue([...selection]);
+            void playback.enqueue([...selectionVisible]);
             setSelection(null);
           }}
           onPlayNext={() => {
-            void playback.playNext([...selection]);
+            void playback.playNext([...selectionVisible]);
             setSelection(null);
           }}
           onAddToPlaylist={(playlistId) => {
             void ipc
-              .addToPlaylist(playlistId, [...selection])
+              .addToPlaylist(playlistId, [...selectionVisible])
               .then(() => {
                 reloadPlaylists();
                 bump();
@@ -1520,7 +1534,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           onLove={() => {
             // Seuls ceux qui ne le sont pas encore : basculer aveuglément
             // retirerait des favoris à ceux qui en avaient déjà.
-            for (const id of selection) {
+            for (const id of selectionVisible) {
               if (!loved.has(id)) void toggleLoved(id);
             }
             setSelection(null);
@@ -1729,10 +1743,12 @@ function CollectionSwitch({
       : "";
 
   return (
-    // Le même dégradé que l'en-tête juste en dessous : posé sur le fond de
-    // base, le sélecteur formait une bande d'une autre couleur, comme collée
-    // par-dessus la page.
-    <div className="flex gap-2 overflow-x-auto bg-gradient-to-b from-elevated/70 to-elevated/40 px-6 pb-1 pt-4">
+    // Un aplat, et non un dégradé : il porte la même valeur que le **départ**
+    // du fondu de l'en-tête, juste en dessous. Les deux formaient auparavant
+    // deux escaliers empilés — celui-ci descendait de 70 % à 40 %, puis
+    // l'en-tête repartait de 70 %. Une bande plate suivie d'un seul fondu se
+    // lit comme une seule surface, et n'a aucune marche à montrer.
+    <div className="flex gap-2 overflow-x-auto bg-elevated/70 px-6 pb-1 pt-4">
       {onglets.map((onglet) => (
         <button
           key={onglet.cle}
@@ -1848,9 +1864,7 @@ function Page(props: PageProps) {
           title="Récemment joué"
           meta={meta}
           cover={
-            <div className="flex h-40 w-40 items-center justify-center bg-gradient-to-br from-accent-alt to-accent sm:h-52 sm:w-52">
-              <Icon name="clock" size={72} className="text-base" />
-            </div>
+            <CoverTile name="clock" />
           }
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
@@ -2383,7 +2397,7 @@ function ProgressBar({ progress }: { progress: ScanProgress }) {
     <div className="pointer-events-auto rounded-2xl bg-elevated px-4 py-3 shadow-2xl shadow-black/50">
       <div className="h-1 overflow-hidden rounded-full bg-raised">
         <div
-          className="h-full rounded-full bg-ink transition-[width] duration-150"
+          className="h-full rounded-full bg-ink transition-[width] duration-300"
           style={{ width: `${ratio * 100}%` }}
         />
       </div>

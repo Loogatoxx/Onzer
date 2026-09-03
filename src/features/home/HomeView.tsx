@@ -179,7 +179,7 @@ function CategoryCard({
     >
       <div className="flex h-20 w-full">
         {category.coverHashes.length === 0 ? (
-          <div className="h-full w-full bg-gradient-to-br from-raised to-elevated" />
+          <div className="h-full w-full bg-raised" />
         ) : (
           category.coverHashes.slice(0, 4).map((hash, index) => (
             <Artwork
@@ -256,7 +256,7 @@ function ResumeGrid({
           type="button"
           disabled={!track.isAvailable}
           onClick={() => onPlay(tracks, index)}
-          className="group flex items-center gap-3 overflow-hidden rounded-md bg-elevated pr-3 text-left transition-colors hover:bg-raised disabled:opacity-40"
+          className="pression group flex items-center gap-3 overflow-hidden rounded-md bg-elevated pr-3 text-left hover:bg-raised disabled:opacity-40"
         >
           <Artwork hash={track.artworkHash} className="h-14 w-14 rounded-none" />
 
@@ -325,7 +325,7 @@ function MixCard({
 function CoverMosaic({ hashes }: { hashes: string[] }) {
   if (hashes.length === 0) {
     return (
-      <div className="flex aspect-square w-full items-center justify-center bg-gradient-to-br from-raised to-elevated">
+      <div className="flex aspect-square w-full items-center justify-center bg-raised">
         <Icon name="sparkle" size={32} className="text-ink-faint" />
       </div>
     );

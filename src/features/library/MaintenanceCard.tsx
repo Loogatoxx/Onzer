@@ -40,7 +40,7 @@ export function MaintenanceCard({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2.5 px-3 py-2 text-left"
+        className="pression flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left"
       >
         <span className={`shrink-0 ${pending > 0 ? "text-ink-muted" : "text-ink-faint"}`}>
           <Icon name="settings" size={16} />

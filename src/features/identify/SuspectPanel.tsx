@@ -58,7 +58,7 @@ export function SuspectPanel({ onRestored }: { onRestored: () => void }) {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2.5 text-left"
+        className="pression flex w-full items-center gap-2.5 rounded-md text-left"
       >
         <span className="shrink-0 text-warn">
           <Icon name="sparkle" size={16} />

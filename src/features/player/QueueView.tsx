@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Artwork } from "@/features/library/Artwork";
 import { Icon } from "@/components/Icon";
@@ -34,9 +34,33 @@ export function QueueView({
   const depart = (state.queueIndex ?? -1) + 1;
   const suite = state.queue.slice(depart);
 
-  /** Ce qu'on déplace, et où il en est. */
-  const [glisse, setGlisse] = useState<{ index: number; ecart: number } | null>(null);
+  /**
+   * Ce qu'on déplace, et où il en est.
+   *
+   * `pose` distingue les deux moitiés du geste : tant qu'il est faux, la ligne
+   * colle au doigt ; une fois vrai, elle rejoint sa case d'arrivée.
+   */
+  const [glisse, setGlisse] = useState<{
+    index: number;
+    ecart: number;
+    pose: boolean;
+  } | null>(null);
   const origine = useRef(0);
+
+  /* La liste réordonnée qui revient du cœur efface le déplacement : à cet
+     instant précis, la ligne posée et la ligne réordonnée occupent le même
+     pixel, et l'échange ne se voit pas. Le délai de sécurité ne sert que si
+     la commande échoue — sans lui, la ligne resterait soulevée. */
+  const signature = suite.map((item) => item.trackId).join(",");
+  useEffect(() => {
+    setGlisse(null);
+  }, [signature]);
+
+  useEffect(() => {
+    if (glisse === null || !glisse.pose) return;
+    const minuteur = setTimeout(() => setGlisse(null), 400);
+    return () => clearTimeout(minuteur);
+  }, [glisse]);
 
   /**
    * La destination, déduite de la distance parcourue.
@@ -53,11 +77,31 @@ export function QueueView({
           Math.min(suite.length - 1, glisse.index + Math.round(glisse.ecart / HAUTEUR)),
         );
 
+  /**
+   * On lâche.
+   *
+   * # Pourquoi la ligne ne revient pas à sa case de départ
+   *
+   * Elle le faisait : le déplacement était effacé, la ligne repartait en
+   * arrière sur cent soixante millisecondes pendant que l'ordre voyageait vers
+   * le cœur, puis la nouvelle liste la faisait réapparaître ailleurs d'un
+   * coup. Deux mouvements contradictoires pour un seul geste — on ne voyait
+   * jamais le morceau se poser où on l'avait mis.
+   *
+   * Il est posé sur sa case d'arrivée, au pixel où la liste réordonnée le
+   * dessinera. Quand elle arrive, l'échange est invisible.
+   */
   function terminer() {
-    if (glisse !== null && cible !== null && cible !== glisse.index) {
-      onMove(depart + glisse.index, depart + cible);
+    if (glisse === null || glisse.pose) return;
+
+    if (cible === null || cible === glisse.index) {
+      // Rien n'a bougé : rien à attendre, la ligne se repose tout de suite.
+      setGlisse(null);
+      return;
     }
-    setGlisse(null);
+
+    onMove(depart + glisse.index, depart + cible);
+    setGlisse({ index: glisse.index, ecart: (cible - glisse.index) * HAUTEUR, pose: true });
   }
 
   /** De combien cette ligne s'écarte pour laisser passer celle qu'on déplace. */
@@ -108,21 +152,30 @@ export function QueueView({
           </p>
         ) : (
           <ul className="mt-2 select-none">
-            {suite.map((item, index) => (
+            {suite.map((item, index) => {
+              const saisie = glisse?.index === index;
+              /* Deux moitiés du geste, deux comportements : tant qu'on tient,
+                 la ligne suit le doigt sans transition — la moindre en ferait
+                 un retard. Une fois lâchée, elle voyage jusqu'à sa case. */
+              const colle = saisie && glisse !== null && !glisse.pose;
+              const ecart = saisie && glisse !== null ? glisse.ecart : decalage(index);
+
+              return (
               <li
                 key={`${item.trackId}-${index}`}
                 style={{
                   height: HAUTEUR,
-                  transform: `translateY(${
-                    glisse?.index === index ? glisse.ecart : decalage(index)
-                  }px)`,
-                  // Celle qu'on déplace colle au doigt ; les autres glissent.
-                  transition: glisse?.index === index ? "none" : "transform 160ms",
-                  zIndex: glisse?.index === index ? 10 : undefined,
+                  // Un pour cent et demi d'échelle : la ligne décolle du plan
+                  // au lieu de simplement changer de couleur.
+                  transform: `translateY(${ecart}px) scale(${colle ? 1.015 : 1})`,
+                  transition: colle
+                    ? "background-color 140ms var(--ease-out-soft), box-shadow 140ms var(--ease-out-soft)"
+                    : "transform 200ms var(--ease-out-soft), background-color 140ms var(--ease-out-soft), box-shadow 140ms var(--ease-out-soft)",
+                  zIndex: saisie ? 10 : undefined,
                   position: "relative",
                 }}
                 className={`flex items-center gap-2.5 rounded-md pr-1 ${
-                  glisse?.index === index ? "bg-raised shadow-2xl shadow-black/50" : ""
+                  colle ? "bg-raised shadow-2xl shadow-black/50" : ""
                 }`}
               >
                 {/* # Pourquoi une poignée, et pas la ligne entière
@@ -132,15 +185,17 @@ export function QueueView({
                 <button
                   type="button"
                   aria-label="Déplacer"
-                  className="flex h-10 w-8 shrink-0 cursor-grab touch-none items-center justify-center text-ink-faint active:cursor-grabbing"
+                  className={`flex h-10 w-8 shrink-0 cursor-grab touch-none items-center justify-center transition-colors active:cursor-grabbing ${
+                    colle ? "text-ink" : "text-ink-faint"
+                  }`}
                   onPointerDown={(event) => {
                     event.currentTarget.setPointerCapture(event.pointerId);
                     origine.current = event.clientY;
-                    setGlisse({ index, ecart: 0 });
+                    setGlisse({ index, ecart: 0, pose: false });
                   }}
                   onPointerMove={(event) => {
-                    if (glisse?.index !== index) return;
-                    setGlisse({ index, ecart: event.clientY - origine.current });
+                    if (glisse?.index !== index || glisse.pose) return;
+                    setGlisse({ index, ecart: event.clientY - origine.current, pose: false });
                   }}
                   onPointerUp={terminer}
                   onPointerCancel={terminer}
@@ -151,7 +206,7 @@ export function QueueView({
                 <button
                   type="button"
                   onClick={() => onJump(depart + index)}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                  className="pression flex min-w-0 flex-1 items-center gap-2.5 rounded-md text-left"
                 >
                   <Artwork hash={item.artworkHash} className="h-10 w-10 shrink-0 rounded" />
                   <span className="min-w-0 flex-1">
@@ -176,7 +231,8 @@ export function QueueView({
                   <Icon name="close" size={15} />
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>

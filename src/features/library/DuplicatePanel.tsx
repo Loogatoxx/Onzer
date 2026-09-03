@@ -100,7 +100,7 @@ export function DuplicatePanel({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2.5 text-left"
+        className="pression flex w-full items-center gap-2.5 rounded-md text-left"
       >
         <span className="shrink-0 text-ink-faint">
           <Icon name="library" size={16} />

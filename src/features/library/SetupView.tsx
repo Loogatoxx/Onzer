@@ -75,7 +75,7 @@ export function SetupView({ onReady }: { onReady: () => void }) {
             onClick={() => void choose(root)}
             className={
               index === 0
-                ? "w-full rounded-xl bg-gradient-to-br from-accent to-accent-alt px-4 py-3 text-sm font-medium text-base transition-opacity hover:opacity-90 disabled:opacity-40"
+                ? "w-full rounded-xl bouton-accent px-4 py-3 text-sm font-medium"
                 : "w-full rounded-xl border border-line bg-surface px-4 py-3 text-sm text-ink transition-colors hover:bg-elevated disabled:opacity-40"
             }
           >

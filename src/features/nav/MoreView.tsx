@@ -80,7 +80,7 @@ export function MoreView({
             <button
               type="button"
               onClick={() => onNavigate(destination.route)}
-              className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left transition-colors hover:bg-surface"
+              className="pression flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-surface"
             >
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-elevated text-ink-muted">
                 <Icon name={destination.icon} size={19} />
@@ -110,7 +110,7 @@ export function MoreView({
           type="button"
           aria-label="Nouvelle playlist"
           onClick={onCreatePlaylist}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-elevated text-ink-muted transition-colors hover:text-ink"
+          className="pression flex h-9 w-9 items-center justify-center rounded-full bg-elevated text-ink-muted hover:text-ink"
         >
           <Icon name="plus" size={18} />
         </button>
@@ -130,7 +130,7 @@ export function MoreView({
                 onClick={() =>
                   onNavigate({ kind: "playlist", id: playlist.id, name: playlist.name })
                 }
-                className="flex w-full items-center gap-4 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-surface"
+                className="pression flex w-full items-center gap-4 rounded-xl px-3 py-2.5 text-left hover:bg-surface"
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-elevated text-ink-faint">
                   <Icon name="playlist" size={17} />

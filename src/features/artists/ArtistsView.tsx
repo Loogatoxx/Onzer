@@ -162,7 +162,7 @@ export function ArtistsView({
               <button
                 type="button"
                 onClick={() => onOpen(artist)}
-                className="flex w-full items-center gap-4 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface"
+                className="pression flex w-full items-center gap-4 rounded-lg px-3 py-2 text-left hover:bg-surface"
               >
                 <Artwork hash={artist.coverHash} className="h-12 w-12 shrink-0 rounded-full" />
 
@@ -196,7 +196,7 @@ export function ArtistsView({
               key={artist.id}
               type="button"
               onClick={() => onOpen(artist)}
-              className="group rounded-lg p-3 text-left transition-colors hover:bg-surface"
+              className="pression group rounded-lg p-3 text-left hover:bg-surface"
             >
               <div className="relative">
                 <Artwork

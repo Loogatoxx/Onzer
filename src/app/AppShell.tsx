@@ -26,7 +26,6 @@ import { MobileTabs } from "@/features/nav/MobileTabs";
 import { useSwipeOnglets, type Sens } from "@/features/nav/useSwipeOnglets";
 import { BarreSelection } from "@/features/library/BarreSelection";
 import { useFermeture } from "@/lib/useFermeture";
-import { useTeinte } from "@/lib/useTeinte";
 import {
   BarreFiltres,
   ListeRegroupements,
@@ -122,27 +121,6 @@ const PAGE_SIZE = 100;
  * permet aux paroles de continuer à défiler pendant qu'on fouille sa
  * bibliothèque.
  */
-/**
- * Les pages dont le haut est clair.
- *
- * Ce sont celles qui commencent par la bande d'onglets ou par un en-tête de
- * collection — les deux démarrent à `elevated/70`. L'encoche prend leur
- * teinte ; ailleurs elle reste à la surface de la page.
- */
-const HAUT_CLAIR = new Set<Route["kind"]>([
-  "library",
-  "loved",
-  "history",
-  "offline",
-  "playlist",
-  "albums",
-  "playlists",
-  "artist",
-  "album",
-  "category",
-  "generated",
-]);
-
 export function AppShell({
   libraryRoot,
   onRacineChangee,
@@ -897,22 +875,6 @@ export function AppShell({
 
   // Changer de destination ferme la sélection : elle portait sur des morceaux
   // qu'on ne voit plus, et agir dessus depuis ailleurs serait une surprise.
-  /**
-   * La pochette qui donne sa couleur à la page.
-   *
-   * Celle de la collection quand elle en a une — un artiste, une playlist — et
-   * sinon celle de son premier morceau, qui est la pochette qu'on voit en haut
-   * de l'écran. C'est la même image dans les deux cas.
-   *
-   * Calculée ici, dans la coquille, et non dans la page : la bande d'encoche et
-   * le sélecteur d'onglets sont au-dessus de l'en-tête et forment avec lui une
-   * seule surface. Un gris posé sur un coloré se verrait plus que tout ce qu'on
-   * a corrigé ce soir.
-   */
-  const hashPochette =
-    ("coverHash" in route ? route.coverHash : null) ?? tracks[0]?.artworkHash ?? null;
-  const teinte = useTeinte(hashPochette);
-
   const cleRoute = routeKey(route);
   useEffect(() => setSelection(null), [cleRoute, page]);
 
@@ -1365,30 +1327,13 @@ export function AppShell({
             mobile ? "" : "rounded-xl"
           }`}
         >
-          {/* # La bande d'encoche
+          {/* # La réserve de l'encoche
 
-              Elle vit **dans** le conteneur qui défile, et non au-dessus :
-              elle porte la teinte de ce qui commence juste dessous, si bien
-              que la page démarre sous l'horloge sans aucune marche. Quand on
-              fait défiler, elle s'en va avec le reste — la barre d'état
-              surplombe alors une surface unie, où il n'y a plus de bord.
-
-              Toutes les pages ne commencent pas clair : l'accueil, les
-              réglages ou la file démarrent à même la surface. Leur donner la
-              bande créerait la marche qu'on vient d'enlever, à l'envers. */}
-          {mobile && (
-            <div
-              aria-hidden
-              className={`h-[env(safe-area-inset-top)] ${
-                HAUT_CLAIR.has(route.kind) ? "bg-elevated/70" : ""
-              }`}
-              style={
-                teinte === null || !HAUT_CLAIR.has(route.kind)
-                  ? undefined
-                  : { backgroundColor: teinte, transition: "background-color 320ms var(--ease-out-soft)" }
-              }
-            />
-          )}
+              Elle vit **dans** le conteneur qui défile et n'a aucune couleur
+              propre : la page commence donc sous l'horloge sans marche, parce
+              qu'il n'y a plus rien à raccorder — une seule surface du haut en
+              bas. */}
+          {mobile && <div aria-hidden className="h-[env(safe-area-inset-top)]" />}
 
           {mobile ? (
             <MobileSearch
@@ -1522,7 +1467,6 @@ export function AppShell({
               onOpenArtistOfTrack={(id) => void openArtistOf(id)}
               filtre={filtreListe}
               onFiltre={setFiltreListe}
-              teinte={teinte}
               onPlayArtist={(artistId) => {
                 void ipc
                   .artistTracks(artistId)
@@ -1833,8 +1777,6 @@ interface PageProps {
   /** Le filtre de la liste ouverte, et de quoi le changer. */
   filtre: string;
   onFiltre: (texte: string) => void;
-  /** La couleur tirée de la pochette, ou `null` si elle n'en a pas. */
-  teinte: string | null;
   /** Lance tous les morceaux d'un artiste. */
   onPlayArtist: (artistId: number) => void;
   /** Écoute un morceau seul, sans toucher à la file affichée. */
@@ -1889,10 +1831,7 @@ interface PageProps {
 function CollectionSwitch({
   route,
   onNavigate,
-  teinte,
 }: {
-  /** La couleur de la pochette : la bande et l'en-tête sont une seule surface. */
-  teinte: string | null;
   route: Route;
   onNavigate: (route: Route) => void;
 }) {
@@ -1918,14 +1857,7 @@ function CollectionSwitch({
     // deux escaliers empilés — celui-ci descendait de 70 % à 40 %, puis
     // l'en-tête repartait de 70 %. Une bande plate suivie d'un seul fondu se
     // lit comme une seule surface, et n'a aucune marche à montrer.
-    <div
-      className="flex gap-2 overflow-x-auto bg-elevated/70 px-6 pb-1 pt-4"
-      style={
-        teinte === null
-          ? undefined
-          : { backgroundColor: teinte, transition: "background-color 320ms var(--ease-out-soft)" }
-      }
-    >
+    <div className="flex gap-2 overflow-x-auto px-6 pb-1 pt-4">
       {onglets.map((onglet) => (
         <button
           key={onglet.cle}
@@ -1959,7 +1891,7 @@ function Page(props: PageProps) {
     || route.kind === "playlist"
     || route.kind === "albums"
     || route.kind === "playlists" ? (
-      <CollectionSwitch route={route} onNavigate={props.onNavigate} teinte={props.teinte} />
+      <CollectionSwitch route={route} onNavigate={props.onNavigate} />
     ) : null;
 
   const totalMs = useMemo(
@@ -2047,7 +1979,6 @@ function Page(props: PageProps) {
           }
           onPlay={play}
           {...filtreProps}
-          teinte={props.teinte}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2070,7 +2001,6 @@ function Page(props: PageProps) {
           }
           onPlay={play}
           {...filtreProps}
-          teinte={props.teinte}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2253,7 +2183,6 @@ function Page(props: PageProps) {
           }
           onPlay={play}
           {...filtreProps}
-          teinte={props.teinte}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2302,7 +2231,6 @@ function Page(props: PageProps) {
           }
           onPlay={play}
           {...filtreProps}
-          teinte={props.teinte}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2329,7 +2257,6 @@ function Page(props: PageProps) {
           cover={<CoverTile name="sparkle" />}
           onPlay={play}
           {...filtreProps}
-          teinte={props.teinte}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2358,7 +2285,6 @@ function Page(props: PageProps) {
           }
           onPlay={play}
           {...filtreProps}
-          teinte={props.teinte}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2390,7 +2316,6 @@ function Page(props: PageProps) {
           cover={<CoverTile name="sparkle" />}
           onPlay={play}
           {...filtreProps}
-          teinte={props.teinte}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
@@ -2467,7 +2392,6 @@ function Page(props: PageProps) {
         }
         onPlay={play}
         {...filtreProps}
-        teinte={props.teinte}
         {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
         {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
         {...(localiser === undefined ? {} : { onLocate: localiser })}

@@ -459,38 +459,24 @@
    donc le même fondu : fort là où le dégradé travaille, absent là où il n'y
    a plus rien à cacher.
    ════════════════════════════════════════════════════════════════════════ */
-/* L'en-tête : un aplat qui se dissout sur son dernier pouce.
+/* L'en-tête n'a plus de voile du tout.
  *
- * # Les trois erreurs qui ont mené ici
+ * # Le chemin parcouru, pour ne pas le refaire
  *
- * 1. Un fondu sur toute la hauteur de l'en-tête. Quinze niveaux étalés sur
- *    quatre cents pixels : une marche tous les vingt-neuf, l'escalier.
- * 2. Le même, tramé, puis écourté, puis tramé plus fort. Mesuré sur
- *    l'appareil : zéro ligne unie sur six cents — et l'escalier restait, parce
- *    qu'il ne venait pas de là mais de l'ombre portée de la pochette.
- * 3. Un aplat franc. Plus d'escalier, mais une ligne qui s'arrête net : une
- *    coupure là où l'on attendait une transition.
+ * Un fondu sur toute la hauteur : quinze niveaux sur quatre cents pixels,
+ * l'escalier. Tramé : mesuré à zéro ligne unie sur six cents, et l'escalier
+ * restait — il venait de l'ombre de la pochette, pas de là. Écourté, puis
+ * réduit à un aplat qui se dissolvait sur ses trente-deux derniers pixels.
+ * Puis teinté par la pochette, ce qui était la promesse de la charte.
  *
- * # Ce qui reste vrai
+ * Et à l'usage, rien de tout cela ne valait la seule chose qu'on demandait à
+ * cette page : être une surface. Les autres pages — l'accueil, les artistes,
+ * les réglages — n'ont jamais eu de bande, et personne ne leur en a réclamé.
+ * La bibliothèque garde donc le même gris qu'elles, du haut de l'écran au bas.
  *
- * Une bande est une amplitude divisée par une distance. On ne peut pas
- * augmenter l'amplitude — le fond est presque noir, il n'y a que neuf niveaux
- * entre le voile et la page. On peut, en revanche, **réduire la distance**.
- *
- * Le voile est donc plein sur toute sa hauteur et ne se dissout que sur ses
- * trente-deux derniers pixels : neuf niveaux sur trente-deux, c'est une marche
- * tous les trois pixels et demi — deux dixièmes de millimètre sur cet écran.
- * Il n'y a plus de bande à voir, et plus de coupure non plus.
+ * Ce qui distingue un en-tête, ce sont son titre en quatre rem et sa pochette.
+ * Pas un voile.
  */
-.fondu-tete {
-  --voile: color-mix(in srgb, var(--color-elevated) 70%, transparent);
-  background-image: linear-gradient(
-    to bottom,
-    var(--voile) 0,
-    var(--voile) calc(100% - 2rem),
-    transparent 100%
-  );
-}
 
 .grain {
   position: relative;

@@ -700,15 +700,6 @@ export const ipc = {
    * se trouvait au-delà.
    */
   /** Les albums où un artiste apparaît, du plus récent au plus ancien. */
-  /**
-   * La couleur que cette pochette donne à sa page.
-   *
-   * `null` quand la pochette est en noir et blanc : la page garde son gris,
-   * ce qui est le bon choix — lui inventer une couleur mentirait sur elle.
-   */
-  artworkTint: (hash: string): Promise<string | null> =>
-    invoke<string | null>("artwork_tint", { hash }),
-
   artistAlbums: (artistId: number): Promise<AlbumSummary[]> =>
     invoke<AlbumSummary[]>("artist_albums", { artistId }),
 

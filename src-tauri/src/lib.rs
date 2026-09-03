@@ -258,7 +258,6 @@ pub fn run() {
             commands::library::library_counts,
             commands::library::refresh_availability,
             commands::library::artwork_data_uri,
-            commands::library::artwork_tint,
             commands::playback::play_tracks,
             commands::playback::toggle_playback,
             commands::playback::next_track,

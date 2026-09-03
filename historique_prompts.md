@@ -970,3 +970,37 @@ Une seule boucle des deux côtés ; seul le chemin d'accès au tableau change.
 **🎯 Objectif**
 Que le téléphone serve de télécommande au Mac, et réciproquement, sans compte ni serveur.
 
+---
+
+## Entrée 029 — Un seul gris, et une feuille qu'on renvoie du doigt
+
+**📅 Date :** 2026-09-04
+
+**💬 Prompt**
+« retire ce genre de orange beige finalement fait comme sur toute les autre page reste sur le
+meme gris meme dans la biblioteque de haut en bas, et pour le menu des 3 petits point sur les
+musique fait en sorte que en puisse slide vers le bas en prenant le haut du menu comme pour le
+ranger et ça le ferme en suivant le doigt qui slide »
+
+**🤖 Réponse (résumé)**
+Le voile de l'en-tête disparaît entièrement — teinte comprise, et avec elle toute la plomberie
+qui l'alimentait. La bibliothèque garde le même gris que l'accueil, les artistes ou les
+réglages, du haut de l'écran au bas. Ce qui distingue un en-tête, ce sont son titre en quatre
+rem et sa pochette, pas un voile.
+
+Quatre tentatives auront été nécessaires pour arriver là : fondu, fondu tramé, aplat dissous,
+aplat teinté. La bonne réponse était de n'en mettre aucun — et c'est l'usage qui l'a dit, pas la
+mesure.
+
+La feuille du menu se renvoie maintenant vers le bas : on la prend par le haut, elle suit le
+doigt sans transition, le voile pâlit à mesure, et au-delà de quatre-vingt-dix pixels elle
+achève sa descente. Une poignée dessinée le dit — un geste sans prise n'existe pas.
+
+**🔧 Modifications**
+- ➖ `src-tauri/src/library/teinte.rs`, la commande `artwork_tint`, `src/lib/useTeinte.ts`
+- ✏️ `globals.css`, `PageHeader`, `AppShell` — plus de bande, ni sur l'encoche ni sur les onglets
+- ✏️ `TrackTable` — poignée, suivi du doigt, seuil de renvoi
+
+**🎯 Objectif**
+Une seule surface, et un menu qu'on referme du geste qu'on fait partout ailleurs.
+

@@ -870,6 +870,25 @@ function RowMenu({
   const setOpen = onOpenChange;
   const monte = useFermeture(open, 200);
   const mobile = useIsMobile();
+  /**
+   * Ce que le doigt a tiré vers le bas, en pixels.
+   *
+   * Une feuille qui monte du bas se renvoie d'où elle vient : c'est le geste
+   * qu'on fait partout ailleurs, et il évite de viser une croix ou de deviner
+   * où finit le menu.
+   */
+  const [tire, setTire] = useState(0);
+  /** Vrai pendant qu'elle achève sa descente, après un geste abouti. */
+  const [ferme, setFerme] = useState(false);
+  const depart = useRef<number | null>(null);
+
+  // Rouvrir repart d'en bas : sans cette remise à zéro, la feuille
+  // réapparaîtrait à l'endroit où on l'a laissée tomber.
+  useEffect(() => {
+    if (!open) return;
+    setTire(0);
+    setFerme(false);
+  }, [open]);
   /** Deuxième clic exigé avant de retirer de la bibliothèque. */
   const [armed, setArmed] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
@@ -1001,8 +1020,20 @@ function RowMenu({
                 compatibilité qui suivraient. */}
             <div
               className={`fixed inset-0 z-40 bg-base/60 ${
-                open ? "animate-apparaitre" : "animate-disparaitre-voile"
+                tire > 0 || ferme
+                  ? ""
+                  : open
+                    ? "animate-apparaitre"
+                    : "animate-disparaitre-voile"
               }`}
+              // Le voile pâlit à mesure qu'on tire : à mi-chemin on voit déjà
+              // que la feuille s'en va, ce qui rend le seuil devinable sans
+              // avoir à l'écrire.
+              style={
+                tire > 0 || ferme
+                  ? { opacity: ferme ? 0 : Math.max(0.15, 1 - tire / 320) }
+                  : undefined
+              }
               onPointerDown={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1012,19 +1043,76 @@ function RowMenu({
 
             <div
               className={`fixed inset-x-0 bottom-0 z-50 max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-line bg-raised pb-[env(safe-area-inset-bottom)] shadow-2xl shadow-black/60 [&_button]:py-3.5 [&_button]:text-[15px] ${
-                open ? "barre-monte" : "barre-descend"
+                tire > 0 || ferme ? "" : open ? "barre-monte" : "barre-descend"
               }`}
+              style={
+                tire > 0 || ferme
+                  ? {
+                      transform: ferme ? "translateY(100%)" : `translateY(${tire}px)`,
+                      transition: ferme ? "transform 200ms var(--ease-out-soft)" : "none",
+                    }
+                  : undefined
+              }
             >
-              <div className="flex items-center gap-3 border-b border-line px-4 py-3">
-                <Artwork hash={track.artworkHash} className="h-11 w-11 shrink-0 rounded" />
-                <span className="min-w-0">
-                  <span className="block truncate text-[15px] font-semibold text-ink">
-                    {track.title}
+              {/* # Pourquoi une poignée dessinée
+
+                  Un geste qui n'a pas de prise n'existe pas : rien ne disait
+                  qu'on pouvait renvoyer la feuille en bas. Trente-six pixels
+                  de barre au-dessus du titre le disent sans un mot, et c'est
+                  la convention de toutes les feuilles qui montent du bas.
+
+                  Tant qu'on tient, aucune transition : la moindre ferait un
+                  retard sous le doigt. */}
+              <div
+                className="cursor-grab touch-none pt-2.5 active:cursor-grabbing"
+                onTouchStart={(event) => {
+                  const doigt = event.touches[0];
+                  depart.current = doigt === undefined ? null : doigt.clientY;
+                }}
+                onTouchMove={(event) => {
+                  const origine = depart.current;
+                  const doigt = event.touches[0];
+                  if (origine === null || doigt === undefined) return;
+                  // Vers le bas seulement : tirer vers le haut décollerait la
+                  // feuille de son bord, ce qui n'a nulle part où mener.
+                  setTire(Math.max(0, doigt.clientY - origine));
+                }}
+                onTouchEnd={(event) => {
+                  const origine = depart.current;
+                  depart.current = null;
+
+                  const doigt = event.changedTouches[0];
+                  const parcouru =
+                    origine === null || doigt === undefined ? 0 : doigt.clientY - origine;
+
+                  if (parcouru > 90) {
+                    setFerme(true);
+                    setTimeout(() => setOpen(false), 190);
+                    return;
+                  }
+                  setTire(0);
+                }}
+                onTouchCancel={() => {
+                  depart.current = null;
+                  setTire(0);
+                }}
+              >
+                <span
+                  aria-hidden
+                  className="mx-auto block h-1 w-9 rounded-full bg-ink-faint/60"
+                />
+
+                <div className="mt-2 flex items-center gap-3 border-b border-line px-4 pb-3">
+                  <Artwork hash={track.artworkHash} className="h-11 w-11 shrink-0 rounded" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-[15px] font-semibold text-ink">
+                      {track.title}
+                    </span>
+                    <span className="block truncate text-[13px] text-ink-muted">
+                      {track.artist ?? "Artiste inconnu"}
+                    </span>
                   </span>
-                  <span className="block truncate text-[13px] text-ink-muted">
-                    {track.artist ?? "Artiste inconnu"}
-                  </span>
-                </span>
+                </div>
               </div>
 
               <div className="py-1">{entrees}</div>

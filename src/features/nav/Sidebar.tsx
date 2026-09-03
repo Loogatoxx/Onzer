@@ -242,8 +242,8 @@ function NavItem({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-4 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors ${
-        active ? "text-ink" : "text-ink-muted hover:text-ink"
+      className={`pression flex w-full items-center gap-4 rounded-lg px-3 py-2.5 text-left text-sm font-semibold ${
+        active ? "bg-elevated text-ink" : "text-ink-muted hover:bg-elevated hover:text-ink"
       }`}
     >
       <Icon name={icon} size={20} />
@@ -259,7 +259,7 @@ function LovedItem({ active, onClick }: { active: boolean; onClick: () => void }
       type="button"
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors ${
-        active ? "bg-elevated" : "hover:bg-elevated/60"
+        active ? "bg-elevated" : "hover:bg-elevated"
       }`}
     >
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-gradient-to-br from-accent to-accent-soft">
@@ -289,7 +289,7 @@ function PlaylistItem({
       type="button"
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors ${
-        active ? "bg-elevated" : "hover:bg-elevated/60"
+        active ? "bg-elevated" : "hover:bg-elevated"
       }`}
     >
       <Artwork hash={playlist.coverHash} className="h-11 w-11 rounded" />

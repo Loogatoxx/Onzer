@@ -560,7 +560,7 @@ function TrackRow({
             : "Pas de paroles — à récupérer depuis le panneau de lecture"
         }
       >
-        <span className={track.hasLyrics ? "text-ink-muted" : "text-ink-faint/25"}>
+        <span className={track.hasLyrics ? "text-ink-muted" : "text-ink-faint/45"}>
           <Icon name="lyrics" size={14} />
         </span>
       </span>

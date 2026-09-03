@@ -24,6 +24,7 @@ import { Sidebar, routeKey, type Route } from "@/features/nav/Sidebar";
 import type { SortColumn, TrackSort } from "@/features/library/TrackTable";
 import { MobileTabs } from "@/features/nav/MobileTabs";
 import { useSwipeOnglets, type Sens } from "@/features/nav/useSwipeOnglets";
+import { BarreSelection } from "@/features/library/BarreSelection";
 import {
   BarreFiltres,
   ListeRegroupements,
@@ -790,6 +791,29 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
     ligne?.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
+  /**
+   * Les morceaux cochés.
+   *
+   * `null` veut dire « pas de sélection en cours », ce qui n'est pas la même
+   * chose qu'un ensemble vide : celui-ci est une sélection ouverte dans
+   * laquelle on n'a encore rien pris.
+   */
+  const [selection, setSelection] = useState<ReadonlySet<number> | null>(null);
+
+  // Changer de destination ferme la sélection : elle portait sur des morceaux
+  // qu'on ne voit plus, et agir dessus depuis ailleurs serait une surprise.
+  const cleRoute = routeKey(route);
+  useEffect(() => setSelection(null), [cleRoute, page]);
+
+  function basculerSelection(trackId: number) {
+    setSelection((actuelle) => {
+      const suivante = new Set(actuelle ?? []);
+      if (suivante.has(trackId)) suivante.delete(trackId);
+      else suivante.add(trackId);
+      return suivante;
+    });
+  }
+
   function enqueueAll() {
     if (shown.length === 0) return;
 
@@ -1065,6 +1089,9 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       isPlaying={playback.state?.isPlaying ?? false}
       onPlay={playFrom}
       {...gestes}
+      {...(selection === null
+        ? {}
+        : { selection, onSelect: basculerSelection })}
       {...(sort === null ? {} : { sort })}
       onSort={toggleSort}
       {...(route.kind === "playlist" && !searching
@@ -1331,6 +1358,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               onPlayAll={(shuffle) => void playAll(shuffle)}
               onEnqueueAll={enqueueAll}
               onLocate={localiserLeCourant}
+              onSelectMode={() => setSelection(new Set())}
               onJumpInQueue={(position) => void playback.jump(position)}
               onRemoveFromQueue={(position) => void playback.removeFromQueue(position)}
               onMoveInQueue={(from, to) => void playback.moveInQueue(from, to)}
@@ -1467,6 +1495,47 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
         />
       )}
 
+      {selection !== null && (
+        <BarreSelection
+          nombre={selection.size}
+          playlists={playlists}
+          onEnqueue={() => {
+            void playback.enqueue([...selection]);
+            setSelection(null);
+          }}
+          onPlayNext={() => {
+            void playback.playNext([...selection]);
+            setSelection(null);
+          }}
+          onAddToPlaylist={(playlistId) => {
+            void ipc
+              .addToPlaylist(playlistId, [...selection])
+              .then(() => {
+                reloadPlaylists();
+                bump();
+              })
+              .catch((cause: unknown) => setError(String(cause)));
+            setSelection(null);
+          }}
+          onLove={() => {
+            // Seuls ceux qui ne le sont pas encore : basculer aveuglément
+            // retirerait des favoris à ceux qui en avaient déjà.
+            for (const id of selection) {
+              if (!loved.has(id)) void toggleLoved(id);
+            }
+            setSelection(null);
+          }}
+          onAll={() =>
+            setSelection((actuelle) =>
+              actuelle !== null && actuelle.size === shown.length
+                ? new Set()
+                : new Set(shown.map((track) => track.id)),
+            )
+          }
+          onClose={() => setSelection(null)}
+        />
+      )}
+
       {(syncing !== null || syncNote !== null) && (
         <div className="fixed bottom-28 left-1/2 z-40 -translate-x-1/2 rounded-full bg-surface px-5 py-2.5 text-[13px] text-ink shadow-2xl shadow-black/50">
           {syncing !== null ? (
@@ -1577,6 +1646,8 @@ interface PageProps {
   onEnqueueAll: () => void;
   /** Fait défiler la liste jusqu'au morceau en cours. */
   onLocate: () => void;
+  /** Ouvre la sélection multiple sur la liste affichée. */
+  onSelectMode: () => void;
   /** Lance une liste arbitraire — la rangée de reprise de l'accueil. */
   onPlayTracks: (tracks: TrackSummary[], index: number) => void;
   onOpenCategory: (key: string, title: string) => void;
@@ -1728,6 +1799,8 @@ function Page(props: PageProps) {
       ? props.onLocate
       : undefined;
 
+  const selectionner = tracks.length === 0 ? undefined : props.onSelectMode;
+
   if (route.kind === "stats") {
     return <WrappedView />;
   }
@@ -1760,6 +1833,7 @@ function Page(props: PageProps) {
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
+          {...(selectionner === undefined ? {} : { onSelectMode: selectionner })}
         />
         {props.children}
       </>
@@ -1782,6 +1856,7 @@ function Page(props: PageProps) {
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
+          {...(selectionner === undefined ? {} : { onSelectMode: selectionner })}
         />
         {props.children}
       </>
@@ -1931,6 +2006,7 @@ function Page(props: PageProps) {
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
+          {...(selectionner === undefined ? {} : { onSelectMode: selectionner })}
         />
 
         <AlbumRow
@@ -1971,6 +2047,7 @@ function Page(props: PageProps) {
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
+          {...(selectionner === undefined ? {} : { onSelectMode: selectionner })}
         />
         {props.children}
       </>
@@ -1995,6 +2072,7 @@ function Page(props: PageProps) {
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
+          {...(selectionner === undefined ? {} : { onSelectMode: selectionner })}
         />
         {props.children}
       </>
@@ -2021,6 +2099,7 @@ function Page(props: PageProps) {
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
+          {...(selectionner === undefined ? {} : { onSelectMode: selectionner })}
           onRename={(name) => props.onRenamePlaylist(route.id, name)}
           onPickCover={() => void props.onPickPlaylistCover(route.id)}
           description={summary?.description ?? null}
@@ -2050,6 +2129,7 @@ function Page(props: PageProps) {
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           {...(localiser === undefined ? {} : { onLocate: localiser })}
+          {...(selectionner === undefined ? {} : { onSelectMode: selectionner })}
         />
         {props.children}
       </>
@@ -2091,6 +2171,7 @@ function Page(props: PageProps) {
         {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
         {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
         {...(localiser === undefined ? {} : { onLocate: localiser })}
+        {...(selectionner === undefined ? {} : { onSelectMode: selectionner })}
       />
 
       <div className="px-6 pb-2">

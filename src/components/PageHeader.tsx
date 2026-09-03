@@ -33,6 +33,8 @@ interface PageHeaderProps {
    * pas dans cette liste ne mène nulle part, littéralement.
    */
   onLocate?: () => void;
+  /** Ouvre la sélection multiple sur cette liste. */
+  onSelectMode?: () => void;
   /**
    * Quand il est fourni, le titre devient modifiable au clic.
    *
@@ -73,6 +75,7 @@ export function PageHeader({
   onShuffle,
   onEnqueue,
   onLocate,
+  onSelectMode,
   onRename,
   extra,
   onPickCover,
@@ -219,6 +222,14 @@ export function PageHeader({
             name="locate"
             label="Aller au morceau en cours"
             onClick={onLocate}
+          />
+        )}
+
+        {onSelectMode !== undefined && (
+          <HeaderAction
+            name="check"
+            label="Sélectionner des morceaux"
+            onClick={onSelectMode}
           />
         )}
 

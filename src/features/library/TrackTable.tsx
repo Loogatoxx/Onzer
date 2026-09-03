@@ -90,6 +90,15 @@ interface TrackTableProps {
    * l'utilisateur.
    */
   loved: ReadonlySet<number>;
+  /**
+   * Les morceaux cochés, quand on est en mode sélection.
+   *
+   * `undefined` — et non un ensemble vide — signifie « pas de sélection en
+   * cours ». Les deux états sont différents : un ensemble vide, c'est une
+   * sélection ouverte dans laquelle on n'a encore rien pris.
+   */
+  selection?: ReadonlySet<number>;
+  onSelect?: (trackId: number) => void;
   /** Playlists proposées dans le menu « Ajouter à ». */
   playlists: PlaylistSummary[];
   onAddToPlaylist: (playlistId: number, trackId: number) => void;
@@ -192,6 +201,8 @@ export function TrackTable({
   onOpenAlbum,
   onOpenPlaying,
   loved,
+  selection,
+  onSelect,
   playlists,
   onAddToPlaylist,
   onRemoveAt,
@@ -271,6 +282,9 @@ export function TrackTable({
             onRadio={() => onRadio(track.id)}
             onToggleLoved={() => onToggleLoved(track.id)}
             isLoved={loved.has(track.id)}
+            {...(selection === undefined || onSelect === undefined
+              ? {}
+              : { selectionnee: selection.has(track.id), onSelect: () => onSelect(track.id) })}
             onEnqueue={() => onEnqueue(track.id)}
             onPlayNext={() => onPlayNext(track.id)}
             onOpenArtist={() => onOpenArtist(track.id)}
@@ -301,6 +315,9 @@ interface TrackRowProps {
   index: number;
   isCurrent: boolean;
   isPlaying: boolean;
+  /** Cochée ? `undefined` quand aucune sélection n'est en cours. */
+  selectionnee?: boolean;
+  onSelect?: () => void;
   onPlay: () => void;
   onRadio: () => void;
   onToggleLoved: () => void;
@@ -334,6 +351,8 @@ function TrackRow({
   index,
   isCurrent,
   isPlaying,
+  selectionnee,
+  onSelect,
   onPlay,
   onRadio,
   onToggleLoved,
@@ -371,6 +390,17 @@ function TrackRow({
       // Les zones qui font autre chose — nom d'artiste, album, menu — arrêtent
       // la propagation elles-mêmes.
       onClick={() => {
+        // # Pourquoi la sélection prend toute la place
+        //
+        // Tant qu'elle est ouverte, un appui ne peut plus vouloir dire deux
+        // choses. Laisser la lecture cohabiter obligerait à viser une case de
+        // vingt pixels pour cocher, et à éviter le reste de la ligne pour ne
+        // pas partir sur un autre morceau.
+        if (onSelect !== undefined) {
+          onSelect();
+          return;
+        }
+
         if (unavailable) return;
         // Un appui long vient de servir : ce clic est sa retombée, pas une
         // intention. L'ignorer évite de lancer la lecture sous le menu qu'on
@@ -416,7 +446,18 @@ function TrackRow({
     >
       {/* ── Numéro / lecture ─────────────────────────────────────────── */}
       <div className="flex h-9 w-5 items-center justify-center lg:w-7">
-        {isCurrent ? (
+        {selectionnee !== undefined ? (
+          <span
+            aria-hidden
+            className={`flex h-[18px] w-[18px] items-center justify-center rounded-full border transition-colors ${
+              selectionnee
+                ? "border-accent bg-accent text-base"
+                : "border-ink-faint text-transparent"
+            }`}
+          >
+            <Icon name="check" size={11} />
+          </span>
+        ) : isCurrent ? (
           <span className="group-hover:hidden">
             <PlayingIndicator animated={isPlaying} />
           </span>

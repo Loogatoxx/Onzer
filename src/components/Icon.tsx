@@ -48,6 +48,7 @@ export type IconName =
   | "check"
   | "close"
   | "moon"
+  | "devices"
   | "panelRight"
   /* Un pictogramme ne désigne qu'une chose. Ces quatre-là ont été ajoutés
      parce qu'ils manquaient et qu'on en avait détourné d'autres : la roue
@@ -194,6 +195,15 @@ const PATHS: Record<IconName, React.ReactNode> = {
   // Le croissant du minuteur de sommeil. Un réveil aurait dit l'inverse de ce
   // qu'il fait : celui-ci endort la musique, il ne réveille personne.
   moon: <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />,
+  // Deux appareils qui se parlent : un écran, un téléphone, et le va-et-vient
+  // entre les deux.
+  devices: (
+    <>
+      <rect x="2" y="4" width="12" height="9" rx="1.5" />
+      <rect x="15.5" y="9" width="6.5" height="11" rx="1.5" />
+      <path d="M5 20h5M7.5 13v7" />
+    </>
+  ),
   panelRight: (
     <>
       <rect x="3" y="4.5" width="18" height="15" rx="2" />

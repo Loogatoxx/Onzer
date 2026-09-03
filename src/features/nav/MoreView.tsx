@@ -45,6 +45,12 @@ export function MoreView({
       route: { kind: "sync" },
     },
     {
+      icon: "devices",
+      label: "Synchroniser",
+      hint: "Mettre le Mac et le téléphone d'accord",
+      route: { kind: "pairing" },
+    },
+    {
       icon: "settings",
       label: "Réglages",
       hint: "Complétion, identification, remise à zéro",

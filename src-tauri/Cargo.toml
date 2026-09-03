@@ -79,6 +79,12 @@ uuid = { version = "1.20.0", features = ["v4"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
 rustfft = "6.4.1"
+
+# Le QR d'appairage. Écrire un encodeur QR à la main — Reed-Solomon, masquage,
+# choix de version — ferait quatre cents lignes dont aucune ne parle de musique.
+# Le crate est pur Rust et ne tire rien d'autre : la sortie est une matrice de
+# booléens, que l'interface dessine elle-même en SVG.
+qrcode = { version = "0.14", default-features = false }
 symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "flac", "aac", "isomp4", "vorbis", "ogg", "pcm", "wav", "aiff"] }
 rusty-chromaprint = "0.3.0"
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "gzip", "http2", "rustls", "charset"] }
@@ -87,6 +93,11 @@ reqwest = { version = "0.13.3", default-features = false, features = ["json", "g
 # WAV sur le disque, et un dossier temporaire qui se nettoie tout seul vaut
 # mieux qu'un ménage à faire après chaque panne.
 tempfile = "3"
+# Les adresses des interfaces réseau. La chaussette UDP qui demandait au noyau
+# « par où sortirais-tu ? » répondait par la carte SIM : sur un téléphone,
+# l'itinéraire vers l'extérieur passe par la 5G, pas par le Wi-Fi — et c'est
+# l'adresse Wi-Fi qu'il faut afficher pour que le Mac puisse répondre.
+if-addrs = "0.15.0"
 
 # Le pont vers la machine virtuelle Java : `cpal` y lit le contexte Android
 # sans lequel il refuse — en paniquant — d'ouvrir le moindre flux audio.

@@ -198,10 +198,23 @@ pub async fn tracks(pool: &SqlitePool, playlist_id: i64) -> Result<Vec<TrackSumm
 // ── Favoris ─────────────────────────────────────────────────────────────────
 
 /// Bascule le statut de favori et retourne le nouvel état.
+///
+/// # Pourquoi la date compte
+///
+/// Le même morceau vit dans deux bibliothèques — celle du Mac, celle du
+/// téléphone. Quand elles se retrouvent et se contredisent, la seule question
+/// qui a une réponse est « lequel des deux a changé d'avis en dernier ». Un
+/// booléen sans mémoire ne peut pas y répondre.
+///
+/// Le retrait est daté comme l'ajout : sans quoi décocher un cœur ici le
+/// verrait revenir à la première synchronisation, ce qui est pire que de ne
+/// rien synchroniser du tout.
 pub async fn toggle_loved(pool: &SqlitePool, track_id: i64) -> Result<bool> {
     let loved: bool = sqlx::query_scalar(
-        "UPDATE tracks SET is_loved = NOT is_loved WHERE id = ? RETURNING is_loved",
+        "UPDATE tracks SET is_loved = NOT is_loved, loved_at = ?
+          WHERE id = ? RETURNING is_loved",
     )
+    .bind(crate::core::now_ms())
     .bind(track_id)
     .fetch_one(pool)
     .await?;

@@ -15,6 +15,7 @@ pub mod ingest;
 pub mod library;
 pub mod reco;
 pub mod stats;
+pub mod sync;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -269,6 +270,12 @@ pub fn run() {
             commands::playback::stop_playback,
             commands::playback::set_sleep_timer,
             commands::playback::sleep_timer,
+            commands::appairage::open_pairing,
+            commands::appairage::close_pairing,
+            commands::appairage::pairing_open,
+            commands::appairage::sync_with_device,
+            commands::appairage::read_pairing_link,
+            commands::appairage::sync_journal,
             commands::playback::playback_state,
             commands::reco::start_radio,
             commands::reco::start_for_now,

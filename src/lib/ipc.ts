@@ -384,6 +384,46 @@ export interface PlaybackSnapshot {
   shuffle: boolean;
 }
 
+/** Miroir de `sync::appairage::InfosAppairage`. */
+export interface PairingInfo {
+  hote: string;
+  /** Les autres adresses de la machine, quand elle en a plusieurs. */
+  autres: string[];
+  port: number;
+  /** Huit chiffres, affichés groupés par quatre. */
+  code: string;
+  /** Le lien que le QR encode. */
+  lien: string;
+  /** La matrice du QR, ligne par ligne. Dessinée en SVG par l'interface. */
+  qr: boolean[][];
+}
+
+export interface PairingLink {
+  host: string;
+  port: number;
+  code: string;
+}
+
+/** Miroir de `sync::client::RapportSync`. */
+export interface SyncReport {
+  appareil: string;
+  favoris: number;
+  paroles: number;
+  playlists: number;
+  arbitrages: number;
+}
+
+/** Miroir de `commands::appairage::LigneJournal`. */
+export interface SyncJournalEntry {
+  at: number;
+  pair: string;
+  /** `loved` | `metadata` | `playlist` */
+  kind: string;
+  subject: string;
+  replaced: string | null;
+  kept: string | null;
+}
+
 /** Miroir de `commands::playback::PlaybackTick`. */
 export interface PlaybackTick {
   positionMs: number;
@@ -623,6 +663,28 @@ export const ipc = {
 
   /** Ce qu'il reste au minuteur, en millisecondes. */
   sleepTimer: (): Promise<number | null> => invoke<number | null>("sleep_timer"),
+
+  // ── Synchronisation entre deux appareils ────────────────────────────────
+
+  /** Ouvre la porte sur le réseau local et rend de quoi l'afficher. */
+  openPairing: (): Promise<PairingInfo> => invoke<PairingInfo>("open_pairing"),
+
+  /** Referme la porte. À appeler en quittant l'écran, sans exception. */
+  closePairing: (): Promise<void> => invoke("close_pairing"),
+
+  pairingOpen: (): Promise<boolean> => invoke<boolean>("pairing_open"),
+
+  /** Se connecte à l'autre appareil et fusionne les deux bibliothèques. */
+  syncWithDevice: (host: string, port: number, code: string): Promise<SyncReport> =>
+    invoke<SyncReport>("sync_with_device", { host, port, code }),
+
+  /** Découpe un lien `onzer://appairage?…` collé depuis l'autre appareil. */
+  readPairingLink: (link: string): Promise<PairingLink | null> =>
+    invoke<PairingLink | null>("read_pairing_link", { link }),
+
+  /** Les arbitrages passés, du plus récent au plus ancien. */
+  syncJournal: (): Promise<SyncJournalEntry[]> =>
+    invoke<SyncJournalEntry[]>("sync_journal"),
   nextTrack: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("next_track"),
   previousTrack: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("previous_track"),
   stopPlayback: (): Promise<PlaybackSnapshot> => invoke<PlaybackSnapshot>("stop_playback"),

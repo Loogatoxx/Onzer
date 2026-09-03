@@ -2083,6 +2083,75 @@ que l'arithmétique donne déjà : ce qu'il reste à jouer est une durée.
 
 ---
 
+## ADR-073 — Deux bibliothèques d'accord, sans compte et sans serveur
+
+**Contexte.** Le téléphone a reconstruit sa bibliothèque tout seul à partir des fichiers. Il
+n'avait donc ni les favoris, ni les playlists, ni les paroles récupérées sur le Mac : deux
+vies parallèles, dont aucune ne savait ce que l'autre faisait.
+
+**Décision.** Les deux appareils se parlent **directement**, sur le Wi-Fi de la maison. Aucun
+compte, aucun serveur, aucun intermédiaire. L'un ouvre une porte le temps d'un échange,
+l'autre y entre, et c'est fini.
+
+```text
+   Mac                                    Téléphone
+   ┌──────────────┐   son état complet    ┌──────────────┐
+   │   fusionner  │ ◄──────────────────── │              │
+   │  (soi, autre)│                       │              │
+   │   applique   │ ──────────────────►   │   fusionner  │
+   └──────────────┘   l'union résultante  │  (soi, autre)│
+                                          └──────────────┘
+```
+
+**Pourquoi les deux côtés exécutent le même code.** Chacun appelle `fusionner(soi, autre)` et
+applique ce qui en sort. Aucun des deux ne fait autorité, et il n'existe pas un « code du
+serveur » et un « code du client » qui finiraient par diverger d'une règle. La fonction ne lit
+aucune base et n'écrit nulle part : c'est ce qui la rend vérifiable — les cas tordus se
+testent en quelques lignes, sans téléphone, sans réseau et sans risquer une bibliothèque.
+
+**Le cas que personne n'anticipe : le tout premier échange.** Avant cette version, aimer un
+morceau ne laissait aucune date — le champ n'existait pas. À la première synchronisation,
+*aucun* des deux côtés n'a donc d'horodatage, et « le plus récent gagne » n'a rien à comparer.
+
+| Décision | Conséquence |
+|---|---|
+| Le local l'emporte | La première synchronisation n'apporte aucun favori — exactement ce pour quoi on la lance |
+| Le distant l'emporte | Les favoris locaux disparaissent |
+| **On réunit** | Sans information, un cœur posé quelque part est un cœur posé |
+
+Dès qu'un côté porte une date, elle l'emporte : elle dit quelque chose que l'autre ignore.
+
+**Ce qui ne traverse pas.** Les fichiers audio — ils sont déjà des deux côtés et pèsent des
+dizaines de gigaoctets. Les titres et les albums non plus : corriger deux mille titres d'un
+coup, sans qu'on l'ait demandé, est précisément ce qu'Onzer ne fait pas. Une playlist ne se
+*remplace* jamais non plus — les morceaux absents d'un côté y sont ajoutés, car « la plus
+récente gagne » ferait disparaître dix ajouts sans que rien ne le signale.
+
+**Ce qui est consigné.** Chaque décision où les deux côtés avaient une valeur **différente et
+datée** laisse une ligne dans `sync_journal`. Une fusion qui tranche en silence est une fusion
+à laquelle on ne peut pas faire confiance : le jour où un favori disparaît, il n'y a rien à
+consulter, et le doute s'étend à tout le reste.
+
+**Un port ouvert reste un port ouvert.** Trois garde-fous, dont aucun n'est optionnel :
+
+- **Le temps.** La porte n'existe que pendant que l'écran est affiché. Elle se referme au
+  démontage du composant, c'est-à-dire aussi quand on oublie de cliquer.
+- **Le secret.** Huit chiffres tirés au sort à chaque ouverture, jamais réutilisés.
+- **Les essais.** Cinq erreurs et la session se ferme. Un million de combinaisons ne servent à
+  rien si l'on ne peut en tenter que cinq.
+
+**Pourquoi pas de scanner de QR.** Lire un QR dans l'application demanderait la caméra, une
+permission, et un décodeur embarqué — pour refaire ce que l'appareil photo du téléphone sait
+déjà faire. Le QR encode donc un lien `onzer://appairage?…` : on le scanne avec l'appareil
+photo, on colle le lien, et les deux champs se remplissent seuls.
+
+**Pourquoi les paroles voyagent en entier.** Mesuré sur la bibliothèque de référence : mille
+neuf cent seize morceaux en portent, pour cinq mégaoctets et demi. Une seconde de Wi-Fi. Un
+protocole en deux temps qui n'enverrait que les manquantes économiserait quelques secondes au
+prix d'un aller-retour et d'un état intermédiaire à tenir.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

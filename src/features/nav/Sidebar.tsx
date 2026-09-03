@@ -32,6 +32,8 @@ export type Route =
   | { kind: "shortcuts" }
   /** Réglages et remise à zéro de la bibliothèque. */
   | { kind: "settings" }
+  /** Synchroniser deux appareils sur le réseau local. */
+  | { kind: "pairing" }
   /** Une catégorie d'ambiance, ouverte depuis l'accueil. */
   | { kind: "category"; key: string; name: string }
   | { kind: "playlist"; id: number; name: string };
@@ -109,6 +111,12 @@ export function Sidebar({
           label="Ce qui me manque"
           active={active === "sync"}
           onClick={() => onNavigate({ kind: "sync" })}
+        />
+        <NavItem
+          icon="devices"
+          label="Synchroniser"
+          active={active === "pairing"}
+          onClick={() => onNavigate({ kind: "pairing" })}
         />
         <NavItem
           icon="stats"
@@ -213,7 +221,7 @@ function NavItem({
   active,
   onClick,
 }: {
-  icon: "home" | "library" | "artist" | "sparkle" | "stats";
+  icon: "home" | "library" | "artist" | "sparkle" | "stats" | "devices";
   label: string;
   active: boolean;
   onClick: () => void;

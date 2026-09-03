@@ -45,6 +45,7 @@ import { PlayerBar } from "@/features/player/PlayerBar";
 import { usePlayback } from "@/features/player/usePlayback";
 import { ShortcutsView } from "@/features/nav/ShortcutsView";
 import { SettingsView } from "@/features/nav/SettingsView";
+import { PairingView } from "@/features/appairage/PairingView";
 import { MoreView } from "@/features/nav/MoreView";
 import { AlbumsView } from "@/features/library/AlbumsView";
 import { AlbumRow } from "@/features/library/AlbumRow";
@@ -1567,6 +1568,10 @@ function Page(props: PageProps) {
     );
   }
 
+  if (route.kind === "pairing") {
+    return <PairingView />;
+  }
+
   if (route.kind === "settings") {
     return <SettingsView onChanged={props.onReload} libraryRoot={props.libraryRoot} />;
   }
@@ -2006,6 +2011,7 @@ function ongletActif(route: Route, searchOpen: boolean): string {
       return "artists";
     case "more":
     case "settings":
+    case "pairing":
     case "shortcuts":
     case "sync":
     case "stats":

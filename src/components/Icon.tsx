@@ -49,6 +49,7 @@ export type IconName =
   | "close"
   | "moon"
   | "devices"
+  | "locate"
   | "panelRight"
   /* Un pictogramme ne désigne qu'une chose. Ces quatre-là ont été ajoutés
      parce qu'ils manquaient et qu'on en avait détourné d'autres : la roue
@@ -197,6 +198,15 @@ const PATHS: Record<IconName, React.ReactNode> = {
   moon: <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />,
   // Deux appareils qui se parlent : un écran, un téléphone, et le va-et-vient
   // entre les deux.
+  // Une cible : « où suis-je dans cette liste ». Ni une loupe, qui cherche,
+  // ni une flèche, qui déplace.
+  locate: (
+    <>
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+    </>
+  ),
   devices: (
     <>
       <rect x="2" y="4" width="12" height="9" rx="1.5" />

@@ -528,6 +528,10 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
       switch (route.kind) {
         case "loved":
           return ipc.lovedTracks();
+        case "history":
+          return ipc.listeningHistory();
+        case "offline":
+          return ipc.unavailableTracks();
         case "playlist":
           return ipc.playlistTracks(route.id);
         case "category":
@@ -771,6 +775,21 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
    * Interroger la route pour reconstituer la même chose ferait un second
    * chemin, qui finirait par ne plus dire la même chose que le premier.
    */
+  /**
+   * Fait défiler jusqu'au morceau en cours.
+   *
+   * # Pourquoi on cherche dans le document plutôt que de tenir une référence
+   *
+   * La ligne peut être n'importe où : dans une page de cent morceaux, dans une
+   * playlist, dans un résultat de recherche. Faire remonter une référence
+   * depuis la ligne obligerait chaque liste à la transmettre, pour un besoin
+   * qui n'appartient qu'au défilement.
+   */
+  function localiserLeCourant() {
+    const ligne = scroller.current?.querySelector("[data-courant]");
+    ligne?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
   function enqueueAll() {
     if (shown.length === 0) return;
 
@@ -1311,6 +1330,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               importing={importing}
               onPlayAll={(shuffle) => void playAll(shuffle)}
               onEnqueueAll={enqueueAll}
+              onLocate={localiserLeCourant}
               onJumpInQueue={(position) => void playback.jump(position)}
               onRemoveFromQueue={(position) => void playback.removeFromQueue(position)}
               onMoveInQueue={(from, to) => void playback.moveInQueue(from, to)}
@@ -1555,6 +1575,8 @@ interface PageProps {
   onPlayAll: (shuffle: boolean) => void;
   /** Ajoute la liste affichée à la file, sans interrompre l'écoute. */
   onEnqueueAll: () => void;
+  /** Fait défiler la liste jusqu'au morceau en cours. */
+  onLocate: () => void;
   /** Lance une liste arbitraire — la rangée de reprise de l'accueil. */
   onPlayTracks: (tracks: TrackSummary[], index: number) => void;
   onOpenCategory: (key: string, title: string) => void;
@@ -1668,6 +1690,8 @@ function Page(props: PageProps) {
   const collection =
     route.kind === "library"
     || route.kind === "loved"
+    || route.kind === "history"
+    || route.kind === "offline"
     || route.kind === "playlist"
     || route.kind === "albums"
     || route.kind === "playlists" ? (
@@ -1696,6 +1720,13 @@ function Page(props: PageProps) {
   const play = tracks.length === 0 ? null : () => props.onPlayAll(false);
   const shuffle = tracks.length === 0 ? undefined : () => props.onPlayAll(true);
   const enfiler = tracks.length === 0 ? undefined : props.onEnqueueAll;
+
+  // Le bouton n'apparaît que si le morceau en cours est dans cette liste-ci.
+  const courant = props.playback?.state.current?.trackId;
+  const localiser =
+    courant !== undefined && tracks.some((track) => track.id === courant)
+      ? props.onLocate
+      : undefined;
 
   if (route.kind === "stats") {
     return <WrappedView />;
@@ -1728,6 +1759,50 @@ function Page(props: PageProps) {
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
+          {...(localiser === undefined ? {} : { onLocate: localiser })}
+        />
+        {props.children}
+      </>
+    );
+  }
+
+  if (route.kind === "history") {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Écoutes"
+          title="Récemment joué"
+          meta={meta}
+          cover={
+            <div className="flex h-40 w-40 items-center justify-center bg-gradient-to-br from-accent-alt to-accent sm:h-52 sm:w-52">
+              <Icon name="clock" size={72} className="text-base" />
+            </div>
+          }
+          onPlay={play}
+          {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+          {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
+          {...(localiser === undefined ? {} : { onLocate: localiser })}
+        />
+        {props.children}
+      </>
+    );
+  }
+
+  if (route.kind === "offline") {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Bibliothèque"
+          title="Hors ligne"
+          meta={meta}
+          cover={
+            <div className="flex h-40 w-40 items-center justify-center bg-elevated sm:h-52 sm:w-52">
+              <Icon name="close" size={72} className="text-ink-faint" />
+            </div>
+          }
+          // Rien à lire : ces morceaux n'ont plus de fichier. Un bouton de
+          // lecture qui ne produirait aucun son serait pire que son absence.
+          onPlay={null}
         />
         {props.children}
       </>
@@ -1855,6 +1930,7 @@ function Page(props: PageProps) {
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
+          {...(localiser === undefined ? {} : { onLocate: localiser })}
         />
 
         <AlbumRow
@@ -1894,6 +1970,7 @@ function Page(props: PageProps) {
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
+          {...(localiser === undefined ? {} : { onLocate: localiser })}
         />
         {props.children}
       </>
@@ -1917,6 +1994,7 @@ function Page(props: PageProps) {
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
+          {...(localiser === undefined ? {} : { onLocate: localiser })}
         />
         {props.children}
       </>
@@ -1942,6 +2020,7 @@ function Page(props: PageProps) {
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
+          {...(localiser === undefined ? {} : { onLocate: localiser })}
           onRename={(name) => props.onRenamePlaylist(route.id, name)}
           onPickCover={() => void props.onPickPlaylistCover(route.id)}
           description={summary?.description ?? null}
@@ -1970,6 +2049,7 @@ function Page(props: PageProps) {
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
           {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
+          {...(localiser === undefined ? {} : { onLocate: localiser })}
         />
         {props.children}
       </>
@@ -2010,6 +2090,7 @@ function Page(props: PageProps) {
         onPlay={play}
         {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
         {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
+        {...(localiser === undefined ? {} : { onLocate: localiser })}
       />
 
       <div className="px-6 pb-2">

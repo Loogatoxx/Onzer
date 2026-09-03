@@ -405,6 +405,11 @@ function TrackRow({
       onPointerUp={() => clearTimeout(minuteur.current)}
       onPointerLeave={() => clearTimeout(minuteur.current)}
       onPointerCancel={() => clearTimeout(minuteur.current)}
+      // Le repère que « aller au morceau en cours » vise. Un attribut plutôt
+      // qu'une référence remontée : la ligne peut être n'importe où dans une
+      // liste paginée, et c'est au défilement de la trouver, pas au tableau de
+      // la tenir.
+      data-courant={isCurrent ? "" : undefined}
       className={`${GRID} pression group rounded-md px-1.5 py-2 transition-colors hover:bg-elevated lg:px-3 ${
         isCurrent ? "bg-elevated/60" : ""
       } ${unavailable ? "opacity-40" : ""}`}

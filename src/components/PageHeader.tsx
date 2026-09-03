@@ -27,6 +27,13 @@ interface PageHeaderProps {
    */
   onEnqueue?: () => void;
   /**
+   * Fait défiler la liste jusqu'au morceau en cours.
+   *
+   * Absent quand il n'y est pas : proposer d'aller quelque part qui n'existe
+   * pas dans cette liste ne mène nulle part, littéralement.
+   */
+  onLocate?: () => void;
+  /**
    * Quand il est fourni, le titre devient modifiable au clic.
    *
    * Renommer là où le nom s'affiche évite une boîte de dialogue : on tape par
@@ -65,6 +72,7 @@ export function PageHeader({
   onPlay,
   onShuffle,
   onEnqueue,
+  onLocate,
   onRename,
   extra,
   onPickCover,
@@ -203,6 +211,14 @@ export function PageHeader({
             name="queue"
             label="Ajouter à la file d'attente"
             onClick={onEnqueue}
+          />
+        )}
+
+        {onLocate !== undefined && (
+          <HeaderAction
+            name="locate"
+            label="Aller au morceau en cours"
+            onClick={onLocate}
           />
         )}
 

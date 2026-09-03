@@ -33,6 +33,18 @@ export function MoreView({
       route: { kind: "loved" },
     },
     {
+      icon: "clock",
+      label: "Récemment joué",
+      hint: "Ce que tu écoutais",
+      route: { kind: "history" },
+    },
+    {
+      icon: "close",
+      label: "Hors ligne",
+      hint: "Les morceaux dont le fichier a disparu",
+      route: { kind: "offline" },
+    },
+    {
       icon: "stats",
       label: "Statistiques",
       hint: "Ton année en chiffres",

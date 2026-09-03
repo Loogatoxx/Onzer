@@ -313,6 +313,59 @@ pub struct AlbumSummary {
 /// Alphabétique, la liste commencerait par les compilations d'un morceau
 /// glanées au fil des identifications. Par nombre de titres, elle commence par
 /// les albums qu'on possède vraiment — ceux qu'on cherche.
+/// Ce qu'on a écouté, du plus récent au plus ancien.
+///
+/// # Pourquoi les écoutes éclair sont exclues
+///
+/// Un morceau zappé au bout de trois secondes n'est pas « ce que j'écoutais » :
+/// c'est ce que j'ai refusé. L'historique qui les garde devient une liste de
+/// tout ce qu'on a effleuré, où l'on ne retrouve plus rien.
+#[tauri::command]
+pub async fn listening_history(
+    state: State<'_, AppState>,
+    limit: Option<i64>,
+) -> Result<Vec<repository::TrackSummary>> {
+    let tracks = sqlx::query_as::<_, repository::TrackSummary>(&format!(
+        "SELECT {}
+           FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE t.deleted_at IS NULL
+            AND EXISTS (SELECT 1 FROM play_events e
+                         WHERE e.track_id = t.id AND e.listened_ms >= 15000)
+          ORDER BY (SELECT MAX(e.started_at) FROM play_events e WHERE e.track_id = t.id) DESC
+          LIMIT ?",
+        repository::TRACK_COLUMNS
+    ))
+    .bind(limit.unwrap_or(200))
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(tracks)
+}
+
+/// Les morceaux dont le fichier a disparu.
+///
+/// Ils gardent leur fiche, leurs favoris et leur place dans les playlists : ce
+/// n'est pas une suppression, c'est une absence. Encore faut-il pouvoir les
+/// regarder — un compteur dans un bandeau ne dit pas *lesquels*.
+#[tauri::command]
+pub async fn unavailable_tracks(
+    state: State<'_, AppState>,
+) -> Result<Vec<repository::TrackSummary>> {
+    let tracks = sqlx::query_as::<_, repository::TrackSummary>(&format!(
+        "SELECT {}
+           FROM tracks t
+      LEFT JOIN albums al ON al.id = t.album_id
+          WHERE t.deleted_at IS NULL AND t.is_available = 0
+       ORDER BY t.title COLLATE NOCASE",
+        repository::TRACK_COLUMNS
+    ))
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(tracks)
+}
+
 #[tauri::command]
 pub async fn list_albums(state: State<'_, AppState>) -> Result<Vec<AlbumSummary>> {
     Ok(sqlx::query_as::<_, AlbumSummary>(

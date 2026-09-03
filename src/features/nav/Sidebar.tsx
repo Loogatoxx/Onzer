@@ -23,6 +23,10 @@ export type Route =
   | { kind: "playing" }
   /** La file d'attente, modifiable. */
   | { kind: "queue" }
+  /** Ce qu'on a écouté, du plus récent au plus ancien. */
+  | { kind: "history" }
+  /** Les morceaux dont le fichier a disparu. */
+  | { kind: "offline" }
   /** Un album, ouvert depuis la colonne d'une ligne. */
   | { kind: "album"; id: number; name: string; artist: string | null }
   /** La grille de tous les albums. */
@@ -113,6 +117,12 @@ export function Sidebar({
           label="Ce qui me manque"
           active={active === "sync"}
           onClick={() => onNavigate({ kind: "sync" })}
+        />
+        <NavItem
+          icon="clock"
+          label="Récemment joué"
+          active={active === "history"}
+          onClick={() => onNavigate({ kind: "history" })}
         />
         <NavItem
           icon="devices"
@@ -223,7 +233,7 @@ function NavItem({
   active,
   onClick,
 }: {
-  icon: "home" | "library" | "artist" | "sparkle" | "stats" | "devices";
+  icon: "home" | "library" | "artist" | "sparkle" | "stats" | "devices" | "clock";
   label: string;
   active: boolean;
   onClick: () => void;

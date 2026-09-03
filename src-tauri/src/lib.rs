@@ -301,6 +301,8 @@ pub fn run() {
             commands::library::tracks_by_ids,
             commands::library::album_tracks,
             commands::library::list_albums,
+            commands::library::listening_history,
+            commands::library::unavailable_tracks,
             commands::library::rescue_set_aside,
             commands::library::near_duplicates,
             commands::library::ignore_duplicate_group,

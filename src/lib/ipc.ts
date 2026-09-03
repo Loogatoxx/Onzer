@@ -933,6 +933,14 @@ export const ipc = {
   /** Bascule le favori et retourne le nouvel état. */
   toggleLoved: (trackId: number): Promise<boolean> =>
     invoke<boolean>("toggle_loved", { trackId }),
+  /** Ce qu'on a écouté, du plus récent au plus ancien. */
+  listeningHistory: (limit?: number): Promise<TrackSummary[]> =>
+    invoke<TrackSummary[]>("listening_history", { limit }),
+
+  /** Les morceaux dont le fichier a disparu. */
+  unavailableTracks: (): Promise<TrackSummary[]> =>
+    invoke<TrackSummary[]>("unavailable_tracks"),
+
   lovedTracks: (): Promise<TrackSummary[]> => invoke<TrackSummary[]>("loved_tracks"),
 
   trackLyrics: (trackId: number): Promise<Lyrics> =>

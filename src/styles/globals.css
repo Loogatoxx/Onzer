@@ -278,6 +278,26 @@
   pointer-events: none;
 }
 
+/* Le voile d'une feuille, lui, garde ses clics pendant qu'il s'efface.
+ *
+ * Un menu qui part n'a plus rien à recevoir — d'où `pointer-events: none`
+ * ci-dessus. Un voile, si : il est là pour que rien de ce qu'il couvre ne soit
+ * touché par erreur, et ce rôle dure jusqu'à sa disparition complète. Sans
+ * cela, un second appui pendant les deux dixièmes de seconde de sortie tombe
+ * sur la ligne du dessous et lance un morceau qu'on n'a pas demandé. */
+.animate-disparaitre-voile {
+  animation: onzer-disparaitre-voile 180ms var(--ease-out-soft) forwards;
+}
+
+@keyframes onzer-disparaitre-voile {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
 /* Deux menus sur quatre s'ouvrent vers le haut — ils sont ancrés en bas de
    leur bouton. Ils se déployaient pourtant depuis leur coin supérieur : leur
    animation racontait l'inverse de leur mouvement. */
@@ -597,6 +617,7 @@
   .page-depuis-gauche,
   .animate-surgir,
   .animate-disparaitre,
+  .animate-disparaitre-voile,
   .animate-apparaitre,
   .barre-monte,
   .barre-descend {

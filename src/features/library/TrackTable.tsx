@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Icon, IconButton, type IconName } from "@/components/Icon";
 import {
@@ -469,7 +470,18 @@ function TrackRow({
       // liste paginée, et c'est au défilement de la trouver, pas au tableau de
       // la tenir.
       data-courant={isCurrent ? "" : undefined}
-      className={`${GRID} pression group rounded-md px-1.5 py-2 transition-colors hover:bg-elevated lg:px-3 ${
+      // # Pourquoi une ligne s'éclaire au lieu de s'enfoncer
+      //
+      // `.pression` met l'élément à l'échelle. Sur une pastille de trente-six
+      // pixels, c'est un enfoncement ; sur une ligne large de tout l'écran,
+      // c'est cinq pixels de chaque bord qui bougent — et surtout, une mise à
+      // l'échelle crée un **bloc conteneur** : tout ce qui est `fixed` à
+      // l'intérieur, comme la feuille du menu, se met à se positionner par
+      // rapport à la ligne au lieu de l'écran.
+      //
+      // Les listes natives, elles, s'éclairent. C'est ce qu'on attend d'une
+      // ligne, et cela ne piège rien.
+      className={`${GRID} group rounded-md px-1.5 py-2 transition-colors hover:bg-elevated active:bg-raised lg:px-3 ${
         isCurrent ? "bg-elevated/60" : ""
       } ${unavailable ? "opacity-40" : ""}`}
     >
@@ -864,6 +876,16 @@ function RowMenu({
 
   useEffect(() => {
     if (!open) return;
+    // La feuille du téléphone vit à la racine du document : elle n'est plus
+    // « dans » l'ancre, et ce guetteur la refermerait au premier appui, y
+    // compris sur ses propres entrées. Elle a son voile pour cela.
+    if (mobile) {
+      const echapper = (event: KeyboardEvent) => {
+        if (event.key === "Escape") setOpen(false);
+      };
+      document.addEventListener("keydown", echapper);
+      return () => document.removeEventListener("keydown", echapper);
+    }
 
     const close = (event: MouseEvent) => {
       if (!anchor.current?.contains(event.target as Node)) setOpen(false);
@@ -878,7 +900,7 @@ function RowMenu({
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", escape);
     };
-  }, [open]);
+  }, [open, mobile]);
 
   // Le menu refermé désarme la suppression : rouvrir ne doit jamais retomber
   // sur un bouton déjà à moitié pressé.
@@ -944,7 +966,17 @@ function RowMenu({
 
       {monte
         && (mobile ? (
-          <>
+          /* # Pourquoi la feuille est portée à la racine du document
+
+             La ligne porte `.pression`, qui lui applique une mise à l'échelle
+             tant que le doigt est posé. Or **un élément `fixed` placé dans un
+             ancêtre transformé se positionne par rapport à lui**, pas par
+             rapport à l'écran : le menu s'ouvrant au bout de l'appui long, il
+             naissait dans une ligne encore enfoncée, puis sautait à sa vraie
+             place quand le doigt se levait. C'est le « pas fluide » qu'on
+             voyait, et aucune durée d'animation n'y aurait rien changé. */
+          createPortal(
+            <>
             {/* # Pourquoi une feuille, et pas le même menu
 
                 Le menu du bureau est un rectangle de deux cent cinquante
@@ -957,11 +989,25 @@ function RowMenu({
                 atteint sans changer de prise — et rappelle en tête **de quel
                 morceau** on parle : ouvert par un appui long, le menu arrive
                 sans qu'on ait vu ce qu'on a saisi. */}
+            {/* # Pourquoi il ferme au `pointerdown`, et pourquoi il retient l'appui
+
+                Il fermait au clic. Or un clic n'arrive qu'**après** le
+                relâchement : entre-temps la feuille commençait sa sortie, et
+                l'animation de sortie coupe les événements. Le clic tombait donc
+                sur la ligne du dessous — et lançait un autre morceau.
+
+                On ferme au premier contact, et l'on empêche le clic de naître :
+                `preventDefault` sur un `pointerdown` supprime les événements de
+                compatibilité qui suivraient. */}
             <div
               className={`fixed inset-0 z-40 bg-base/60 ${
-                open ? "animate-apparaitre" : "animate-disparaitre"
+                open ? "animate-apparaitre" : "animate-disparaitre-voile"
               }`}
-              onClick={() => setOpen(false)}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+              }}
             />
 
             <div
@@ -983,7 +1029,9 @@ function RowMenu({
 
               <div className="py-1">{entrees}</div>
             </div>
-          </>
+            </>,
+            document.body,
+          )
         ) : (
           <div
             className={`${open ? "animate-surgir" : "animate-disparaitre"} absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60`}

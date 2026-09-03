@@ -463,8 +463,15 @@ function Resultat({ rapport }: { rapport: SyncReport }) {
 
   return (
     <div className="mt-4 rounded-lg border border-accent/25 bg-accent/5 px-3.5 py-3 text-[13px] leading-relaxed text-ink">
+      {/* « Repris de X » suivi de rien se lit comme un échec. Ce cas arrive
+          pour de bon : quand seuls des fichiers manquent, il n'y a rien à
+          reprendre — et c'est une bonne nouvelle, pas une panne. */}
       <p className="font-medium">
-        {rien ? "Déjà d'accord" : `Repris de ${rapport.appareil}`}
+        {rien
+          ? "Déjà d'accord"
+          : rapport.favoris + rapport.paroles + rapport.playlists === 0
+            ? "Rien à reprendre"
+            : `Repris de ${rapport.appareil}`}
       </p>
 
       {rien ? (

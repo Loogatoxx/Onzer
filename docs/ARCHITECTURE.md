@@ -2169,6 +2169,13 @@ règle qui décide que deux fichiers sont le même morceau — chemin d'abord, t
 recalculer autrement garantirait qu'un jour les deux réponses divergent : un morceau annoncé
 manquant que la fusion, elle, considère présent, et qu'on téléchargerait en double.
 
+**Ce que le premier transfert réel a appris.** Quatre-vingt-trois morceaux annoncés, sur les
+vraies bibliothèques : soixante-neuf rapatriés, onze reconnus comme déjà présents sous un autre
+nom — le dédoublonnage de l'import faisant son travail —, et trois refusés. Ces trois-là sont
+des morceaux **hors ligne** chez l'expéditeur : leur fiche existe, leur fichier non. Le cas est
+normal ; le message ne l'était pas. « 404 Not Found » se lit comme une panne, et c'est
+l'explication du serveur, pas son code, qui doit remonter jusqu'à l'écran.
+
 **Pourquoi un fichier à la fois.** Une archive serait plus rapide sur le réseau et pire
 partout ailleurs : il faudrait la constituer — donc la place pour tout stocker deux fois —,
 la transmettre entièrement avant d'en tirer quoi que ce soit, et tout perdre si la connexion
@@ -2270,6 +2277,38 @@ raconterait quelque chose qui n'a pas eu lieu.
 **`transform: none` et non `translateX(0)`.** Une transformation, même nulle, fait de
 l'élément un bloc conteneur : les surcouches en plein écran — la pochette agrandie — se
 seraient positionnées par rapport à lui.
+
+---
+
+## ADR-078 — Trois clés pour reconnaître un même morceau
+
+**Contexte.** Mesuré avant de lancer le premier transfert : cent quatre-vingt-sept morceaux
+que le téléphone croyait ne pas avoir, pour 1,37 Go. Il en avait la moitié.
+
+**Ce qui les séparait.** « Brand New Draco [ChopNotSlop Remix] » est crédité à *21 Savage* sur
+le Mac, à *Metro Boomin* sur le téléphone. L'un et l'autre ont raison — c'est un disque à deux
+noms. Le rangement en découle, donc le chemin diffère aussi, et aucune des deux clés
+existantes ne les rapprochait.
+
+**Décision.** Une troisième clé, essayée en dernier : **titre + durée à la seconde**, sans
+l'artiste. Le résultat, sur les mêmes bibliothèques : quatre-vingt-trois morceaux manquants au
+lieu de cent quatre-vingt-sept, 765 Mo au lieu de 1,37 Go.
+
+| Clé | Ce qu'elle suppose |
+|---|---|
+| Chemin relatif | Les deux arbres viennent de la même copie |
+| Artiste + titre + durée | Les tags s'accordent sur l'artiste principal |
+| **Titre + durée** | Rien de plus qu'un titre et une durée |
+
+**Ce qui empêche la troisième de se tromper.** L'unicité est exigée **des deux côtés** : si
+deux morceaux ici ou là-bas partagent la clé, elle ne désigne personne. Deux « Intro » de la
+même durée ne s'apparient donc pas — deviner serait pire que renoncer, puisque le favori de
+l'un atterrirait sur l'autre.
+
+**Une piste mesurée et abandonnée.** La taille du fichier en octets semblait la clé parfaite :
+le même fichier copié pèse le même poids. Elle n'a rien récupéré du tout — le Mac a réécrit
+les tags de sa bibliothèque, et chaque fichier y a changé de taille. L'intuition était bonne,
+la mesure a dit non.
 
 ---
 

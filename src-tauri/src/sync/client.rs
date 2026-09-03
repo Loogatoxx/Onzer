@@ -293,10 +293,16 @@ async fn recevoir_un(
         .map_err(|erreur| OnzerError::Invalid(format!("téléchargement : {erreur}")))?;
 
     if !reponse.status().is_success() {
-        return Err(OnzerError::Invalid(format!(
-            "l'autre appareil a répondu {}",
-            reponse.status()
-        )));
+        // L'explication du serveur vaut mieux que son code : « 404 Not Found »
+        // se lit comme une panne, « ce morceau est hors ligne » se comprend.
+        let code = reponse.status();
+        let detail = reponse.text().await.unwrap_or_default();
+
+        return Err(OnzerError::Invalid(if detail.trim().is_empty() {
+            format!("l'autre appareil a répondu {code}")
+        } else {
+            detail
+        }));
     }
 
     let octets = reponse

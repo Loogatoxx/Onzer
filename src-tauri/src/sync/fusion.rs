@@ -143,8 +143,32 @@ fn cle_secondaire(morceau: &MorceauSync) -> String {
     // La durée est arrondie à la seconde : deux encodages du même morceau
     // diffèrent de quelques millisecondes.
     format!(
-        "{}\u{1}{}\u{1}{}",
+        "a\u{1}{}\u{1}{}\u{1}{}",
         normaliser(artiste),
+        normaliser(&morceau.titre),
+        morceau.duree_ms / 1000,
+    )
+}
+
+/// La troisième clé : le titre et la durée, **sans l'artiste**.
+///
+/// # Pourquoi renoncer à l'artiste
+///
+/// Mesuré sur les deux bibliothèques : cent quatre morceaux que le téléphone
+/// croyait ne pas avoir, et qu'il avait. « Brand New Draco [ChopNotSlop
+/// Remix] » est crédité à 21 Savage d'un côté, à Metro Boomin de l'autre —
+/// l'un et l'autre ont raison, c'est un disque à deux noms. Le chemin en
+/// découle et diffère donc aussi, si bien qu'aucune des deux premières clés ne
+/// les rapproche. Sans cette troisième, on retéléchargeait 1,37 Go pour en
+/// jeter la moitié comme doublons.
+///
+/// C'est la clé la plus permissive des trois, et elle est essayée en dernier :
+/// deux morceaux différents portant le même titre à la même seconde près
+/// existent. L'exigence d'unicité **des deux côtés** les écarte — s'il y a le
+/// moindre doute sur qui est qui, la clé ne désigne personne.
+fn cle_titre(morceau: &MorceauSync) -> String {
+    format!(
+        "t\u{1}{}\u{1}{}",
         normaliser(&morceau.titre),
         morceau.duree_ms / 1000,
     )
@@ -166,7 +190,41 @@ fn normaliser(texte: &str) -> String {
         .join(" ")
 }
 
+/// Index des morceaux distants par une clé, **quand elle ne désigne qu'eux**.
+///
+/// L'unicité est exigée des deux côtés : si deux morceaux distants partagent la
+/// clé, elle ne désigne personne ; et si deux morceaux locaux la partagent,
+/// l'un des deux se ferait apparier à tort. Apparier au hasard serait pire que
+/// ne pas apparier — le favori d'un morceau atterrirait sur un autre.
+fn index_sans_ambiguite<'a>(
+    locaux: &[MorceauSync],
+    distants: &'a [MorceauSync],
+    cle: fn(&MorceauSync) -> String,
+) -> HashMap<String, &'a MorceauSync> {
+    let mut ici: HashMap<String, usize> = HashMap::new();
+    for morceau in locaux {
+        *ici.entry(cle(morceau)).or_default() += 1;
+    }
+
+    let mut la_bas: HashMap<String, usize> = HashMap::new();
+    for morceau in distants {
+        *la_bas.entry(cle(morceau)).or_default() += 1;
+    }
+
+    distants
+        .iter()
+        .filter(|morceau| {
+            let valeur = cle(morceau);
+            la_bas.get(&valeur) == Some(&1) && ici.get(&valeur).copied().unwrap_or(0) <= 1
+        })
+        .map(|morceau| (cle(morceau), morceau))
+        .collect()
+}
+
 /// Table d'appariement : pour chaque morceau local, son homologue distant.
+///
+/// Trois clés, de la plus sûre à la plus permissive. La première qui répond
+/// gagne : le chemin, puis artiste + titre + durée, puis titre + durée.
 fn apparier<'a>(
     locaux: &'a [MorceauSync],
     distants: &'a [MorceauSync],
@@ -176,19 +234,8 @@ fn apparier<'a>(
         .map(|morceau| (morceau.chemin.as_str(), morceau))
         .collect();
 
-    // La clé secondaire ne retient que les valeurs **sans ambiguïté** : si deux
-    // morceaux distants la partagent, elle ne désigne personne. Apparier au
-    // hasard serait pire que ne pas apparier.
-    let mut compte: HashMap<String, usize> = HashMap::new();
-    for morceau in distants {
-        *compte.entry(cle_secondaire(morceau)).or_default() += 1;
-    }
-
-    let par_tags: HashMap<String, &MorceauSync> = distants
-        .iter()
-        .filter(|morceau| compte.get(&cle_secondaire(morceau)) == Some(&1))
-        .map(|morceau| (cle_secondaire(morceau), morceau))
-        .collect();
+    let par_tags = index_sans_ambiguite(locaux, distants, cle_secondaire);
+    let par_titre = index_sans_ambiguite(locaux, distants, cle_titre);
 
     locaux
         .iter()
@@ -196,7 +243,8 @@ fn apparier<'a>(
             let distant = par_chemin
                 .get(local.chemin.as_str())
                 .copied()
-                .or_else(|| par_tags.get(&cle_secondaire(local)).copied())?;
+                .or_else(|| par_tags.get(&cle_secondaire(local)).copied())
+                .or_else(|| par_titre.get(&cle_titre(local)).copied())?;
 
             Some((local, distant))
         })
@@ -543,6 +591,52 @@ mod tests {
         let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![la_bas]));
 
         assert_eq!(fusion.changements.len(), 1, "les tags doivent apparier");
+    }
+
+    #[test]
+    fn un_meme_morceau_credite_a_deux_artistes_se_retrouve() {
+        // Mesuré sur les vraies bibliothèques : le même disque est crédité à
+        // 21 Savage d'un côté, à Metro Boomin de l'autre. Le chemin en découle
+        // et diffère donc aussi.
+        let ici = morceau(
+            "21 Savage/2020 - SAVAGE MODE II/12 - Brand New Draco.mp3",
+            "Brand New Draco",
+            "21 Savage",
+            false,
+        );
+        let la_bas = morceau(
+            "Metro Boomin/2020 - SAVAGE MODE II/12 - Brand New Draco.mp3",
+            "Brand New Draco",
+            "Metro Boomin",
+            true,
+        );
+
+        let fusion = fusionner(&etat("Mac", vec![ici]), &etat("Honor", vec![la_bas]));
+
+        assert_eq!(fusion.changements.len(), 1, "le favori doit traverser");
+        assert!(
+            fusion.manquants.is_empty(),
+            "le morceau est là : le retélécharger le mettrait en double"
+        );
+    }
+
+    #[test]
+    fn deux_titres_homonymes_ne_s_apparient_pas_par_le_titre() {
+        // Deux « Intro » de la même durée : la clé du titre ne peut pas les
+        // départager, et deviner serait pire que renoncer.
+        let ici_un = morceau("a/intro.mp3", "Intro", "A", false);
+        let ici_deux = morceau("b/intro.mp3", "Intro", "B", false);
+        let la_bas = morceau("c/intro.mp3", "Intro", "C", true);
+
+        let fusion = fusionner(
+            &etat("Mac", vec![ici_un, ici_deux]),
+            &etat("Honor", vec![la_bas]),
+        );
+
+        assert!(
+            fusion.changements.is_empty(),
+            "aucun des deux homonymes ne doit hériter du favori de l'autre"
+        );
     }
 
     #[test]

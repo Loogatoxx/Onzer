@@ -312,9 +312,19 @@ async fn fichier(
         .resolve(&demande.chemin)
         .map_err(|erreur| ErreurHttp::new(StatusCode::BAD_REQUEST, &erreur.to_string()))?;
 
-    tokio::fs::read(&chemin)
-        .await
-        .map_err(|erreur| ErreurHttp::new(StatusCode::NOT_FOUND, &format!("fichier illisible : {erreur}")))
+    // # Pourquoi ce cas mérite son propre message
+    //
+    // Le morceau est en base et son fichier n'y est plus : c'est un morceau
+    // **hors ligne**, cas courant et parfaitement normal. Le client n'en
+    // voyait que « 404 Not Found », qui se lit comme une panne. Trois
+    // morceaux ont manqué au premier transfert réel pour cette raison, et le
+    // message ne le disait pas.
+    tokio::fs::read(&chemin).await.map_err(|_| {
+        ErreurHttp::new(
+            StatusCode::NOT_FOUND,
+            "ce morceau est hors ligne sur l'autre appareil : sa fiche existe, son fichier non",
+        )
+    })
 }
 
 /// Vérifie le code, et compte les erreurs.

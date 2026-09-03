@@ -722,7 +722,18 @@ function RowMenu({
   }
 
   return (
-    <div ref={anchor} className="relative">
+    <div
+      ref={anchor}
+      className="relative"
+      // # Pourquoi le menu retient les clics
+      //
+      // Il vit **dans** la ligne, et la ligne lance la lecture quand on la
+      // touche. Sans cette barrière, choisir « Sauvegarder dans Titres likés »
+      // faisait deux choses : le favori, et le morceau qui part. Deux actions
+      // pour un geste, dont une qu'on n'a pas demandée — le défaut qu'on venait
+      // de corriger sur le cœur, à un endroit qu'on n'avait pas regardé.
+      onClick={(event) => event.stopPropagation()}
+    >
       <IconButton
         name="more"
         label={`Autres actions pour ${track.title}`}

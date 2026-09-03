@@ -525,6 +525,14 @@ impl MediaAction {
     }
 }
 
+/// Écart au-delà duquel une position n'est plus le simple écoulement du temps.
+///
+/// Une seconde et demie : trois battements de la boucle. En dessous, on
+/// republierait pour du bruit — le décodeur rend une position qui suit le
+/// tampon de sortie, et non l'horloge.
+#[cfg(target_os = "android")]
+const SAUT_MINIMAL_MS: i64 = 1_500;
+
 fn spawn_playback_loop(handle: tauri::AppHandle) {
     use commands::playback::{PlaybackTick, STATE_EVENT, TICK_EVENT};
 
@@ -553,6 +561,15 @@ fn spawn_playback_loop(handle: tauri::AppHandle) {
         #[cfg(target_os = "android")]
         let mut dernier_publie: Option<i64> = None;
 
+        // La position telle qu'Android la croit. Elle sert à repérer un
+        // **déplacement** : la session multimédia porte une vitesse, et le
+        // système fait avancer son compteur tout seul à partir de la dernière
+        // position publiée. Tant qu'on lui laisse celle du début, il continue
+        // de compter à partir de là — les secondes de l'écran verrouillé
+        // ignoraient donc tout saut dans le morceau.
+        #[cfg(target_os = "android")]
+        let mut position_publiee: i64 = -1;
+
         loop {
             interval.tick().await;
 
@@ -574,10 +591,20 @@ fn spawn_playback_loop(handle: tauri::AppHandle) {
             #[cfg(target_os = "android")]
             {
                 let courant = player.current_track_id().await;
-                if courant != dernier_publie {
+                let position = player.position_ms();
+
+                // Ce que la position devrait valoir si rien d'autre que le
+                // temps ne s'était écoulé depuis la dernière publication.
+                let attendue = position_publiee + PLAYBACK_TICK.as_millis() as i64;
+                let deplacement = position_publiee >= 0
+                    && (position - attendue).abs() > SAUT_MINIMAL_MS;
+
+                if courant != dernier_publie || deplacement {
                     dernier_publie = courant;
                     publier_vers_android(&handle, &player).await;
                 }
+
+                position_publiee = position;
             }
 
             let tick = PlaybackTick {

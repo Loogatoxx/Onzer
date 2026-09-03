@@ -17,6 +17,17 @@ interface PlayerBarProps {
   onRepeat: () => void;
   onToggleLoved: () => void;
   onOpenPanel: (tab: "lyrics" | "queue") => void;
+  /**
+   * Ouvre le grand lecteur.
+   *
+   * # Pourquoi la pochette est le bouton
+   *
+   * C'est déjà le geste sur téléphone, et c'est celui qu'on essaie d'instinct
+   * sur un bureau : la pochette est la seule chose qui représente le morceau
+   * en entier. Le grand lecteur existait pourtant, sans qu'aucun chemin n'y
+   * mène depuis la barre du bas.
+   */
+  onOpenPlayer: () => void;
 }
 
 /**
@@ -48,7 +59,15 @@ export function PlayerBar(props: PlayerBarProps) {
       <div className="flex items-center gap-4 rounded-xl bg-surface px-4 py-3">
         {/* ── Ce qui joue ──────────────────────────────────────────────── */}
         <div className="flex w-[26%] min-w-0 shrink-0 items-center gap-3">
-          <Artwork hash={track.artworkHash} className="h-14 w-14 rounded-md" />
+          <button
+            type="button"
+            title="Ouvrir le lecteur"
+            aria-label="Ouvrir le lecteur"
+            onClick={props.onOpenPlayer}
+            className="shrink-0 rounded-md transition-transform duration-150 hover:scale-[1.04] active:scale-95"
+          >
+            <Artwork hash={track.artworkHash} className="h-14 w-14 rounded-md" />
+          </button>
 
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-ink">{track.title}</p>

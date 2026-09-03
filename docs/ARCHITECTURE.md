@@ -2462,6 +2462,72 @@ a été entendu — et on appuie une seconde fois.
 
 ---
 
+## ADR-085 — Une colonne `auto` que l'en-tête ne remplit pas
+
+**Contexte.** Sur le Mac, les titres de colonnes ne tombaient pas sur leurs données : « ALBUM »
+soixante pixels à droite de l'album, « AJOUTÉ » quatre-vingt-dix à droite de la date.
+
+**La cause, mesurée.** La dernière colonne valait `auto` — « aussi large que son contenu ».
+Les lignes y mettent un cœur et trois points ; l'en-tête n'y met rien.
+
+```text
+  en-tête : 28  378.8  20  265.2  112  52   0.0   ← rien dans la dernière
+  ligne   : 28  371.0  20  259.7  112  52  13.3   ← deux boutons
+```
+
+La largeur totale étant la même, les treize pixels de différence étaient repris par les
+colonnes souples — et tout ce qui suivait le titre glissait. Deux grilles qui partagent
+scrupuleusement le **même gabarit** ne s'alignent pas pour autant si l'une de leurs colonnes se
+mesure à son contenu.
+
+**Décision.** Une largeur fixe : deux boutons de trente-deux pixels et leur écart, soit quatre
+rem un quart. Un seul en dessous de `lg`, où le cœur ne s'affiche pas. La colonne ne se mesure
+plus à ce qu'on y met, donc les deux grilles ne peuvent plus diverger.
+
+---
+
+## ADR-086 — Deux gestes horizontaux ne peuvent pas cohabiter
+
+**Contexte.** Sur le grand lecteur, essayer de poser la tête de lecture à un endroit précis
+déclenchait un saut de quinze secondes. Le curseur existait, il était impossible à viser.
+
+**Ce qui se passait.** Le saut de quinze secondes était posé sur **tout l'écran** de lecture,
+curseur compris. Deux gestes horizontaux superposés au même endroit, dont le plus grossier
+gagnait toujours.
+
+**Décision.** Le saut reste sur le petit lecteur, où il n'y a pas de curseur à viser, et
+disparaît du grand, où il y en a un. Ce n'était pas un arbitrage à faire : le geste avait été
+écrit pour la barre réduite, et s'était étendu au reste sans qu'on le décide.
+
+**Ce que ça a révélé.** Une barre de quatre pixels est ce qu'il faut voir ; c'est aussi ce
+qu'on ne peut pas viser du pouce. Le champ fait donc vingt-quatre pixels de haut, transparent,
+et ne dessine sa piste que sur quatre : on attrape une surface, on regarde un trait.
+
+---
+
+## ADR-087 — L'accueil est le sol
+
+**Contexte.** Depuis la bibliothèque, lancer un morceau puis faire le geste retour fermait
+l'application.
+
+**Ce qui se passait.** Le geste recule d'un cran dans notre propre pile, et quitte quand il n'y
+a plus rien derrière. Or lancer un morceau **ne navigue nulle part** : on était toujours au
+premier cran, celui d'où l'on sort. La bibliothèque jouait le rôle de sol, et l'on en tombait
+sans rien avoir fait de particulier.
+
+**Décision.** Trois règles, dans cet ordre :
+
+| Situation | Ce que fait le geste |
+|---|---|
+| Une recherche est ouverte | Elle se ferme |
+| Il y a un cran derrière | On y revient — c'est ce qui ramène le grand lecteur à la page d'où on l'a ouvert |
+| Rien derrière, et on n'est pas à l'accueil | On y va |
+| À l'accueil | L'application passe en arrière-plan |
+
+Le sol n'est plus une page qu'on traverse en écoutant : c'est celle d'où l'on part.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

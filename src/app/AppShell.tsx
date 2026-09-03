@@ -441,16 +441,35 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
         return;
       }
 
-      setCursor((position) => {
-        if (position <= 0) return position;
+      // Un cran en arrière dans notre propre pile. C'est ce qui ramène le
+      // grand lecteur à la page d'où on l'a ouvert — et non au bureau.
+      if (cursor > 0) {
         window.history.pushState(null, "");
-        return position - 1;
-      });
+        setCursor(cursor - 1);
+        return;
+      }
+
+      // # Pourquoi l'accueil est le sol
+      //
+      // Plus rien derrière, et on n'est pas à l'accueil : le geste y ramène
+      // au lieu de fermer. C'est la bibliothèque qui jouait ce rôle, et l'on
+      // en sortait sans le vouloir — il suffisait d'y lancer un morceau, ce
+      // qui ne navigue nulle part, pour que le geste suivant quitte tout.
+      if (route.kind !== "home") {
+        window.history.pushState(null, "");
+        setStack([{ kind: "home" }]);
+        setCursor(0);
+        return;
+      }
+
+      // À l'accueil, sans rien derrière : l'entrée que le geste vient de
+      // consommer n'est pas remplacée, et le système met l'application en
+      // arrière-plan. C'est le seul endroit où il le fait.
     };
 
     window.addEventListener("popstate", reculer);
     return () => window.removeEventListener("popstate", reculer);
-  }, [mobile, searchOpen, query]);
+  }, [mobile, searchOpen, query, cursor, route.kind]);
 
   /**
    * Une entrée d'historique par destination.
@@ -1478,6 +1497,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
           onToggleLoved={() => {
             if (current !== null) void toggleLoved(current.trackId);
           }}
+          onOpenPlayer={() => navigate({ kind: "playing" })}
           onOpenPanel={(tab) => {
             // Les paroles s'ouvrent en grand : c'est ce qu'on veut quand on
             // clique dessus. Le panneau latéral reste accessible depuis

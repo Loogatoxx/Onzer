@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Artwork } from "@/features/library/Artwork";
-import { useSeekGesture } from "./useSeekGesture";
 import { Icon } from "@/components/Icon";
 import { formatDuration, ipc, type PlaybackSnapshot } from "@/lib/ipc";
 
@@ -66,7 +65,6 @@ export function NowPlayingView({
   fileDAttente: React.ReactNode;
 }) {
   const [agrandie, setAgrandie] = useState(false);
-  const geste = useSeekGesture(state.positionMs, state.durationMs, onSeek);
 
   /**
    * Un glissement vers le bas referme l'écran.
@@ -91,22 +89,25 @@ export function NowPlayingView({
 
   return (
     <div
-      className="mx-auto flex w-full max-w-md flex-col px-6 pb-10 pt-6"
-      {...geste}
-      // Le glissement vers le bas est un geste **du doigt** : il se lit donc
-      // sur les événements tactiles, comme le déplacement dans le morceau. Le
-      // pointeur, lui, est annulé dès que le navigateur croit à un défilement
-      // — et un glissement vers le bas est précisément ce qui y ressemble le
-      // plus.
+      className="mx-auto flex w-full max-w-md flex-col px-6 pb-10 pt-6 lg:max-w-lg"
+      // # Pourquoi le saut de quinze secondes n'est plus ici
+      //
+      // Il couvrait tout l'écran, curseur compris : essayer de poser la tête
+      // de lecture à un endroit précis déclenchait un saut de quinze secondes
+      // au lieu de la déplacer. Deux gestes horizontaux superposés, dont le
+      // plus grossier gagnait toujours. Il reste sur le petit lecteur, où il
+      // n'y a pas de curseur à viser.
+      //
+      // Le glissement vers le bas, lui, se lit sur les événements tactiles :
+      // le pointeur est annulé dès que le navigateur croit à un défilement, et
+      // un glissement vers le bas est précisément ce qui y ressemble le plus.
       onTouchStart={(event) => {
         const doigt = event.touches[0];
         depart.current = doigt === undefined ? null : doigt.clientY;
-        geste.onTouchStart(event);
       }}
       onTouchEnd={(event) => {
         const origine = depart.current;
         depart.current = null;
-        geste.onTouchEnd(event);
 
         const doigt = event.changedTouches[0];
         if (origine !== null && doigt !== undefined && doigt.clientY - origine > 120) {
@@ -115,7 +116,6 @@ export function NowPlayingView({
       }}
       onTouchCancel={() => {
         depart.current = null;
-        geste.onTouchCancel();
       }}
     >
       {/* # Toucher la pochette l'agrandit
@@ -184,10 +184,12 @@ export function NowPlayingView({
           value={state.positionMs}
           onChange={(event) => onSeek(Number(event.target.value))}
           aria-label="Position dans le morceau"
-          className="h-1 w-full cursor-pointer appearance-none rounded-full bg-raised accent-[var(--color-accent)]"
-          style={{
-            background: `linear-gradient(to right, var(--color-ink) ${ratio * 100}%, var(--color-raised) ${ratio * 100}%)`,
-          }}
+          className="curseur-lecture"
+          style={
+            {
+              "--piste": `linear-gradient(to right, var(--color-ink) ${ratio * 100}%, var(--color-raised) ${ratio * 100}%)`,
+            } as React.CSSProperties
+          }
         />
 
         <div className="mt-1.5 flex justify-between text-[11px] text-ink-faint">

@@ -31,7 +31,18 @@ const COLONNES =
 // Au-dessus, la place existe : l'album et la date d'ajout reprennent leur
 // colonne, parce que les masquer sur un écran large serait gâcher l'espace
 // qu'on vient de gagner.
-"grid-cols-[1.25rem_minmax(0,1fr)_auto] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_auto] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.25rem_auto] items-center gap-2.5 lg:gap-4";
+// # Pourquoi la dernière colonne a une largeur fixe
+//
+// Elle valait `auto`, c'est-à-dire « aussi large que son contenu ». Les
+// lignes y mettent un cœur et trois points ; l'en-tête n'y met rien. Les deux
+// grilles n'avaient donc pas la même dernière colonne — et comme la largeur
+// totale, elle, est la même, la différence était reprise par les colonnes
+// souples. Tout ce qui suivait le titre glissait : « ALBUM » se retrouvait à
+// soixante pixels de l'album, « AJOUTÉ » à quatre-vingt-dix de la date.
+//
+// Deux boutons de trente-deux pixels et leur écart : quatre rem un quart. Un
+// seul en dessous de `lg`, où le cœur ne s'affiche pas.
+"grid-cols-[1.25rem_minmax(0,1fr)_2rem] lg:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_3.25rem_4.25rem] xl:grid-cols-[1.75rem_minmax(0,2fr)_1.25rem_minmax(0,1.4fr)_7rem_3.25rem_4.25rem] items-center gap-2.5 lg:gap-4";
 
 const GRID = `grid ${COLONNES}`;
 

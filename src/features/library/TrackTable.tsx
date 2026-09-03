@@ -86,6 +86,14 @@ interface TrackTableProps {
   sort?: TrackSort;
   onSort?: (column: SortColumn) => void;
   /**
+   * Revenir à l'ordre que la liste avait d'elle-même.
+   *
+   * Fourni partout sauf sur la bibliothèque, dont l'ordre « naturel » est déjà
+   * un tri par date d'ajout : y proposer « ordre d'origine » à côté de
+   * « Ajouté » nommerait deux fois la même chose.
+   */
+  onSortReset?: () => void;
+  /**
    * Favoris, tenus par la coquille.
    *
    * `TrackSummary.isLoved` sert à les amorcer, mais ne peut pas rester la
@@ -218,6 +226,7 @@ export function TrackTable({
   reasons,
   sort,
   onSort,
+  onSortReset,
   emptyMessage = "Rien à afficher ici.",
 }: TrackTableProps) {
   if (tracks.length === 0) {
@@ -229,7 +238,7 @@ export function TrackTable({
   return (
     <div className="px-1 pb-8 lg:px-3">
       {onSort !== undefined && (
-        <TriCompact sort={sort} onSort={onSort} />
+        <TriCompact sort={sort} onSort={onSort} onSortReset={onSortReset} />
       )}
 
       <div
@@ -688,9 +697,11 @@ const NOMS_DE_TRI: Record<SortColumn, string> = {
 function TriCompact({
   sort,
   onSort,
+  onSortReset,
 }: {
   sort: TrackSort | undefined;
   onSort: (column: SortColumn) => void;
+  onSortReset?: (() => void) | undefined;
 }) {
   const [ouvert, setOuvert] = useState(false);
   const monte = useFermeture(ouvert);
@@ -714,7 +725,12 @@ function TriCompact({
     };
   }, [ouvert]);
 
-  const courant = sort === undefined ? "Titre" : NOMS_DE_TRI[sort.column];
+  const courant =
+    sort === undefined
+      ? onSortReset === undefined
+        ? "Titre"
+        : "Ordre d'origine"
+      : NOMS_DE_TRI[sort.column];
 
   return (
     <div ref={ancre} className="relative flex justify-end px-1.5 pb-1 lg:hidden">
@@ -737,6 +753,29 @@ function TriCompact({
 
       {monte && (
         <div className={`${ouvert ? "animate-surgir" : "animate-disparaitre"} absolute right-1.5 top-8 z-30 w-44 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-2xl shadow-black/60`}>
+          {/* # Pourquoi il faut un chemin de retour
+
+              Une playlist a **son** ordre : celui dans lequel on l'a rangée.
+              Trier par titre l'écrase, et rien ne permettait d'y revenir — il
+              fallait quitter la page et y retourner. C'est ce que Spotify
+              appelle « Tri personnalisé » : ce n'est pas un tri de plus, c'est
+              l'absence de tri, et elle mérite d'être nommée. */}
+          {onSortReset !== undefined && (
+            <button
+              type="button"
+              onClick={() => {
+                onSortReset();
+                setOuvert(false);
+              }}
+              className={`pression flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[13px] ${
+                sort === undefined ? "text-ink" : "text-ink-muted hover:bg-elevated hover:text-ink"
+              }`}
+            >
+              Ordre d&apos;origine
+              {sort === undefined && <Icon name="check" size={13} />}
+            </button>
+          )}
+
           {(Object.keys(NOMS_DE_TRI) as SortColumn[]).map((colonne) => {
             const actif = sort?.column === colonne;
             return (

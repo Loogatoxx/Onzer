@@ -1209,6 +1209,7 @@ export function AppShell({
         : { selection, onSelect: basculerSelection })}
       {...(sort === null ? {} : { sort })}
       onSort={toggleSort}
+      {...(route.kind === "library" ? {} : { onSortReset: () => setSort(null) })}
       {...(route.kind === "playlist" && !searching
         ? {
             onRemoveAt: (position: number) => {
@@ -2455,6 +2456,15 @@ function Page(props: PageProps) {
           </>
         }
         cover={<CoverTile name="library" />}
+        // Créer une playlist depuis le téléphone était enterré dans « Plus ».
+        // Sur le bureau, le bouton vit déjà en tête de la barre latérale.
+        extra={
+          <HeaderAction
+            name="plus"
+            label="Nouvelle playlist"
+            onClick={props.onCreatePlaylist}
+          />
+        }
         onPlay={play}
         {...filtreProps}
         teinte={props.teinte}

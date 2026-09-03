@@ -13,6 +13,20 @@ interface PageHeaderProps {
   onPlay: (() => void) | null;
   onShuffle?: () => void;
   /**
+   * Ajoute toute la collection à la file d'attente.
+   *
+   * # Pourquoi ici, à côté de la lecture
+   *
+   * « Ajouter à la file » existait morceau par morceau, dans le menu d'une
+   * ligne. Mettre un album de quatorze titres à la suite demandait donc
+   * quatorze allers-retours dans un menu — ou d'accepter que la lecture en
+   * cours soit remplacée, ce qui n'est pas la même chose du tout.
+   *
+   * Le bouton se tient là où l'on regarde déjà pour lancer : ▶ remplace la
+   * file, celui-ci la prolonge.
+   */
+  onEnqueue?: () => void;
+  /**
    * Quand il est fourni, le titre devient modifiable au clic.
    *
    * Renommer là où le nom s'affiche évite une boîte de dialogue : on tape par
@@ -50,6 +64,7 @@ export function PageHeader({
   cover,
   onPlay,
   onShuffle,
+  onEnqueue,
   onRename,
   extra,
   onPickCover,
@@ -181,6 +196,14 @@ export function PageHeader({
 
         {onShuffle !== undefined && (
           <HeaderAction name="shuffle" label="Lire dans le désordre" onClick={onShuffle} />
+        )}
+
+        {onEnqueue !== undefined && (
+          <HeaderAction
+            name="queue"
+            label="Ajouter à la file d'attente"
+            onClick={onEnqueue}
+          />
         )}
 
         {extra}

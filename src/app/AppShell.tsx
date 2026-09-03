@@ -741,6 +741,35 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
    * et c'est le dernier arrivé qui l'emporterait — parfois celui d'avant la
    * lecture.
    */
+  /**
+   * Ajoute toute la liste affichée à la file d'attente.
+   *
+   * # Pourquoi la liste affichée, et non la route
+   *
+   * C'est déjà ce que fait « Lire » : le bouton agit sur ce qu'on a sous les
+   * yeux — une playlist, un album, un artiste, un résultat de recherche.
+   * Interroger la route pour reconstituer la même chose ferait un second
+   * chemin, qui finirait par ne plus dire la même chose que le premier.
+   */
+  function enqueueAll() {
+    if (shown.length === 0) return;
+
+    void playback.enqueue(shown.map((track) => track.id));
+
+    // Une file s'allonge sans que rien ne bouge à l'écran : sans un mot, on ne
+    // sait pas si le bouton a été entendu.
+    const nombre = shown.length;
+    const message = `${nombre} morceau${nombre > 1 ? "x" : ""} ajouté${
+      nombre > 1 ? "s" : ""
+    } à la file`;
+
+    setSyncNote(message);
+    setTimeout(
+      () => setSyncNote((actuel) => (actuel === message ? null : actuel)),
+      4000,
+    );
+  }
+
   async function playAll(shuffle: boolean) {
     if (shown.length === 0) return;
 
@@ -1240,6 +1269,7 @@ export function AppShell({ libraryRoot }: { libraryRoot: string }) {
               generated={generated}
               importing={importing}
               onPlayAll={(shuffle) => void playAll(shuffle)}
+              onEnqueueAll={enqueueAll}
               onPlayTracks={(list, index) =>
                 void playback.play(list.map((track) => track.id), index)
               }
@@ -1477,6 +1507,8 @@ interface PageProps {
   generated: GeneratedPlaylist | null;
   importing: boolean;
   onPlayAll: (shuffle: boolean) => void;
+  /** Ajoute la liste affichée à la file, sans interrompre l'écoute. */
+  onEnqueueAll: () => void;
   /** Lance une liste arbitraire — la rangée de reprise de l'accueil. */
   onPlayTracks: (tracks: TrackSummary[], index: number) => void;
   onOpenCategory: (key: string, title: string) => void;
@@ -1614,6 +1646,7 @@ function Page(props: PageProps) {
 
   const play = tracks.length === 0 ? null : () => props.onPlayAll(false);
   const shuffle = tracks.length === 0 ? undefined : () => props.onPlayAll(true);
+  const enfiler = tracks.length === 0 ? undefined : props.onEnqueueAll;
 
   if (route.kind === "stats") {
     return <WrappedView />;
@@ -1645,6 +1678,7 @@ function Page(props: PageProps) {
           }
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+          {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
         />
         {props.children}
       </>
@@ -1752,6 +1786,7 @@ function Page(props: PageProps) {
           }
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+          {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
         />
 
         <AlbumRow
@@ -1790,6 +1825,7 @@ function Page(props: PageProps) {
           }
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+          {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
         />
         {props.children}
       </>
@@ -1812,6 +1848,7 @@ function Page(props: PageProps) {
           cover={<CoverTile name="sparkle" />}
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+          {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
         />
         {props.children}
       </>
@@ -1836,6 +1873,7 @@ function Page(props: PageProps) {
           }
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+          {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
           onRename={(name) => props.onRenamePlaylist(route.id, name)}
           onPickCover={() => void props.onPickPlaylistCover(route.id)}
           description={summary?.description ?? null}
@@ -1863,6 +1901,7 @@ function Page(props: PageProps) {
           cover={<CoverTile name="sparkle" />}
           onPlay={play}
           {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+          {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
         />
         {props.children}
       </>
@@ -1902,6 +1941,7 @@ function Page(props: PageProps) {
         cover={<CoverTile name="library" />}
         onPlay={play}
         {...(shuffle === undefined ? {} : { onShuffle: shuffle })}
+        {...(enfiler === undefined ? {} : { onEnqueue: enfiler })}
       />
 
       <div className="px-6 pb-2">

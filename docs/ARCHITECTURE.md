@@ -2434,6 +2434,34 @@ recevoir ce qui leur revient. C'est aussi là que les équivalences apprises à 
 
 ---
 
+## ADR-084 — Prolonger la file, et non la remplacer
+
+**Contexte.** « Ajouter à la file d'attente » existait, morceau par morceau, dans le menu
+d'une ligne. Mettre un album de quatorze titres à la suite demandait donc quatorze
+allers-retours dans un menu — ou d'accepter que ▶ remplace l'écoute en cours, ce qui n'est pas
+la même chose du tout.
+
+**Décision.** Partout où il y a un ▶, il y a maintenant un bouton de file. Un seul endroit
+dans le code : l'en-tête de collection, que partagent la bibliothèque, les titres likés, une
+playlist, un album, un artiste, une catégorie et une liste engendrée. Sept pages, un bouton.
+
+```text
+   ▶        remplace la file par ce qu'on regarde
+   ⇄        la remplace dans le désordre
+   ☰+       la prolonge, sans interrompre ce qui joue
+```
+
+**Pourquoi la liste affichée et non la route.** C'est déjà ce que fait « Lire » : le bouton
+agit sur ce qu'on a sous les yeux, playlist, album, artiste ou résultat de recherche.
+Interroger la route pour reconstituer la même chose ferait un second chemin, qui finirait par
+ne plus dire la même chose que le premier.
+
+**Pourquoi un mot après coup.** Une file s'allonge sans que rien ne bouge à l'écran : le
+morceau en cours continue, la page ne change pas. Sans un message, on ne sait pas si le bouton
+a été entendu — et on appuie une seconde fois.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

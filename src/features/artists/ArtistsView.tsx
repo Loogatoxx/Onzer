@@ -225,7 +225,7 @@ export function ArtistsView({
                   type="button"
                   aria-label={`Lire ${artist.name}`}
                   onClick={() => onPlay(artist)}
-                  className="pression absolute bottom-1 right-1 z-10 flex h-10 w-10 translate-y-2 items-center justify-center rounded-full bg-ink text-base opacity-0 shadow-xl shadow-black/40 transition-[transform,opacity] duration-200 group-hover:translate-y-0 group-hover:opacity-100"
+                  className="pression absolute bottom-1 right-1 z-10 flex h-10 w-10 translate-y-2 items-center justify-center rounded-full bg-ink text-base opacity-0 shadow-lg shadow-black/40 transition-[transform,opacity] duration-200 group-hover:translate-y-0 group-hover:opacity-100"
                 >
                   <span className="translate-x-[1px]">
                     <Icon name="play" size={16} />

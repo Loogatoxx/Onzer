@@ -301,7 +301,7 @@ function MixCard({
       <div className="relative overflow-hidden rounded-md">
         <CoverMosaic hashes={mix.coverHashes} />
 
-        <span className="absolute bottom-2 right-2 flex h-11 w-11 items-center justify-center rounded-full bg-ink text-base opacity-0 shadow-xl shadow-black/40 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 translate-y-2">
+        <span className="absolute bottom-2 right-2 flex h-11 w-11 items-center justify-center rounded-full bg-ink text-base opacity-0 shadow-lg shadow-black/40 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 translate-y-2">
           <span className={loading ? "animate-spin" : "translate-x-[1px]"}>
             <Icon name={loading ? "repeat" : "play"} size={18} />
           </span>

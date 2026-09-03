@@ -439,29 +439,30 @@
    donc le même fondu : fort là où le dégradé travaille, absent là où il n'y
    a plus rien à cacher.
    ════════════════════════════════════════════════════════════════════════ */
-/* Le fondu de l'en-tête.
+/* L'en-tête ne se fond plus.
  *
- * # Pourquoi il s'arrête aux trois cinquièmes
+ * # Trois tentatives, et un constat
  *
- * Une bande, c'est une amplitude divisée par une distance. Quinze niveaux
- * étalés sur quatre cent quarante pixels donnent une marche tous les
- * vingt-neuf ; sur deux cent soixante, une tous les dix-sept. Le fondu ne perd
- * rien à finir plus tôt — il n'a jamais rien eu à dire dans son dernier tiers,
- * où il ne se distingue plus du fond — et l'escalier y gagne d'être deux fois
- * plus serré, donc deux fois moins lisible.
+ * Le fondu partait de `elevated/70` et mourait dans la surface : quinze
+ * niveaux de luminance, puis neuf, étalés sur des centaines de pixels. On l'a
+ * tramé (83 lignes unies sur 250 ramenées à 14), écourté aux trois cinquièmes,
+ * puis poussé à 5,5 % de grain — mesuré sur l'appareil même : **zéro ligne unie
+ * sur six cents**. Il n'y a plus de bande à trouver dans le tampon d'image.
  *
- * Mesuré sur la hauteur réelle de l'en-tête : 153 lignes unies sur 440 sans
- * rien, 29 sur 440 avec le grain à 3,5 % sur toute la hauteur, **10 sur 264**
- * ainsi. Pousser le grain à 9 % n'en gagne que deux de plus, et éclaircit le
- * sommet de deux niveaux : ce n'est plus une trame, c'est du sable.
+ * Et l'escalier restait visible à l'œil, à luminosité normale.
+ *
+ * La conclusion s'impose : ce que l'écran fait de nos valeurs après nous — son
+ * profil de couleur, sa gestion des noirs — nous échappe, et aucun dithering
+ * ne survit à une seconde quantification qu'on ne contrôle pas. Un aplat, lui,
+ * n'a rien à quantifier. C'était d'ailleurs la règle écrite en tête de ce
+ * fichier depuis le premier jour : aucun dégradé sur de grandes surfaces.
+ *
+ * L'en-tête garde son identité par son titre et sa pochette, pas par un voile
+ * que personne ne peut voir sans ses artefacts. Le bord du bas est franc : une
+ * limite assumée se lit comme une limite, une bande ratée comme un défaut.
  */
 .fondu-tete {
-  background-image: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--color-elevated) 70%, transparent) 0%,
-    transparent 60%
-  );
-  --grain-masque: linear-gradient(to bottom, #000 0%, transparent 60%);
+  background-color: color-mix(in srgb, var(--color-elevated) 70%, transparent);
 }
 
 .grain {

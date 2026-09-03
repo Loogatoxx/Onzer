@@ -119,14 +119,27 @@ export function PageHeader({
     setDraft(null);
   }
 
+  // Plus de `grain` : la trame ne sert qu'à casser un dégradé, et appliquée à
+  // un aplat elle **est** le dégradé — son masque s'éteint vers le bas.
   return (
-    <header className="fondu-tete grain relative px-6 pb-4 pt-6">
+    <header className="fondu-tete relative px-6 pb-4 pt-6">
       {/* Sur un écran étroit, la pochette et le titre côte à côte laissent au
           titre une colonne de cent pixels. Ils s'empilent donc, pochette
           centrée au-dessus — la disposition que tous les lecteurs de téléphone
           ont fini par adopter, pour la même raison. */}
       <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-end sm:gap-6 sm:text-left">
-        <div className="group relative shrink-0 overflow-hidden rounded-lg shadow-2xl shadow-black/50">
+        {/* # Pourquoi la pochette n'a plus d'ombre portée
+
+              `shadow-2xl` est un dégradé noir de cinquante pixels de flou. Posé
+              sur un fond déjà quasi noir, il ne peut traverser que trois ou
+              quatre niveaux de luminance : il dessine donc des **anneaux** au
+              lieu d'une ombre, et c'est exactement l'escalier qu'on voyait
+              derrière la grande pochette.
+
+              Une ombre a besoin de clair pour assombrir. Ici il n'y en a pas :
+              elle ne portait rien, et coûtait ses artefacts. La pochette se
+              détache par son coin arrondi et par sa propre image. */}
+        <div className="group relative shrink-0 overflow-hidden rounded-lg">
           {cover}
 
           {/* La pochette ne se remplace que là où elle appartient à

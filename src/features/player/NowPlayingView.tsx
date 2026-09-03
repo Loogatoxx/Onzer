@@ -190,7 +190,7 @@ export function NowPlayingView({
       >
         <Artwork
           hash={track.artworkHash}
-          className="aspect-square w-full rounded-2xl shadow-2xl shadow-black/50"
+          className="aspect-square w-full rounded-2xl"
         />
       </button>
 

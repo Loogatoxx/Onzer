@@ -803,3 +803,73 @@ perdu le service de lecture, les règles `-keep` et les permissions, en silence.
 **🎯 Objectif**
 Rendre au dépôt ce qui n'existait que sur cette machine, et reprendre la tenue du journal.
 
+---
+
+## Entrée 024 — L'escalier ne venait pas du dithering
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+« y a plus le trait noir mais je vois encore l'effet escalier je sais pas si tu vois »
+(après : « avec la luminositer basse on voit moin bien l'escalier mais quand je met la
+luminositer normal c'est flagrant »)
+
+**🤖 Réponse (résumé)**
+Mesure faite sur une capture de son appareil, dans la zone du fondu : **zéro ligne unie sur
+six cents**, contre 23 avant la dernière passe. Il n'y a plus une seule bande à trouver dans
+le tampon d'image — et l'escalier reste visible à l'œil.
+
+Le dithering est donc au bout de ce qu'il peut faire, et le défaut n'est pas dans nos
+valeurs : ce que l'écran en fait après nous — profil de couleur, gestion des noirs, PWM —
+nous échappe, et aucune trame ne survit à une seconde quantification qu'on ne contrôle pas.
+
+L'en-tête devient un **aplat**. Un aplat n'a rien à quantifier. C'était d'ailleurs la règle
+écrite en tête de la feuille de style depuis le premier jour — aucun dégradé sur de grandes
+surfaces — et je l'avais contournée en croyant pouvoir tramer.
+
+**🔧 Modifications**
+- ✏️ `src/styles/globals.css` — `.fondu-tete` devient une couleur unie ; l'historique des
+  trois tentatives est conservé en commentaire
+- ✏️ `src/components/PageHeader.tsx` — le grain retiré de l'en-tête : appliqué à un aplat,
+  il **est** le dégradé, puisque son masque s'éteint vers le bas
+- Le grain reste sur les halos de la rétrospective et de l'écran de chargement, où
+  l'ambiance est le propos
+
+**🎯 Objectif**
+Arrêter de raffiner un effet que la dalle défait, et assumer une limite franche : une
+frontière assumée se lit comme une frontière, une bande ratée se lit comme un défaut.
+
+---
+
+## Entrée 025 — L'escalier venait de l'ombre
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+« peut etre mais je vois aussi une sorte d'escalier avec l'ombre derrière la grosse icône »
+
+**🤖 Réponse (résumé)**
+Mesure décisive sur sa capture, en profil horizontal à droite de la grande pochette :
+**des paliers de 7 à 12 pixels**, séparés d'un seul niveau de luminance, sur 130 pixels.
+Ce sont les anneaux de `shadow-2xl shadow-black/50`.
+
+Une ombre portée est un dégradé noir de cinquante pixels de flou. Posée sur un fond déjà
+quasi noir, elle ne peut traverser que trois ou quatre niveaux : elle dessine des anneaux
+au lieu d'assombrir. **Une ombre a besoin de clair pour travailler** ; ici il n'y en avait
+pas — elle ne portait rien et coûtait ses artefacts.
+
+L'audit couleur du début de soirée l'avait signalé — « dix-sept ombres noires sur du
+quasi-noir, dont le fondu participe au même effet » — et je l'avais écarté pour me
+concentrer sur les dégradés déclarés. C'était l'essentiel du défaut.
+
+**🔧 Modifications**
+- ➖ `shadow-2xl shadow-black/50` sur la pochette de `PageHeader` et sur celle de l'écran
+  de lecture : elles se détachent par leur coin arrondi et par leur propre image
+- ✏️ Pastilles de lecture de l'accueil et des artistes : `shadow-xl` → `shadow-lg` — posées
+  sur une pochette, elles ont de quoi assombrir, mais moins large
+- Les ombres des panneaux flottants restent : elles surplombent du contenu, pas du noir
+
+**🎯 Objectif**
+Chercher le défaut là où il est plutôt que là où on l'a supposé. Trois passes sur le fondu
+n'auraient jamais rien donné : ce n'était pas lui.
+

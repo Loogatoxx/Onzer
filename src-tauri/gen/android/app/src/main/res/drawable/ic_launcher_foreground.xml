@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Généré par tools/icon/generate-icon.mjs — ne pas modifier à la main. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FF0A0A0C" android:pathData="M45.732,62.424 a6.552,6.552 0 1,1 13.104,0 a6.552,6.552 0 1,1 -13.104,0 Z M55.716,39.96 H58.836 V62.424 H55.716 Z M55.716,39.96 H67.104 V45.576 H55.716 Z" />
+</vector>

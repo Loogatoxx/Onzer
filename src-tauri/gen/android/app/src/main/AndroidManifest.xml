@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Lire le QR d'appairage affiché par l'autre appareil. La coquille
+         Android de Tauri demande elle-même l'autorisation à l'exécution, mais
+         seulement si le manifeste la déclare. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- L'appareil photo n'est pas exigé : sans lui, il reste les huit
+         chiffres à recopier. Sans cette ligne, le Play Store refuserait
+         l'application aux appareils qui n'en ont pas. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Lire les fichiers audio du téléphone. Depuis Android 13 c'est
+         READ_MEDIA_AUDIO ; avant, READ_EXTERNAL_STORAGE. Sans elle, le
+         dossier Musique existe et paraît vide. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Accès complet aux fichiers.
+         READ_MEDIA_AUDIO laisse *lister* les fichiers mais pas les ouvrir ni
+         les déplacer : le stockage cantonné réserve cela à MediaStore. Or
+         Onzer range les morceaux par artiste, année et album — il déplace des
+         fichiers, c'est le cœur de ce qu'il fait. Sans cette permission, les
+         2699 fichiers trouvés rendaient tous « Operation not permitted ». -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+    <!-- Continuer à jouer écran éteint. Android exige qu'un service de premier
+         plan déclare son type depuis la version 14 : « mediaPlayback » est
+         celui qui donne droit aux contrôles de l'écran verrouillé. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- AndroidTV support -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
+    <application
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.onzer"
+        android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:launchMode="singleTask"
+            android:label="@string/main_activity_title"
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <!-- AndroidTV support -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <provider
+          android:name="androidx.core.content.FileProvider"
+          android:authorities="${applicationId}.fileprovider"
+          android:exported="false"
+          android:grantUriPermissions="true">
+          <meta-data
+            android:name="android.support.FILE_PROVIDER_PATHS"
+            android:resource="@xml/file_paths" />
+        </provider>
+
+        <service
+            android:name=".PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+    </application>
+</manifest>

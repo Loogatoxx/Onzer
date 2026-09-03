@@ -7,7 +7,20 @@ dist-ssr/
 
 # ─────────────── Rust / Tauri ───────────────
 src-tauri/target/
-src-tauri/gen/
+
+# ─────────────── Projet Android ───────────────
+# `gen/` est réputé « généré », et c'est vrai de `schemas/`. Le projet Android,
+# lui, ne l'est qu'au premier jour : depuis, il porte du code écrit à la main
+# que rien ne saurait régénérer — le service de lecture en arrière-plan et sa
+# session média, les règles `-keep` de R8 qu'il a fallu une panne pour trouver,
+# les permissions du manifeste. Un clone frais suivi d'un `tauri android init`
+# les perdrait toutes, et l'application se fermerait à chaque lecture sans que
+# personne comprenne pourquoi.
+#
+# Le projet apporte ses propres `.gitignore` : les sorties de compilation, le
+# cache Gradle, les bibliothèques natives et les fichiers de clés restent
+# dehors.
+src-tauri/gen/schemas/
 **/*.rs.bk
 *.pdb
 

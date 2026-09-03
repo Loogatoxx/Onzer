@@ -440,4 +440,366 @@ qu'à l'assemblage ou à la mesure.
 Rendre le moteur réellement utilisable, et surtout **mesurable** : chaque proposition est
 tracée avec sa stratégie, chaque écoute renvoie un verdict, et les vues de qualité
 permettront de vérifier que le moteur fait mieux que le hasard plutôt que de l'espérer.
-\n
+
+---
+
+> ⚠️ **Note de rattrapage.** Le journal s'est arrêté à l'entrée 008 pendant que le projet
+> avançait de soixante-quatre commits. Les entrées 009 à 019 sont **reconstruites depuis
+> l'historique Git** : les prompts y sont résumés de mémoire et non cités mot pour mot,
+> contrairement aux précédentes et aux suivantes. La tenue du journal reprend au fil de
+> l'eau à partir de l'entrée 020.
+
+---
+
+## Entrée 009 — Identification par empreinte et rétrospective d'écoute
+
+**📅 Date :** 2026-08-31
+
+**💬 Prompt**
+Reconnaître automatiquement les morceaux mal étiquetés, et voir ses statistiques d'écoute.
+
+**🤖 Réponse (résumé)**
+Empreinte acoustique Chromaprint envoyée à AcoustID, puis MusicBrainz pour les métadonnées.
+Clé d'API modifiable depuis les réglages. Page de statistiques conçue comme une
+rétrospective : une section par écran, révélée au défilement.
+
+**🔧 Modifications**
+- ➕ `src-tauri/src/identify/` — empreinte, AcoustID, MusicBrainz
+- ➕ `src/features/stats/WrappedView.tsx` — la rétrospective
+- ✏️ Barre de lecture visible dès le lancement d'une playlist générée
+
+**🎯 Objectif**
+Réparer les métadonnées sans saisie manuelle, et donner à voir ce que la base sait déjà.
+
+---
+
+## Entrée 010 — Refonte complète de l'interface
+
+**📅 Date :** 2026-08-31
+
+**💬 Prompt**
+L'interface ne tenait pas la comparaison. Tout revoir.
+
+**🤖 Réponse (résumé)**
+Charte assumée : monochrome, un seul accent, aucun dégradé sur de grandes surfaces,
+typographie Avenir Next en poids d'affichage. En-tête de collection à grande pochette,
+tableau à colonnes, panneau de lecture à droite.
+
+**🔧 Modifications**
+- ✏️ `src/styles/globals.css` — les jetons de design
+- ➕ `src/components/PageHeader.tsx`, refonte de `TrackTable`
+- 🐞 Doublons créés à chaque lancement, identifications erronées
+
+**🎯 Objectif**
+Que l'application ressemble à ce qu'elle prétend être.
+
+---
+
+## Entrée 011 — L'accueil, les ambiances, les artistes
+
+**📅 Date :** 2026-09-01
+
+**💬 Prompt**
+Une page d'accueil qui propose, des catégories d'ambiance, une page par artiste.
+
+**🤖 Réponse (résumé)**
+Mix du jour et mix de goût calculés localement, catégories d'ambiance déduites des
+descripteurs audio, page artiste avec ses albums. Menu de ligne complet, indicateur de
+paroles.
+
+**🔧 Modifications**
+- ➕ `src/features/home/`, `src/features/artists/`, `src/features/discover/`
+- 🐞 Le déplacement dans le morceau ne fonctionnait pas ; pochette de compilation restée
+
+**🎯 Objectif**
+Ouvrir l'application sur une proposition plutôt que sur une liste de deux mille lignes.
+
+---
+
+## Entrée 012 — Comparer une playlist, arbitrer les doublons, importer
+
+**📅 Date :** 2026-09-01
+
+**💬 Prompt**
+Comparer une playlist Spotify à la bibliothèque pour voir ce qui manque, et récupérer
+ce qui manque.
+
+**🤖 Réponse (résumé)**
+Comparaison **sans aucun service** (ADR-038) : le fichier exporté suffit. Doublons
+arbitrables à l'écoute. Commande `spotdl` complète proposée à copier — Onzer ne télécharge
+jamais lui-même et n'exécute jamais la commande qu'il affiche.
+
+**🔧 Modifications**
+- ➕ `src/features/library/DuplicatePanel.tsx`, `src/features/home/DiscoverPanel.tsx`
+- ✏️ `docs/ARCHITECTURE.md` — ADR-033 révisé, ADR-034, ADR-035, ADR-038
+
+**🎯 Objectif**
+Combler les trous d'une bibliothèque sans dépendre d'une API fermée.
+
+---
+
+## Entrée 013 — Pochettes, paroles, correction manuelle
+
+**📅 Date :** 2026-09-01
+
+**💬 Prompt**
+Des pochettes pour tout, des paroles lisibles, et pouvoir corriger à la main.
+
+**🤖 Réponse (résumé)**
+Pochettes Deezer passées par Rust en `data:` — la politique de sécurité du webview reste
+fermée. Paroles en pleine largeur. Dialogue de correction et « chercher ailleurs ».
+
+**🔧 Modifications**
+- ➕ `CorrectDialog`, `MatchDialog`, `LyricsView`
+- 🐞 La recherche bloquait la navigation ; la bibliothèque s'arrêtait à 500 morceaux
+
+**🎯 Objectif**
+Qu'aucun morceau ne reste orphelin d'image, de texte ou de titre juste.
+
+---
+
+## Entrée 014 — Les paroles qui défilent
+
+**📅 Date :** 2026-09-02
+
+**💬 Prompt**
+Des paroles calées sur la musique.
+
+**🤖 Réponse (résumé)**
+Trois sources par ordre de coût : celles déjà présentes dans les fichiers, les `.lrc` d'un
+dépôt public, puis un modèle local (`whisper.cpp`) pour caler à l'oreille — à la demande,
+morceau par morceau. Interrupteurs séparés pour la complétion en ligne et l'identification
+automatique.
+
+**🔧 Modifications**
+- ➕ `src-tauri/src/lyrics/`, `src/features/lyrics/`
+- 🐞 Les paroles non synchronisées étaient comptées comme faites
+
+**🎯 Objectif**
+Lire en même temps qu'on écoute, sans rien envoyer qu'on n'ait choisi d'envoyer.
+
+---
+
+## Entrée 015 — Robustesse et pagination
+
+**📅 Date :** 2026-09-02
+
+**💬 Prompt**
+L'accueil reste bloqué, la bibliothèque rame, le cache de compilation casse.
+
+**🤖 Réponse (résumé)**
+Bibliothèque paginée par cent, triée **en base**. Cache de compilation qui se répare seul.
+Un morceau ayant perdu son fichier n'est plus traité comme un doublon.
+
+**🔧 Modifications**
+- ➕ `src/features/library/Pager.tsx`
+- ✏️ Tri déplacé côté SQL ; compteurs d'en-tête recalculés après réparation
+
+**🎯 Objectif**
+Tenir la charge de deux mille morceaux sans que rien ne se fige.
+
+---
+
+## Entrée 016 — Le portage Android
+
+**📅 Date :** 2026-09-02
+
+**💬 Prompt**
+Faire tourner Onzer sur le téléphone.
+
+**🤖 Réponse (résumé)**
+`tauri android init`, chaîne NDK, empaquetage. L'écran de premier lancement sait sur quelle
+machine il tourne. Accès aux fichiers du téléphone.
+
+**🔧 Modifications**
+- ➕ `src-tauri/gen/android/` — projet Android (versionné seulement à l'entrée 023)
+- ➕ `src-tauri/src/android.rs`
+
+**🎯 Objectif**
+Le même cœur des deux côtés, sans réécriture.
+
+---
+
+## Entrée 017 — L'interface mobile
+
+**📅 Date :** 2026-09-02 → 2026-09-03
+
+**💬 Prompt**
+Rendre l'application utilisable au pouce, avec la lecture en arrière-plan.
+
+**🤖 Réponse (résumé)**
+Barre d'onglets en bas, écran de lecture plein écran, en-têtes empilés. Session média
+Android : la lecture apparaît sur l'écran verrouillé, via un service de premier plan.
+
+**🔧 Modifications**
+- ➕ `PlaybackService.kt`, `MiniPlayer`, `MobileTabs`, `MoreView`, `NowPlayingView`
+- 🐞 Lancer un morceau fermait l'application (règles `-keep` de R8 manquantes)
+- 🐞 Les gestes tactiles se perdaient en silence (`pointercancel` au défilement)
+
+**🎯 Objectif**
+Un vrai lecteur de téléphone, pas une fenêtre de bureau rétrécie.
+
+---
+
+## Entrée 018 — Le Mac et le téléphone se mettent d'accord
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+Faire comme un compte en ligne : synchroniser le téléphone et le Mac par Wi-Fi, avec un
+QR code ou un lien.
+
+**🤖 Réponse (résumé)**
+Appairage local par QR et code à huit chiffres, serveur HTTP éphémère sur le réseau, fusion
+pure et testée des deux états (favoris, playlists, écoutes). Transfert des fichiers manquants
+à la demande. Aucun compte, aucun serveur distant.
+
+**🔧 Modifications**
+- ➕ `src-tauri/src/sync/` — `fusion.rs`, `appairage.rs`, `client.rs`
+- ➕ `src/features/appairage/` — appairage et scanner QR intégré
+- 🐞 187 faux « manquants » ramenés à 83 par une troisième clé de rapprochement
+- 🐞 Les onze doublons reproposés à chaque synchronisation (table `sync_alias`)
+
+**🎯 Objectif**
+Deux bibliothèques d'accord, sans confier quoi que ce soit à personne.
+
+---
+
+## Entrée 019 — La file, le repérage, la sélection, la reprise
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+Pouvoir ajouter des playlists et des sons dans une liste d'attente sur les deux versions —
+puis, parmi une liste de quatorze propositions : « fais dans l'ordre que tu veux mais je
+trouve tout incroyable ».
+
+**🤖 Réponse (résumé)**
+Quatre chantiers : une file d'attente qu'on réordonne au doigt, le repérage (aller au
+morceau en cours, récemment joué, hors ligne), la sélection multiple, et la reprise de
+l'écoute sur l'autre appareil. Au passage, un défaut plus ancien : « À suivre » montrait
+l'ordre d'origine et non l'ordre de lecture — il mentait dès que l'aléatoire était allumé.
+
+**🔧 Modifications**
+- ✏️ `src-tauri/src/audio/queue.rs` — `insert_next`, `remove_at`, `move_position`
+- ➕ `QueueView`, `BarreSelection`
+- ✏️ `docs/ARCHITECTURE.md` — ADR-088, ADR-089
+
+**🎯 Objectif**
+Tenir sa file comme on tient une pile de disques.
+
+---
+
+## Entrée 020 — Les captures Spotify, et la grande liste
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+« voici les screen, j'ai juste pas la feature premium donc je peut pas montrer comment ils
+font le lecteur sur mobile. sinon le glissement marche très bien merci »
+(quinze captures : Spotify Mac et mobile)
+
+**🤖 Réponse (résumé)**
+Quatorze relevés, classés en quatre thèmes, en écartant ce qui n'a pas de sens hors ligne
+(radios, recommandations, podcasts, Jam, Blend, auditeurs mensuels). Constat principal :
+**la structure y est déjà**. Un seul vrai défaut trouvé — sur téléphone, aucun chemin ne
+menait d'un morceau à son album.
+
+**🔧 Modifications**
+Aucune : liste soumise à validation.
+
+**🎯 Objectif**
+Comparer sans copier, et ne retenir que ce qu'un lecteur local peut faire mieux.
+
+---
+
+## Entrée 021 — La passe de finition
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+« as tu quelque chose de pertinent a modifier avec les screen […] verifie le fameux intuition
+humaine ou parfois on a envie d'appuyer sur des endroit pour ouvrir des truc au final y a
+rien de programmer, et les petit detail couleur etc […] les bouton bleu degrader dans
+sychro ça fait un peu IA essaye de garder une couleur unique […] les animation fait des truc
+plus propre comme les pro font »
+
+**🤖 Réponse (résumé)**
+Trois audits menés en parallèle par des sous-agents (affordances mortes, dégradés, animations),
+puis trois chantiers. **Mesures** : le fondu de l'en-tête ne traverse que quinze niveaux, soit
+83 lignes unies sur 250 — d'où le grain. La courbe de mouvement maison ne régissait que huit
+animations sur cent cinquante et une ; `.pression`, hors couche CSS, **écrasait** le
+`transition-colors` de dix-sept éléments. Une soixantaine d'endroits où la main partait dans
+le vide.
+
+**🔧 Modifications**
+- ✏️ `globals.css` — grain tramé, bouton d'accent plat, courbe par défaut, sorties animées
+- ✏️ Vingt-cinq cibles tactiles dotées d'un retour d'appui ; file d'attente qui se pose ;
+  glissement élastique ; grand lecteur qui suit le doigt
+- ✏️ Une vingtaine d'affordances mortes branchées (artiste, album, compteurs, rétrospective)
+- ✏️ `docs/ARCHITECTURE.md` — ADR-090, ADR-091, ADR-092
+- ➖ `--color-accent-alt` (le cyan), sans usage hors dégradé
+
+**🎯 Objectif**
+Que l'interface réponde partout où elle en a l'air, et qu'elle bouge d'une seule main.
+
+---
+
+## Entrée 022 — Les régressions, et la barre noire
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+« les numero des titre son fix et ne subissent pas le scroll », le geste retour qui quitte
+l'application depuis « Plus » au lieu de passer par l'accueil, « on vois une barre noir a
+droite qui n'est pas de la meme couleur », et « avec la luminositer basse on voit moin bien
+l'escalier mais quand je met la luminositer normal c'est flagrant ».
+
+**🤖 Réponse (résumé)**
+Quatre défauts, tous mesurés sur l'appareil.
+1. **Les numéros** : le `relative` d'ancrage n'avait jamais été appliqué — mon motif de
+   remplacement avait deux espaces d'indentation de trop, et c'était la seule substitution
+   de la passe sans vérification. Les éléments absolus se plaçaient donc par rapport à la page.
+2. **Le geste retour** : un navigateur marque « à sauter » toute entrée d'historique empilée
+   sans geste de l'utilisateur. Nos entrées reposées pendant le retour étaient enjambées.
+   Elles sont désormais empilées par `navigate`, juste après l'appui.
+3. **La barre noire** : 32 pixels physiques constants à (18,18,20) — le couloir réservé par
+   `::-webkit-scrollbar`, supprimé sous 768 px.
+4. **L'escalier** : la capture ne dit rien de la luminosité de la dalle. Fondu écourté aux
+   trois cinquièmes et grain porté à 5,5 % en bruit d'une seule octave — 10 lignes unies sur
+   264, contre 153 sur 440 sans rien.
+
+**🔧 Modifications**
+- ✏️ `TrackTable.tsx`, `AppShell.tsx`, `globals.css`, `PageHeader.tsx`
+- ✏️ `docs/ARCHITECTURE.md` — ADR-090 complété
+
+**🎯 Objectif**
+Réparer ce que j'avais cassé, et ce que la mesure seule ne voyait pas.
+
+---
+
+## Entrée 023 — Trois manques, et le dépôt remis à jour
+
+**📅 Date :** 2026-09-03
+
+**💬 Prompt**
+« applique ce que tu me conseil et on voit ce que ça donne », puis « je me demande si tu
+continue a alimenter github oublie pas […] faut aussi si c'est pas fait ajouter la version
+mobile », puis « va falloir reprendre en main tout ça c'est ecrit dans les skill ».
+
+**🤖 Réponse (résumé)**
+Les trois relevés chez Spotify qui manquaient vraiment : chercher dans la liste ouverte,
+la colonne « Lectures » (le compteur existait en base depuis le premier jour, affiché nulle
+part), et la feuille du bas au pouce sur téléphone. Puis **sept commits poussés** sur
+GitHub, et surtout : le projet Android n'était pas versionné du tout — un clone frais aurait
+perdu le service de lecture, les règles `-keep` et les permissions, en silence.
+
+**🔧 Modifications**
+- ✏️ `repository.rs` — `play_count` dans la projection commune, `SortColumn::Plays`
+- ➕ Filtre de liste dans `PageHeader`, feuille du bas dans `TrackTable`
+- ✏️ `.gitignore` — `src-tauri/gen/android/` entre dans le dépôt (1 297 lignes)
+- ➕ Reprise de ce journal, à l'arrêt depuis l'entrée 008
+
+**🎯 Objectif**
+Rendre au dépôt ce qui n'existait que sur cette machine, et reprendre la tenue du journal.
+

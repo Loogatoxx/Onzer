@@ -63,6 +63,29 @@ export interface TrackSummary {
   playCount: number;
 }
 
+/**
+ * Ce que l'autre appareil joue.
+ *
+ * Miroir de `sync::continu::EtatDistant`.
+ */
+export interface RemotePlayback {
+  appareil: string;
+  titre: string;
+  artiste: string | null;
+  positionMs: number;
+  dureeMs: number;
+  enLecture: boolean;
+}
+
+/** Miroir de `sync::continu::Action`. */
+export type LinkAction =
+  | "lecture"
+  | "pause"
+  | "suivant"
+  | "precedent"
+  | "position"
+  | "rendre";
+
 /** Miroir de `identify::spotdl::PlaylistTrack`. */
 export interface PlaylistTrack {
   title: string;
@@ -796,6 +819,24 @@ export const ipc = {
    */
   onSyncApplied: (handler: (avis: SyncNotice) => void): Promise<UnlistenFn> =>
     listen<SyncNotice>("sync://appliquee", (event) => handler(event.payload)),
+
+  /**
+   * Ce que l'autre appareil joue, tant que la liaison tient.
+   *
+   * `null` quand plus personne ne tient le son de l'autre côté.
+   */
+  onRemotePlayback: (
+    handler: (etat: RemotePlayback | null) => void,
+  ): Promise<UnlistenFn> =>
+    listen<RemotePlayback | null>("sync://distant", (event) => handler(event.payload)),
+
+  /** Envoie un ordre à l'appareil qui tient le son. */
+  linkCommand: (device: string, action: LinkAction, value?: number): Promise<void> =>
+    invoke("link_command", { device, action, value: value ?? null }),
+
+  linkOpen: (): Promise<boolean> => invoke<boolean>("link_open"),
+
+  stopLink: (): Promise<void> => invoke("stop_link"),
 
   /** L'avancement d'un transfert de fichiers. */
   onSyncTransfer: (handler: (avancement: TransferProgress) => void): Promise<UnlistenFn> =>

@@ -20,7 +20,9 @@
 pub mod appairage;
 pub mod client;
 pub mod etat;
+pub mod continu;
 pub mod fusion;
+pub mod liaison;
 
 #[cfg(test)]
 mod tests_bout_en_bout;

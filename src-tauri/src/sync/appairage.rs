@@ -184,6 +184,7 @@ pub async fn ouvrir_sur(etat: Arc<EtatServeur>, souhaite: u16) -> Result<InfosAp
     let routeur = Router::new()
         .route("/sync/v1/fusion", post(fusion))
         .route("/sync/v1/fichier", get(fichier))
+        .route("/sync/v1/continu", get(continu_lire).post(continu_ecrire))
         .layer(DefaultBodyLimit::max(TAILLE_MAX))
         .with_state(etat);
 
@@ -222,6 +223,11 @@ pub fn fermer() {
             let _ = arret.send(());
         }
     }
+
+    // La liaison continue vit dans la porte : la refermer sans la couper
+    // laisserait une boucle interroger un serveur qui n'écoute plus.
+    super::liaison::couper();
+    super::liaison::oublier();
 }
 
 /// La porte est-elle ouverte ?
@@ -347,6 +353,58 @@ async fn fichier(
             "ce morceau est hors ligne sur l'autre appareil : sa fiche existe, son fichier non",
         )
     })
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  La liaison continue
+// ════════════════════════════════════════════════════════════════════════════
+
+#[derive(Deserialize)]
+struct Depuis {
+    /// La version déjà connue du demandeur. La réponse n'arrive qu'au-delà.
+    depuis: Option<u64>,
+}
+
+/// Rend le tableau dès qu'il dépasse la version connue du demandeur.
+///
+/// La requête **ne répond pas tout de suite** : c'est tout le mécanisme. Elle
+/// reste ouverte jusqu'à ce qu'il y ait quelque chose à dire, et un changement
+/// traverse alors en un aller-retour au lieu d'attendre le prochain sondage.
+async fn continu_lire(
+    entetes: HeaderMap,
+    Query(depuis): Query<Depuis>,
+) -> std::result::Result<Json<super::continu::Tableau>, ErreurHttp> {
+    verifier(&entetes)?;
+    Ok(Json(
+        super::liaison::attendre_local(depuis.depuis.unwrap_or(0)).await,
+    ))
+}
+
+#[derive(Deserialize)]
+struct Envoi {
+    publication: Option<super::continu::Publication>,
+    /// Destinataire, action, valeur.
+    ordre: Option<(String, super::continu::Action, Option<i64>)>,
+}
+
+/// Reçoit ce que l'autre appareil publie, ou l'ordre qu'il adresse.
+async fn continu_ecrire(
+    entetes: HeaderMap,
+    Json(envoi): Json<Envoi>,
+) -> std::result::Result<Json<super::continu::Tableau>, ErreurHttp> {
+    verifier(&entetes)?;
+
+    let mut tableau = super::liaison::tableau();
+
+    if let Some(publication) = &envoi.publication {
+        tableau = super::liaison::publier_local(publication);
+    }
+
+    if let Some((pour, action, valeur)) = envoi.ordre {
+        tableau = super::liaison::ordonner_local(&pour, action, valeur);
+    }
+
+    Ok(Json(tableau))
 }
 
 /// Vérifie le code, et compte les erreurs.

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Icon } from "@/components/Icon";
 import { ScannerQR } from "./ScannerQR";
+import { Telecommande } from "./Telecommande";
 import {
   formatDuration,
   ipc,
@@ -45,7 +46,13 @@ export function PairingView({ onSynced }: { onSynced: () => void }) {
         de compte, pas de serveur, pas d&apos;intermédiaire.
       </p>
 
-      <div className="mt-8 grid max-w-4xl gap-3 lg:grid-cols-2">
+      {/* Elle ne s'affiche que si l'autre appareil tient le son : une
+          télécommande sans rien à commander n'est qu'une case vide. */}
+      <div className="mt-8 max-w-4xl">
+        <Telecommande />
+      </div>
+
+      <div className="mt-3 grid max-w-4xl gap-3 lg:grid-cols-2">
         <Recevoir />
         <SeConnecter onSynced={onSynced} />
       </div>

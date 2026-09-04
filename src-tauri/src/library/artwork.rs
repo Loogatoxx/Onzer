@@ -100,9 +100,94 @@ pub fn encode_base64(input: &[u8]) -> String {
     output
 }
 
+/// Décodage base64 standard, la réciproque de l'encodage ci-dessus.
+///
+/// # Pourquoi il a fallu l'écrire
+///
+/// Une image choisie sur un téléphone n'a pas de chemin de fichier : le
+/// sélecteur d'Android rend un `content://`, que `fs::read` ne sait pas
+/// ouvrir — d'où le « image illisible : no such file or directory ». L'image
+/// traverse donc la frontière IPC en base64, comme les pochettes la traversent
+/// déjà dans l'autre sens.
+///
+/// Les caractères hors alphabet sont ignorés plutôt que refusés : le
+/// remplissage `=` et les retours à la ligne d'un *data URI* n'ont pas à faire
+/// échouer une image parfaitement valide.
+pub fn decode_base64(input: &str) -> Result<Vec<u8>> {
+    fn valeur(octet: u8) -> Option<u32> {
+        match octet {
+            b'A'..=b'Z' => Some(u32::from(octet - b'A')),
+            b'a'..=b'z' => Some(u32::from(octet - b'a') + 26),
+            b'0'..=b'9' => Some(u32::from(octet - b'0') + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+
+    let sextets: Vec<u32> = input.bytes().filter_map(valeur).collect();
+    let mut sortie = Vec::with_capacity(sextets.len() * 3 / 4);
+
+    for groupe in sextets.chunks(4) {
+        // Un groupe d'un seul sextet ne porte pas assez de bits pour un octet :
+        // c'est une chaîne tronquée, pas un encodage court.
+        if groupe.len() < 2 {
+            return Err(OnzerError::Invalid("base64 tronqué".into()));
+        }
+
+        let assemble = groupe
+            .iter()
+            .enumerate()
+            .fold(0u32, |somme, (rang, sextet)| somme | (sextet << (18 - 6 * rang)));
+
+        sortie.push((assemble >> 16) as u8);
+        if groupe.len() > 2 {
+            sortie.push((assemble >> 8) as u8);
+        }
+        if groupe.len() > 3 {
+            sortie.push(assemble as u8);
+        }
+    }
+
+    Ok(sortie)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_les_vecteurs_de_la_rfc() {
+        assert_eq!(decode_base64("").unwrap(), b"");
+        assert_eq!(decode_base64("Zg==").unwrap(), b"f");
+        assert_eq!(decode_base64("Zm8=").unwrap(), b"fo");
+        assert_eq!(decode_base64("Zm9v").unwrap(), b"foo");
+        assert_eq!(decode_base64("Zm9vYmFy").unwrap(), b"foobar");
+    }
+
+    /// Tout ce qui est encodé se décode : c'est la seule propriété qui compte,
+    /// et elle se vérifie sur des octets quelconques plutôt que sur du texte.
+    #[test]
+    fn l_aller_retour_rend_les_memes_octets() {
+        for taille in [0usize, 1, 2, 3, 255, 1024] {
+            let original: Vec<u8> = (0..taille).map(|i| (i * 37 % 251) as u8).collect();
+            let retour = decode_base64(&encode_base64(&original)).unwrap();
+            assert_eq!(retour, original, "taille {taille}");
+        }
+    }
+
+    /// Un *data URI* traîne des retours à la ligne et du remplissage : rien de
+    /// tout cela ne doit faire échouer une image valide.
+    #[test]
+    fn les_caracteres_etrangers_sont_ignores() {
+        assert_eq!(decode_base64("Zm9v\nYmFy").unwrap(), b"foobar");
+        assert_eq!(decode_base64(" Zm9vYmFy ").unwrap(), b"foobar");
+    }
+
+    #[test]
+    fn un_sextet_seul_ne_fait_pas_un_octet() {
+        assert!(decode_base64("Z").is_err());
+    }
 
     #[test]
     fn encode_en_base64_standard() {

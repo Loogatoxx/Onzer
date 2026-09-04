@@ -92,6 +92,7 @@ pub async fn synchroniser(
     port: u16,
     code: &str,
     lecture: Option<super::fusion::LectureSync>,
+    portee: &super::fusion::Portee,
 ) -> Result<RapportSync> {
     let local = etat::lire(pool, lecture).await?;
 
@@ -101,7 +102,10 @@ pub async fn synchroniser(
         .map_err(|erreur| OnzerError::Invalid(format!("client HTTP : {erreur}")))?
         .post(format!("http://{hote}:{port}/sync/v1/fusion"))
         .bearer_auth(code)
-        .json(&local)
+        .json(&DemandeFusion {
+            etat: &local,
+            portee,
+        })
         .send()
         .await
         .map_err(|erreur| {
@@ -131,7 +135,7 @@ pub async fn synchroniser(
         .map_err(|erreur| OnzerError::Invalid(format!("réponse illisible : {erreur}")))?;
 
     let alias = etat::alias(pool).await?;
-    let resultat = fusionner(&local, &distant, &alias);
+    let resultat = fusionner(&local, &distant, &alias, portee);
 
     etat::appliquer(
         pool,
@@ -143,7 +147,7 @@ pub async fn synchroniser(
 
     // La même fusion, arguments inversés : ce que nous avons et qu'ils n'ont
     // pas. Le calcul est local et ne coûte rien — les deux états sont déjà là.
-    let chez_eux = fusionner(&distant, &local, &alias).manquants.len();
+    let chez_eux = fusionner(&distant, &local, &alias, portee).manquants.len();
 
     Ok(RapportSync::compter(
         &distant.appareil,
@@ -153,6 +157,18 @@ pub async fn synchroniser(
         chez_eux,
         resultat.reprise,
     ))
+}
+
+/// Ce qu'on envoie à l'autre appareil : notre état, et ce qu'on accepte.
+///
+/// `flatten` garde le format d'avant : les champs de l'état restent à la
+/// racine, et la portée s'y ajoute. Un appareil qui n'a pas encore la mise à
+/// jour lit l'état comme il l'a toujours lu, et ignore le reste.
+#[derive(serde::Serialize)]
+struct DemandeFusion<'a> {
+    #[serde(flatten)]
+    etat: &'a EtatSync,
+    portee: &'a super::fusion::Portee,
 }
 
 // ════════════════════════════════════════════════════════════════════════════

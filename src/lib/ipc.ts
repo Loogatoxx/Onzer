@@ -77,6 +77,23 @@ export interface RemotePlayback {
   enLecture: boolean;
 }
 
+/**
+ * Ce qu'on accepte de faire traverser.
+ *
+ * Miroir de `sync::fusion::Portee`. Absent veut dire tout, ce qui est le
+ * comportement d'avant.
+ */
+export interface SyncScope {
+  favoris: boolean;
+  playlists: boolean;
+  /** Les fichiers qui manquent d'un côté. */
+  morceaux: boolean;
+  /** Les paroles, et la reprise d'écoute. */
+  autre: boolean;
+  /** Quand `morceaux` est vrai : n'accepter que ceux de cet artiste. */
+  artiste?: string | null;
+}
+
 /** Miroir de `sync::continu::Action`. */
 export type LinkAction =
   | "lecture"
@@ -785,8 +802,13 @@ export const ipc = {
   pairingOpen: (): Promise<boolean> => invoke<boolean>("pairing_open"),
 
   /** Se connecte à l'autre appareil et fusionne les deux bibliothèques. */
-  syncWithDevice: (host: string, port: number, code: string): Promise<SyncReport> =>
-    invoke<SyncReport>("sync_with_device", { host, port, code }),
+  syncWithDevice: (
+    host: string,
+    port: number,
+    code: string,
+    scope?: SyncScope,
+  ): Promise<SyncReport> =>
+    invoke<SyncReport>("sync_with_device", { host, port, code, scope: scope ?? null }),
 
   /** Découpe un lien `onzer://appairage?…` collé depuis l'autre appareil. */
   readPairingLink: (link: string): Promise<PairingLink | null> =>
@@ -1160,8 +1182,14 @@ export const ipc = {
    * Les paroles sont effacées au passage : elles appartenaient à l'ancien
    * titre, et les garder ferait afficher celles d'un autre morceau.
    */
-  setPlaylistCover: (playlistId: number, sourcePath: string): Promise<void> =>
-    invoke<void>("set_playlist_cover", { playlistId, sourcePath }),
+  /**
+   * Donne une image à une playlist, en octets.
+   *
+   * Pas en chemin : le sélecteur d'Android rend un `content://`, que le cœur
+   * ne sait pas ouvrir. On lui passe l'image elle-même.
+   */
+  setPlaylistCover: (playlistId: number, data: string): Promise<void> =>
+    invoke<void>("set_playlist_cover", { playlistId, data }),
 
   clearPlaylistCover: (playlistId: number): Promise<void> =>
     invoke<void>("clear_playlist_cover", { playlistId }),

@@ -911,21 +911,41 @@ pub async fn correct_track(
 
 /// Donne une image à une playlist.
 ///
-/// # Pourquoi copier le fichier
+/// # Pourquoi copier l'image
 ///
 /// Pointer vers l'image d'origine ferait dépendre la playlist d'un fichier que
 /// l'utilisateur peut déplacer, renommer ou jeter — et la pochette
 /// disparaîtrait sans explication. L'image est donc rangée dans le cache
 /// d'Onzer, à côté des autres pochettes, sous son empreinte.
+///
+/// # Pourquoi des octets et non un chemin
+///
+/// Elle recevait un chemin de fichier. Sur un téléphone, le sélecteur
+/// d'Android ne rend pas de chemin : il rend un `content://`, une adresse que
+/// seul le résolveur de contenu du système sait ouvrir. `fs::read` échouait
+/// donc avec « no such file or directory » sur une image parfaitement
+/// présente, et le message accusait le fichier plutôt que notre lecture.
+///
+/// L'image traverse maintenant en base64, comme les pochettes la traversent
+/// déjà dans l'autre sens. Aucun chemin, aucune permission, aucune sémantique
+/// de système de fichiers : des octets.
 #[tauri::command]
 pub async fn set_playlist_cover(
     state: State<'_, AppState>,
     playlist_id: i64,
-    source_path: String,
+    data: String,
 ) -> Result<()> {
-    let bytes = tokio::fs::read(&source_path)
-        .await
+    // Un *data URI* complet est accepté : l'interface a l'un ou l'autre selon
+    // la façon dont elle a lu le fichier, et exiger la forme nue ferait
+    // échouer un appel correct.
+    let brut = data.split_once("base64,").map_or(data.as_str(), |(_, corps)| corps);
+
+    let bytes = crate::library::artwork::decode_base64(brut)
         .map_err(|error| OnzerError::Invalid(format!("image illisible : {error}")))?;
+
+    if bytes.is_empty() {
+        return Err(OnzerError::Invalid("image vide".into()));
+    }
 
     let paths = state.paths.read().await.clone();
     let hash = crate::library::artwork::store(&paths.artwork_dir(), &bytes)?;

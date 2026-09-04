@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use super::appairage::EtatServeur;
+use super::fusion::Portee;
 use super::{appairage, client, etat};
 
 /// # Pourquoi les tests se mettent en file
@@ -137,7 +138,7 @@ async fn deux_bibliotheques_convergent() {
     let (etat_serveur, avertis) = serveur_de_test(serveur.clone(), dossier_serveur.path());
     let infos = appairage::ouvrir_sur(etat_serveur, 0).await.unwrap();
 
-    let rapport = client::synchroniser(&client_pool, "127.0.0.1", infos.port, &infos.code, None)
+    let rapport = client::synchroniser(&client_pool, "127.0.0.1", infos.port, &infos.code, None, &Portee::default())
         .await
         .unwrap();
 
@@ -154,7 +155,7 @@ async fn deux_bibliotheques_convergent() {
     assert!(aime(&client_pool, "deux.mp3").await);
 
     // Refaire l'échange ne doit plus rien produire.
-    let second = client::synchroniser(&client_pool, "127.0.0.1", infos.port, &infos.code, None)
+    let second = client::synchroniser(&client_pool, "127.0.0.1", infos.port, &infos.code, None, &Portee::default())
         .await
         .unwrap();
     assert_eq!(second.favoris, 0, "la synchronisation doit être stable");
@@ -174,7 +175,7 @@ async fn un_code_faux_est_refuse() {
     let (etat_serveur, _avertis) = serveur_de_test(serveur.clone(), dossier_serveur.path());
     let infos = appairage::ouvrir_sur(etat_serveur, 0).await.unwrap();
 
-    let erreur = client::synchroniser(&client_pool, "127.0.0.1", infos.port, "00000000", None)
+    let erreur = client::synchroniser(&client_pool, "127.0.0.1", infos.port, "00000000", None, &Portee::default())
         .await
         .unwrap_err();
 
@@ -210,7 +211,7 @@ async fn la_porte_fermee_ne_repond_plus() {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
     assert!(
-        client::synchroniser(&client_pool, "127.0.0.1", infos.port, &infos.code, None)
+        client::synchroniser(&client_pool, "127.0.0.1", infos.port, &infos.code, None, &Portee::default())
             .await
             .is_err(),
         "une porte fermée ne doit rien accepter"
@@ -235,7 +236,7 @@ async fn les_paroles_traversent() {
     let (etat_serveur, _avertis) = serveur_de_test(serveur, dossier_serveur.path());
     let infos = appairage::ouvrir_sur(etat_serveur, 0).await.unwrap();
 
-    let rapport = client::synchroniser(&client_pool, "127.0.0.1", infos.port, &infos.code, None)
+    let rapport = client::synchroniser(&client_pool, "127.0.0.1", infos.port, &infos.code, None, &Portee::default())
         .await
         .unwrap();
 

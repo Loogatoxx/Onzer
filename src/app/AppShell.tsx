@@ -25,6 +25,7 @@ import type { SortColumn, TrackSort } from "@/features/library/TrackTable";
 import { MobileTabs } from "@/features/nav/MobileTabs";
 import { useSwipeOnglets, type Sens } from "@/features/nav/useSwipeOnglets";
 import { BarreSelection } from "@/features/library/BarreSelection";
+import { choisirImage } from "@/lib/choisirImage";
 import { useFermeture } from "@/lib/useFermeture";
 import {
   BarreFiltres,
@@ -1525,15 +1526,11 @@ export function AppShell({
                   .catch((cause: unknown) => setError(String(cause)));
               }}
               onPickPlaylistCover={async (id) => {
-                const chosen = await open({
-                  multiple: false,
-                  title: "Choisir une image de playlist",
-                  filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp"] }],
-                });
-                if (typeof chosen !== "string") return;
+                const image = await choisirImage();
+                if (image === null) return;
 
                 try {
-                  await ipc.setPlaylistCover(id, chosen);
+                  await ipc.setPlaylistCover(id, image);
                   reloadPlaylists();
                 } catch (cause) {
                   setError(String(cause));

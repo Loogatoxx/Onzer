@@ -8,7 +8,7 @@ use tauri::{AppHandle, State};
 use crate::core::Result;
 use crate::sync::appairage::EtatServeur;
 use crate::sync::continu::{Action, EtatDistant, Publication};
-use crate::sync::fusion::Manquant;
+use crate::sync::fusion::{Manquant, Portee};
 use crate::sync::liaison::{self, Canal};
 use crate::sync::{appairage, client};
 use crate::AppState;
@@ -208,13 +208,17 @@ pub async fn sync_with_device(
     host: String,
     port: u16,
     code: String,
+    // `scope` absent veut dire tout, comme avant.
+    scope: Option<Portee>,
 ) -> Result<client::RapportSync> {
     // Les espaces du code affiché — « 1234 5678 » — ne font pas partie du
     // secret : les exiger ferait échouer une saisie pourtant correcte.
     let code = code.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
 
     let lecture = lecture_courante(&app).await;
-    let rapport = client::synchroniser(&state.pool, host.trim(), port, &code, lecture).await?;
+    let portee = scope.unwrap_or_default();
+    let rapport =
+        client::synchroniser(&state.pool, host.trim(), port, &code, lecture, &portee).await?;
 
     // La porte de l'autre appareil est ouverte et le code vient de servir :
     // c'est le seul moment où l'on est sûr de pouvoir tenir la liaison.

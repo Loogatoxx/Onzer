@@ -10,6 +10,7 @@ import {
   type SyncNotice,
   type PairingInfo,
   type SyncReport,
+  type SyncScope,
   type TransferProgress,
   type TransferReport,
 } from "@/lib/ipc";
@@ -256,6 +257,20 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
   const [occupe, setOccupe] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [rapport, setRapport] = useState<SyncReport | null>(null);
+  /**
+   * Ce qu'on accepte de faire traverser.
+   *
+   * Tout, par défaut : c'est ce qu'on veut la plupart du temps, et un réglage
+   * qui commence à moitié coché oblige à comprendre avant de pouvoir s'en
+   * servir.
+   */
+  const [portee, setPortee] = useState<SyncScope>({
+    favoris: true,
+    playlists: true,
+    morceaux: true,
+    autre: true,
+    artiste: null,
+  });
   const [scanne, setScanne] = useState(false);
   const [transfert, setTransfert] = useState<TransferProgress | null>(null);
   const [bilanTransfert, setBilanTransfert] = useState<TransferReport | null>(null);
@@ -305,7 +320,7 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
         // synchroniser.
       }
 
-      setRapport(await ipc.syncWithDevice(adresse, port, code));
+      setRapport(await ipc.syncWithDevice(adresse, port, code, portee));
       // La base vient de changer : sans ce rappel, l'écran garderait
       // l'ancienne vérité jusqu'au prochain démarrage.
       onSynced();
@@ -351,7 +366,7 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
       // C'est aussi le moment où les équivalences apprises par l'import se
       // font entendre : ce qu'il vient de reconnaître comme déjà présent ne
       // sera plus jamais reproposé.
-      const second = await ipc.syncWithDevice(adresse, port, code);
+      const second = await ipc.syncWithDevice(adresse, port, code, portee);
       setRapport(second);
       onSynced();
     } catch (cause) {
@@ -417,6 +432,8 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
         className="numerals mt-1.5 w-full rounded-lg border border-line bg-base px-3 py-2.5 text-[15px] tracking-[0.15em] text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
       />
 
+      <ChoixPortee portee={portee} onChange={setPortee} />
+
       <button
         type="button"
         disabled={!pret || occupe}
@@ -452,6 +469,182 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
       {bilanTransfert !== null && <BilanTransfert bilan={bilanTransfert} />}
       {erreur !== null && <Erreur texte={erreur} />}
     </section>
+  );
+}
+
+/**
+ * Ce qu'on accepte de faire traverser.
+ *
+ * # Pourquoi ce n'est pas tout ou rien
+ *
+ * Une synchronisation complète est ce qu'on veut la plupart du temps — d'où
+ * les quatre cases cochées d'avance. Mais « la plupart du temps » n'est pas
+ * « toujours » : on rentre avec deux cents morceaux d'un seul artiste et l'on
+ * ne veut que ceux-là, ou l'on veut ses favoris sans toucher aux playlists
+ * qu'on est en train de refaire.
+ *
+ * # Pourquoi l'artiste est un champ libre et non une liste
+ *
+ * Une liste de cinq cents artistes est aussi longue à parcourir que le nom est
+ * court à taper. Le champ propose ceux qu'on possède — on choisit ou on tape —
+ * et la comparaison ignore les accents et la casse : « nepal » trouve
+ * « Népal ».
+ */
+function ChoixPortee({
+  portee,
+  onChange,
+}: {
+  portee: SyncScope;
+  onChange: (portee: SyncScope) => void;
+}) {
+  const [artistes, setArtistes] = useState<string[]>([]);
+  const [deplie, setDeplie] = useState(false);
+
+  useEffect(() => {
+    if (!deplie || artistes.length > 0) return;
+    void ipc
+      .listArtists()
+      .then((liste) => setArtistes(liste.map((artiste) => artiste.name)))
+      .catch(() => undefined);
+  }, [deplie, artistes.length]);
+
+  const tout =
+    portee.favoris && portee.playlists && portee.morceaux && portee.autre
+    && (portee.artiste ?? "") === "";
+
+  return (
+    <div className="mt-5 rounded-lg border border-line">
+      <button
+        type="button"
+        onClick={() => setDeplie(!deplie)}
+        className="pression flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left"
+      >
+        <span className="shrink-0 text-ink-faint">
+          <Icon name="settings" size={15} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] text-ink">Ce qui traverse</span>
+          <span className="block truncate text-[11px] text-ink-faint">
+            {tout ? "Tout" : resume(portee)}
+          </span>
+        </span>
+        <span
+          className={`shrink-0 text-ink-faint transition-transform duration-200 ${
+            deplie ? "rotate-180" : ""
+          }`}
+        >
+          <Icon name="chevronDown" size={14} />
+        </span>
+      </button>
+
+      {deplie && (
+        <div className="border-t border-line px-3 py-2.5">
+          <Case
+            libelle="Tout"
+            coche={tout}
+            onChange={() =>
+              onChange({
+                favoris: true,
+                playlists: true,
+                morceaux: true,
+                autre: true,
+                artiste: null,
+              })
+            }
+          />
+
+          <div className="mt-1 border-t border-line pt-1">
+            <Case
+              libelle="J'aime"
+              coche={portee.favoris}
+              onChange={(valeur) => onChange({ ...portee, favoris: valeur })}
+            />
+            <Case
+              libelle="Playlists"
+              coche={portee.playlists}
+              onChange={(valeur) => onChange({ ...portee, playlists: valeur })}
+            />
+            <Case
+              libelle="Morceaux manquants"
+              coche={portee.morceaux}
+              onChange={(valeur) => onChange({ ...portee, morceaux: valeur })}
+            />
+            <Case
+              libelle="Paroles et reprise d'écoute"
+              coche={portee.autre}
+              onChange={(valeur) => onChange({ ...portee, autre: valeur })}
+            />
+          </div>
+
+          {/* Le champ n'apparaît que si les morceaux traversent : le proposer
+              sans eux offrirait de restreindre ce qui ne passe pas. */}
+          {portee.morceaux && (
+            <div className="mt-2 border-t border-line pt-2">
+              <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                Un artiste en particulier
+              </label>
+              <input
+                list="onzer-artistes"
+                value={portee.artiste ?? ""}
+                onChange={(event) =>
+                  onChange({
+                    ...portee,
+                    artiste: event.target.value.trim() === "" ? null : event.target.value,
+                  })
+                }
+                placeholder="Tous"
+                className="mt-1.5 w-full rounded-lg border border-line bg-base px-3 py-2 text-[13px] text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
+              />
+              <datalist id="onzer-artistes">
+                {artistes.map((nom) => (
+                  <option key={nom} value={nom} />
+                ))}
+              </datalist>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Résume la portée en une ligne, pour le repli. */
+function resume(portee: SyncScope): string {
+  const parts: string[] = [];
+  if (portee.favoris) parts.push("J'aime");
+  if (portee.playlists) parts.push("Playlists");
+  if (portee.morceaux) {
+    parts.push(portee.artiste == null ? "Morceaux" : `Morceaux de ${portee.artiste}`);
+  }
+  if (portee.autre) parts.push("Paroles");
+
+  return parts.length === 0 ? "Rien" : parts.join(" · ");
+}
+
+function Case({
+  libelle,
+  coche,
+  onChange,
+}: {
+  libelle: string;
+  coche: boolean;
+  onChange: (valeur: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!coche)}
+      className="pression flex w-full items-center gap-2.5 rounded-md py-1.5 text-left"
+    >
+      <span
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+          coche ? "border-accent bg-accent text-base" : "border-ink-faint text-transparent"
+        }`}
+      >
+        <Icon name="check" size={11} />
+      </span>
+      <span className="text-[13px] text-ink">{libelle}</span>
+    </button>
   );
 }
 

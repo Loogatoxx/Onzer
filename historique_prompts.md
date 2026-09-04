@@ -1004,3 +1004,49 @@ achève sa descente. Une poignée dessinée le dit — un geste sans prise n'exi
 **🎯 Objectif**
 Une seule surface, et un menu qu'on referme du geste qu'on fait partout ailleurs.
 
+---
+
+## Entrée 030 — Choisir ce qui traverse, et une image qui passe enfin
+
+**📅 Date :** 2026-09-04
+
+**💬 Prompt**
+« je ne met plus mon telephone a disposition pour le moment […] fait des amelioration, pouvoir
+selectionner se que on veut synchro (j aime, playlist, musique autre ou tout, et si on coche
+pour les musique que on puisse choisir quel musique ou toute ou un artiste en particulier) et
+regler le probleme du fait de mettre une image pour playlist "image ilisible : no such file or
+directory (os error 2)" sinon le bout en bout marche nickel »
+
+**🤖 Réponse (résumé)**
+
+**L'image.** La commande recevait un **chemin de fichier**. Sur un téléphone il n'y en a pas :
+le sélecteur d'Android rend un `content://`, une adresse que seul le résolveur de contenu du
+système sait ouvrir. `fs::read` échouait donc sur une image parfaitement présente, et le message
+accusait le fichier plutôt que notre lecture. L'image traverse maintenant en octets, comme les
+pochettes le font déjà dans l'autre sens — aucun chemin, aucune permission, aucune sémantique de
+système de fichiers. Elle est réduite à 1 024 pixels avant de partir : le cœur n'en garde qu'une
+vignette de 512, et une photo de téléphone pèse vingt mégaoctets.
+
+**La portée.** Quatre cases — J'aime, Playlists, Morceaux manquants, Paroles et reprise — plus
+un champ d'artiste quand les morceaux traversent. Tout est coché d'avance : c'est ce qu'on veut
+la plupart du temps, et un réglage qui commence à moitié coché oblige à comprendre avant de
+pouvoir s'en servir.
+
+La portée **voyage avec la demande** : les deux appareils fusionnent chacun de leur côté, et si
+seul le demandeur la respectait, l'autre appliquerait quand même tout — deux bibliothèques qui
+cesseraient de dire la même chose, ce que la synchronisation est censée empêcher. Elle est
+`default` à la désérialisation, donc un appareil qui n'a pas encore la mise à jour continue de
+tout échanger, comme il l'a toujours fait.
+
+**🔧 Modifications**
+- ➕ `Portee` dans `sync/fusion.rs`, avec sept tests ; comparaison d'artiste sans accents ni casse
+- ✏️ `fusionner` prend la portée ; la route et le client la font voyager à plat (`flatten`)
+- ➕ `ChoixPortee` dans `PairingView` ; champ d'artiste avec la liste de ceux qu'on possède
+- ➕ `decode_base64` dans `library/artwork.rs`, avec ses tests d'aller-retour
+- ➕ `src/lib/choisirImage.ts` — champ de fichier, réduction à 1 024 px
+- ✏️ `set_playlist_cover` reçoit des octets
+
+**🎯 Objectif**
+Pouvoir ne prendre qu'une partie, et pouvoir donner une image à une playlist depuis le
+téléphone.
+

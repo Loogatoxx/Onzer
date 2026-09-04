@@ -37,7 +37,20 @@ use tokio::sync::RwLock;
 use crate::core::{OnzerError, PathResolver, Result};
 
 use super::etat;
-use super::fusion::{fusionner, EtatSync};
+use super::fusion::{fusionner, EtatSync, Portee};
+
+/// Ce que l'autre appareil envoie : son état, et ce qu'il accepte d'échanger.
+///
+/// `flatten` garde le format d'avant : un appareil qui n'a pas encore la mise
+/// à jour n'envoie que l'état, et la portée prend sa valeur par défaut — tout,
+/// c'est-à-dire le comportement qu'il connaît.
+#[derive(Deserialize)]
+struct DemandeFusion {
+    #[serde(flatten)]
+    etat: EtatSync,
+    #[serde(default)]
+    portee: Portee,
+}
 
 /// Comment prévenir l'interface qu'une fusion vient d'être appliquée.
 ///
@@ -254,9 +267,11 @@ pub fn ouverte() -> bool {
 async fn fusion(
     State(serveur): State<Arc<EtatServeur>>,
     entetes: HeaderMap,
-    Json(distant): Json<EtatSync>,
+    Json(demande): Json<DemandeFusion>,
 ) -> std::result::Result<Json<EtatSync>, ErreurHttp> {
     verifier(&entetes)?;
+
+    let DemandeFusion { etat: distant, portee } = demande;
 
     let lecture = (serveur.lecture)().await;
     let local = etat::lire(&serveur.pool, lecture)
@@ -267,7 +282,11 @@ async fn fusion(
         .await
         .map_err(|erreur| ErreurHttp::interne(&erreur))?;
 
-    let resultat = fusionner(&local, &distant, &alias);
+    // La portée est celle du demandeur : c'est lui qui a choisi, et les deux
+    // appareils doivent appliquer le même choix — sans quoi l'un prendrait ce
+    // que l'autre a refusé, et les deux bibliothèques cesseraient de dire la
+    // même chose.
+    let resultat = fusionner(&local, &distant, &alias, &portee);
 
     etat::appliquer(
         &serveur.pool,

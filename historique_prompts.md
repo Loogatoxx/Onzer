@@ -1100,3 +1100,33 @@ invisible en développement — mais la WebView d'Android ne voit que ce qui est
 Éprouver ce qui n'avait jamais tourné entre deux vraies machines, et corriger ce que cela
 révèle.
 
+---
+
+## Entrée 032 — Un titre précis, et des coins propres
+
+**📅 Date :** 2026-09-04
+
+**💬 Prompt**
+« l affichage du selecteur d artiste est un peu mal fait avec les arrondi dans les coin on vois
+les separateur en ligne qui depasse sur les coin arrondi, et y a pas de selecteur de titre precis
+imagine si y a une seul musique que on veut transmettre parce que les autres on veut pas sinon
+continue sur la prochaine etape fait tout toi meme »
+
+**🤖 Réponse (résumé)**
+Les séparateurs internes traversent toute la largeur du bloc ; sans rognage, ils dépassent des
+angles arrondis. `overflow-hidden` les coupe à la courbe.
+
+Un champ de titre s'ajoute à celui de l'artiste, avec des suggestions cherchées à la frappe —
+deux mille trois cents morceaux ne se versent pas dans une liste pour en montrer dix. Les deux se
+cumulent : un titre porté par deux artistes se départage en nommant l'artiste, et l'on n'a jamais
+à choisir entre préciser trop et pas assez.
+
+**🔧 Modifications**
+- ✏️ `Portee` gagne `titre` ; le filtre passe par une fonction commune aux deux champs
+- ➕ Deux tests : un titre visé ne laisse passer que lui ; artiste et titre se cumulent
+- ✏️ `ChoixPortee` : champ de titre avec recherche à la frappe, résumé qui l'affiche entre
+  guillemets, `overflow-hidden` sur le bloc
+
+**🎯 Objectif**
+Pouvoir ne donner qu'un morceau, et que la boîte qui le demande soit bien dessinée.
+

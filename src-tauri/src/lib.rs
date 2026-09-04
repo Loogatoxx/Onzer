@@ -278,6 +278,7 @@ pub fn run() {
             commands::appairage::link_command,
             commands::appairage::link_open,
             commands::appairage::stop_link,
+            commands::appairage::end_link,
             commands::appairage::close_pairing,
             commands::appairage::pairing_open,
             commands::appairage::sync_with_device,

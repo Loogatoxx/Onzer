@@ -271,6 +271,10 @@ async fn fusion(
 ) -> std::result::Result<Json<EtatSync>, ErreurHttp> {
     verifier(&entetes)?;
 
+    // Quelqu'un est venu, code en main : la porte a rempli son office, et la
+    // liaison continue peut désormais survivre à la fermeture de l'écran.
+    super::liaison::noter_pair();
+
     let DemandeFusion { etat: distant, portee } = demande;
 
     let lecture = (serveur.lecture)().await;
@@ -412,6 +416,7 @@ async fn continu_ecrire(
     Json(envoi): Json<Envoi>,
 ) -> std::result::Result<Json<super::continu::Tableau>, ErreurHttp> {
     verifier(&entetes)?;
+    super::liaison::noter_pair();
 
     let mut tableau = super::liaison::tableau();
 

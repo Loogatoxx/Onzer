@@ -187,10 +187,39 @@ pub async fn stop_link() -> Result<()> {
     Ok(())
 }
 
-/// Referme la porte. Appelée en quittant l'écran — et c'est le point : une
-/// porte qu'on oublie de fermer est une porte qui reste ouverte.
+/// Referme la porte en quittant l'écran — sauf si une liaison est établie.
+///
+/// # Pourquoi cette exception
+///
+/// « Une porte qu'on oublie de fermer reste ouverte » : c'est la règle, et
+/// elle est juste. Mais la liaison continue vit **dans** la porte. La refermer
+/// en quittant l'écran coupait précisément ce qu'on venait d'obtenir — on
+/// n'avait de télécommande que tant qu'on regardait l'écran de
+/// synchronisation, c'est-à-dire au seul moment où l'on n'écoute pas de
+/// musique. Le test de bout en bout l'a montré à la première tentative : la
+/// musique lancée, la carte n'apparaissait jamais.
+///
+/// Ouvrir la porte ne suffit pas à la garder ouverte. Il faut qu'un pair soit
+/// venu, **code en main** : c'est ce que vérifie `appairee`. Une porte ouverte
+/// pour rien se referme comme avant.
 #[tauri::command]
 pub async fn close_pairing() -> Result<()> {
+    if liaison::ouverte() && liaison::appairee() {
+        tracing::debug!("porte gardée ouverte : une liaison la traverse");
+        return Ok(());
+    }
+
+    appairage::fermer();
+    Ok(())
+}
+
+/// Coupe la liaison **et** referme la porte, à la demande.
+///
+/// C'est le seul geste qui rend la main : tant qu'on ne le fait pas, les deux
+/// appareils restent en vue l'un de l'autre.
+#[tauri::command]
+pub async fn end_link() -> Result<()> {
+    liaison::couper();
     appairage::fermer();
     Ok(())
 }

@@ -117,6 +117,30 @@ pub async fn attendre_local(depuis: u64) -> Tableau {
 /// Efface le tableau. Appelé quand la porte se referme.
 pub fn oublier() {
     diffuseur().send_replace(Tableau::default());
+    APPAIREE.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Un pair s'est-il manifesté depuis l'ouverture de la porte ?
+///
+/// # Pourquoi cette question existe
+///
+/// La porte se referme en quittant l'écran de synchronisation — c'est sa règle
+/// de sûreté, et elle est juste. Mais la liaison continue vit **dans** la
+/// porte : la refermer coupe précisément ce qu'on venait d'obtenir, et l'on
+/// n'a de liaison que tant qu'on regarde l'écran, c'est-à-dire au seul moment
+/// où l'on n'écoute pas de musique.
+///
+/// Ouvrir la porte ne suffit pas à la garder ouverte : il faut que quelqu'un
+/// soit venu, code en main. C'est cette distinction que porte ce drapeau.
+static APPAIREE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Note qu'un pair s'est présenté avec le bon code.
+pub fn noter_pair() {
+    APPAIREE.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn appairee() -> bool {
+    APPAIREE.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -294,6 +318,10 @@ pub fn tenir(
         let mut dernier_ordre = 0u64;
         let mut version = 0u64;
         let mut precedente: Option<Publication> = None;
+        // Échecs consécutifs. Sert à espacer les tentatives quand l'autre
+        // appareil a disparu — un téléphone qui réessaie chaque seconde
+        // pendant une nuit ne se réveille pas chargé.
+        let mut echecs = 0u32;
 
         loop {
             let publication = transport().await;
@@ -305,7 +333,10 @@ pub fn tenir(
                     Ok(tableau) => tableau,
                     Err(erreur) => {
                         tracing::debug!(%erreur, "attente interrompue");
-                        tokio::time::sleep(BATTEMENT).await;
+                        echecs += 1;
+                        if repli(echecs).await {
+                            return;
+                        }
                         continue;
                     }
                 }
@@ -317,12 +348,16 @@ pub fn tenir(
                     }
                     Err(erreur) => {
                         tracing::debug!(%erreur, "publication perdue");
-                        tokio::time::sleep(BATTEMENT).await;
+                        echecs += 1;
+                        if repli(echecs).await {
+                            return;
+                        }
                         continue;
                     }
                 }
             };
 
+            echecs = 0;
             version = tableau.version;
 
             match reagir(&tableau, &moi, dernier_ordre) {
@@ -358,6 +393,30 @@ pub fn tenir(
 
 fn publication_active(precedente: &Option<Publication>) -> bool {
     precedente.as_ref().is_some_and(|p| p.tient_le_son)
+}
+
+/// Attend avant de réessayer, et dit s'il faut renoncer.
+///
+/// # Pourquoi on renonce au bout d'un moment
+///
+/// Un téléphone qui sort du Wi-Fi, un routeur qui hoquette : quelques secondes
+/// suffisent à s'en remettre, et l'on réessaie. Mais l'autre appareil peut
+/// aussi avoir été éteint pour la nuit — et une boucle qui interroge le vide
+/// toutes les secondes jusqu'au matin vide la batterie de celui qui reste.
+///
+/// Dix tentatives rapprochées, puis espacées, puis on rend la main. Rouvrir la
+/// liaison ne coûte qu'une synchronisation.
+async fn repli(echecs: u32) -> bool {
+    const ABANDON: u32 = 40;
+
+    if echecs > ABANDON {
+        tracing::info!("liaison abandonnée : l'autre appareil ne répond plus");
+        return true;
+    }
+
+    let attente = if echecs <= 10 { BATTEMENT } else { Duration::from_secs(10) };
+    tokio::time::sleep(attente).await;
+    false
 }
 
 #[cfg(test)]

@@ -47,9 +47,11 @@ export function PairingView({ onSynced }: { onSynced: () => void }) {
         de compte, pas de serveur, pas d&apos;intermédiaire.
       </p>
 
-      {/* Elle ne s'affiche que si l'autre appareil tient le son : une
-          télécommande sans rien à commander n'est qu'une case vide. */}
       <div className="mt-8 max-w-4xl">
+        <EtatLiaison />
+
+        {/* Elle ne s'affiche que si l'autre appareil tient le son : une
+            télécommande sans rien à commander n'est qu'une case vide. */}
         <Telecommande />
       </div>
 
@@ -469,6 +471,69 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
       {bilanTransfert !== null && <BilanTransfert bilan={bilanTransfert} />}
       {erreur !== null && <Erreur texte={erreur} />}
     </section>
+  );
+}
+
+/**
+ * La liaison est-elle ouverte, et de quoi la couper.
+ *
+ * # Pourquoi elle se voit
+ *
+ * La porte se referme d'elle-même en quittant l'écran — sauf quand une liaison
+ * la traverse, auquel cas elle reste ouverte pour la porter. C'est le bon
+ * comportement, mais il rend la porte invisible : sans cette ligne, on ne
+ * saurait pas qu'elle est restée, ni comment la fermer.
+ */
+function EtatLiaison() {
+  const [ouverte, setOuverte] = useState(false);
+
+  // Sondée plutôt qu'annoncée : elle peut se couper d'elle-même, quand l'autre
+  // appareil s'éteint, et personne n'est là pour le dire.
+  useEffect(() => {
+    let vivant = true;
+    const lire = () => {
+      void ipc
+        .linkOpen()
+        .then((etat) => {
+          if (vivant) setOuverte(etat);
+        })
+        .catch(() => undefined);
+    };
+
+    lire();
+    const battement = setInterval(lire, 3000);
+    return () => {
+      vivant = false;
+      clearInterval(battement);
+    };
+  }, []);
+
+  if (!ouverte) return null;
+
+  return (
+    <div className="mb-3 flex items-center gap-3 rounded-lg border border-accent/25 bg-accent/5 px-3.5 py-2.5">
+      <span className="shrink-0 text-accent">
+        <Icon name="devices" size={16} />
+      </span>
+      <p className="min-w-0 flex-1 text-[13px] leading-snug text-ink">
+        Liaison ouverte.
+        <span className="text-ink-muted">
+          {" "}
+          Les deux appareils restent en vue l&apos;un de l&apos;autre, même en
+          quittant cet écran.
+        </span>
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          void ipc.endLink().catch(() => undefined);
+          setOuverte(false);
+        }}
+        className="pression shrink-0 rounded-full bg-raised px-3 py-1.5 text-[12px] font-semibold text-ink-muted hover:text-ink"
+      >
+        Couper
+      </button>
+    </div>
   );
 }
 

@@ -851,6 +851,9 @@ export const ipc = {
 
   stopLink: (): Promise<void> => invoke("stop_link"),
 
+  /** Coupe la liaison **et** referme la porte. Le seul geste qui rend la main. */
+  endLink: (): Promise<void> => invoke("end_link"),
+
   /** L'avancement d'un transfert de fichiers. */
   onSyncTransfer: (handler: (avancement: TransferProgress) => void): Promise<UnlistenFn> =>
     listen<TransferProgress>("sync://transfert", (event) => handler(event.payload)),

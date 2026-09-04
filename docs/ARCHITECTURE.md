@@ -2707,9 +2707,64 @@ le rang s'éclaire, le nom aussi — et rien ne se passe. L'interface promet, pu
 **Le corollaire.** Un compteur nomme une destination. « 154 hors ligne » désignait une page qui
 existe, et c'était **la seule mention de cette page sur tout le bureau**.
 
-**Ce qui reste.** Quatre bandeaux de maintenance ont un en-tête identique à quatre autres qui se
-replient au clic. L'incohérence est réelle ; la corriger est un choix de conception, pas une
-réparation, et elle attend.
+**Une incohérence qui n'en était pas une.** L'audit signalait quatre bandeaux de maintenance dont
+l'en-tête ressemble à quatre autres qui se replient au clic. En allant voir, trois des quatre
+vivent **à l'intérieur** de la carte d'entretien, qui est elle-même repliable : ce ne sont pas
+des pairs des autres, ce sont leur contenu. Les rendre repliables emboîterait deux niveaux de
+repli pour trois lignes de texte, et rendrait la carte plus difficile à lire, pas moins.
+
+C'est le genre de conclusion qu'un audit ne peut pas tirer seul : il voit une ressemblance de
+forme, pas la hiérarchie qui la justifie.
+
+---
+
+## ADR-093 — La portée voyage avec la demande
+
+**Le besoin.** « Pouvoir sélectionner ce qu'on veut synchroniser : j'aime, playlists, musique, ou
+tout — et si on coche les musiques, pouvoir choisir toutes ou un artiste en particulier. »
+
+**La décision.** Une `Portee` : quatre booléens et un artiste facultatif, passée à `fusionner`.
+
+**Pourquoi elle traverse le réseau.** Les deux appareils fusionnent, chacun de son côté et de son
+point de vue — c'est ce qui fait converger les bibliothèques. Si seul le demandeur respectait la
+portée, l'autre appliquerait quand même tout : on aurait refusé les playlists chez soi et on les
+aurait envoyées chez l'autre. Deux bibliothèques qui cessent de dire la même chose, c'est
+exactement ce que la synchronisation est censée empêcher.
+
+**Pourquoi `flatten` et `default`.** La portée s'ajoute aux champs de l'état, à la racine du même
+objet JSON. Un appareil qui n'a pas encore la mise à jour envoie l'état seul ; la portée prend
+alors sa valeur par défaut — tout —, c'est-à-dire le comportement qu'il connaît. Les deux
+versions coexistent sans négociation, et un test verrouille ce défaut.
+
+**Pourquoi le filtre porte sur notre fiche.** L'artiste saisi est comparé au morceau **local**,
+pas au distant : c'est le nôtre qu'on modifie, et c'est son orthographe qu'on a sous les yeux. La
+comparaison ignore accents et casse — « nepal » trouve « Népal » — parce qu'exiger la
+typographie exacte ne sert que celui qui connaît déjà la réponse.
+
+---
+
+## ADR-094 — Un fichier choisi sur un téléphone n'a pas de chemin
+
+**Le symptôme.** Donner une image à une playlist depuis le téléphone : « image illisible : no
+such file or directory (os error 2) ». Le fichier existait, l'utilisateur venait de le choisir.
+
+**La cause.** La commande recevait un chemin. Le sélecteur d'Android n'en rend pas : il rend un
+`content://`, une adresse opaque que seul le résolveur de contenu du système sait ouvrir. Pour
+`fs::read`, ce n'est pas un chemin — d'où l'erreur, qui accusait le fichier alors que c'était
+notre lecture qui ne savait pas s'y prendre.
+
+**La décision.** L'image traverse en octets, encodée en base64, comme les pochettes le font déjà
+dans l'autre sens. Le chemin ne servait qu'à obtenir ces octets ; le supprimer supprime avec lui
+les permissions, les fournisseurs de contenu et les différences de plateforme.
+
+**Pourquoi un champ de fichier et non la boîte native.** La boîte native rend une adresse ; un
+champ de fichier rend le fichier. La WebView d'Android le prend en charge — `onShowFileChooser`
+est implémenté dans le client généré — et le bureau ouvre le même sélecteur système qu'avant.
+
+**Pourquoi elle est réduite avant de partir.** Le cœur n'en garde qu'une vignette de cinq cent
+douze pixels. Une photo de téléphone en pèse vingt mégaoctets, vingt-sept une fois encodée :
+l'envoyer entière reviendrait à faire voyager vingt-six mégaoctets pour en jeter vingt-six. Mille
+vingt-quatre pixels laissent de la marge pour un écran Retina.
 
 ---
 

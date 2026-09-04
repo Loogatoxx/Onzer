@@ -1050,3 +1050,53 @@ tout échanger, comme il l'a toujours fait.
 Pouvoir ne prendre qu'une partie, et pouvoir donner une image à une playlist depuis le
 téléphone.
 
+---
+
+## Entrée 031 — Le test de bout en bout, et ce qu'il a trouvé
+
+**📅 Date :** 2026-09-04
+
+**💬 Prompt**
+« tout est pret tu peu telecharger et test », puis « le ajouter une description n est pas centrer
+sur la playlist telephone »
+
+**🤖 Réponse (résumé)**
+Test complet, les deux appareils en main. Ce qui marche, vérifié à l'écran :
+
+- la **portée** — décocher « Playlists » décoche « Tout » et le résumé devient « J'aime ·
+  Morceaux · Paroles » ;
+- la **synchronisation** avec la portée : 68 morceaux manquent au Mac, 161 ici, aucune erreur ;
+- la **colonne Lectures** dans la bibliothèque du Mac ;
+- le **gris uniforme** : une seule teinte sur 1 400 pixels, mesurée.
+
+Et deux défauts que seul un appareil pouvait révéler.
+
+**🐞 La liaison mourait en quittant l'écran**
+La porte ouverte, le téléphone connecté, la musique lancée — et la télécommande n'apparaissait
+jamais. Le tableau ne répondait même plus : connexion refusée en une milliseconde. La porte se
+referme en quittant l'écran de synchronisation, c'est sa règle de sûreté ; mais la liaison
+continue vit **dans** la porte. Aller à la bibliothèque pour lancer un morceau la coupait. On
+n'avait donc de télécommande qu'en regardant l'écran de synchronisation, c'est-à-dire au seul
+moment où l'on n'écoute pas.
+
+Aucun test unitaire ne pouvait le trouver : chaque moitié était juste, c'est leur rencontre avec
+le cycle de vie d'un écran qui ne l'était pas. La porte reste désormais ouverte tant qu'une
+liaison la traverse — et il faut qu'un pair soit venu, code en main, pour qu'elle le fasse.
+
+**🐞 Le sélecteur d'image ne s'ouvrait pas**
+La pochette touchée : rien. `onShowFileChooser` n'était jamais appelé. Un `input` **détaché** du
+document ouvre bien le sélecteur sur un navigateur de bureau — ce qui rendait le défaut
+invisible en développement — mais la WebView d'Android ne voit que ce qui est dans le document.
+
+**🔧 Modifications**
+- ✏️ `close_pairing` respecte une liaison établie ; commande `end_link` et bandeau « Liaison
+  ouverte — Couper »
+- ✏️ La boucle du client renonce après quarante tentatives espacées, au lieu d'interroger le vide
+  toute la nuit
+- ✏️ `choisirImage` insère le champ dans le document ; délai d'annulation porté à 1,5 s
+- ✏️ « Changer l'image » visible au doigt ; « Ajouter une description » centrée en étroit
+
+**🎯 Objectif**
+Éprouver ce qui n'avait jamais tourné entre deux vraies machines, et corriger ce que cela
+révèle.
+

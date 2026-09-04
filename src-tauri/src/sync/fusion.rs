@@ -179,6 +179,19 @@ pub struct Portee {
     /// Comparé sans accents ni casse — on tape « nepal », pas « Népal ».
     #[serde(default)]
     pub artiste: Option<String>,
+    /// Et, plus précis encore : n'accepter que ce titre-là.
+    ///
+    /// # Pourquoi il s'ajoute à l'artiste au lieu de le remplacer
+    ///
+    /// « Un seul morceau, celui-là » est une demande courante — on rentre avec
+    /// un titre qu'on veut donner, et pas les quatre-vingts autres. L'artiste
+    /// seul ne sait pas la formuler.
+    ///
+    /// Les deux se cumulent : un titre porté par deux artistes différents se
+    /// départage en nommant l'artiste, et l'on n'a jamais à choisir entre
+    /// préciser trop et pas assez.
+    #[serde(default)]
+    pub titre: Option<String>,
 }
 
 impl Default for Portee {
@@ -191,6 +204,7 @@ impl Default for Portee {
             morceaux: true,
             autre: true,
             artiste: None,
+            titre: None,
         }
     }
 }
@@ -198,20 +212,26 @@ impl Default for Portee {
 impl Portee {
     /// Ce morceau entre-t-il dans la portée ?
     fn accepte(&self, morceau: &MorceauSync) -> bool {
-        let Some(vise) = self.artiste.as_deref() else {
-            return true;
-        };
-
-        let vise = aplatir(vise);
-        if vise.is_empty() {
-            return true;
-        }
-
-        morceau
-            .artiste
-            .as_deref()
-            .is_some_and(|artiste| aplatir(artiste).contains(&vise))
+        correspond(self.artiste.as_deref(), morceau.artiste.as_deref())
+            && correspond(self.titre.as_deref(), Some(morceau.titre.as_str()))
     }
+}
+
+/// Le champ saisi désigne-t-il cette valeur ?
+///
+/// Un champ vide ne veut pas dire « aucun » : il veut dire qu'on n'a rien
+/// précisé, et tout passe.
+fn correspond(saisi: Option<&str>, valeur: Option<&str>) -> bool {
+    let Some(vise) = saisi else {
+        return true;
+    };
+
+    let vise = aplatir(vise);
+    if vise.is_empty() {
+        return true;
+    }
+
+    valeur.is_some_and(|valeur| aplatir(valeur).contains(&vise))
 }
 
 /// Minuscules, sans accents : « Népal » et « nepal » désignent le même artiste.
@@ -480,14 +500,8 @@ pub fn fusionner(
         fusion.manquants = manquants(&paires, autre)
             .into_iter()
             .filter(|manquant| {
-                portee.artiste.as_deref().is_none_or(|vise| {
-                    let vise = aplatir(vise);
-                    vise.is_empty()
-                        || manquant
-                            .artiste
-                            .as_deref()
-                            .is_some_and(|artiste| aplatir(artiste).contains(&vise))
-                })
+                correspond(portee.artiste.as_deref(), manquant.artiste.as_deref())
+                    && correspond(portee.titre.as_deref(), Some(manquant.titre.as_str()))
             })
             .collect();
     }
@@ -867,6 +881,53 @@ mod tests {
 
         assert_eq!(fusion.manquants.len(), 1);
         assert_eq!(fusion.manquants[0].titre, "Adios Bahamas");
+    }
+
+    /// Le cas le plus précis : un seul morceau, celui-là. On rentre avec un
+    /// titre qu'on veut donner, et pas les quatre-vingts autres.
+    #[test]
+    fn un_titre_vise_ne_laisse_passer_que_lui() {
+        let mac = etat("Mac", vec![]);
+        let tel = etat(
+            "Honor",
+            vec![
+                morceau("n/adios.mp3", "Adios Bahamas", "Népal", false),
+                morceau("n/2am.mp3", "2 AM", "Népal", false),
+            ],
+        );
+
+        let portee = Portee {
+            titre: Some("Adios".into()),
+            ..Portee::default()
+        };
+        let fusion = fusionner(&mac, &tel, &HashMap::new(), &portee);
+
+        assert_eq!(fusion.manquants.len(), 1);
+        assert_eq!(fusion.manquants[0].titre, "Adios Bahamas");
+    }
+
+    /// Les deux se cumulent : un titre porté par deux artistes se départage en
+    /// nommant l'artiste.
+    #[test]
+    fn l_artiste_et_le_titre_se_cumulent() {
+        let mac = etat("Mac", vec![]);
+        let tel = etat(
+            "Honor",
+            vec![
+                morceau("a/intro.mp3", "Intro", "Damso", false),
+                morceau("b/intro.mp3", "Intro", "Népal", false),
+            ],
+        );
+
+        let portee = Portee {
+            artiste: Some("nepal".into()),
+            titre: Some("intro".into()),
+            ..Portee::default()
+        };
+        let fusion = fusionner(&mac, &tel, &HashMap::new(), &portee);
+
+        assert_eq!(fusion.manquants.len(), 1);
+        assert_eq!(fusion.manquants[0].chemin, "b/intro.mp3");
     }
 
     /// On tape « nepal », pas « Népal » : exiger la typographie exacte ne sert

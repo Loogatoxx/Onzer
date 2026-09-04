@@ -92,6 +92,8 @@ export interface SyncScope {
   autre: boolean;
   /** Quand `morceaux` est vrai : n'accepter que ceux de cet artiste. */
   artiste?: string | null;
+  /** Plus précis encore : ce titre-là. Se cumule avec l'artiste. */
+  titre?: string | null;
 }
 
 /** Miroir de `sync::continu::Action`. */

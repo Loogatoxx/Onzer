@@ -272,6 +272,7 @@ function SeConnecter({ onSynced }: { onSynced: () => void }) {
     morceaux: true,
     autre: true,
     artiste: null,
+    titre: null,
   });
   const [scanne, setScanne] = useState(false);
   const [transfert, setTransfert] = useState<TransferProgress | null>(null);
@@ -563,7 +564,33 @@ function ChoixPortee({
   onChange: (portee: SyncScope) => void;
 }) {
   const [artistes, setArtistes] = useState<string[]>([]);
+  const [titres, setTitres] = useState<string[]>([]);
   const [deplie, setDeplie] = useState(false);
+
+  /**
+   * Les titres proposés à la frappe.
+   *
+   * # Pourquoi on cherche au lieu de tout charger
+   *
+   * Il y a deux mille trois cents morceaux. Les verser tous dans une liste de
+   * suggestions ferait traverser deux mégaoctets pour en montrer dix, et le
+   * navigateur n'a de toute façon rien à proposer tant qu'on n'a pas tapé.
+   */
+  function chercher(saisi: string) {
+    const terme = saisi.trim();
+    if (terme.length < 2) {
+      setTitres([]);
+      return;
+    }
+
+    void ipc
+      .searchTracks(terme)
+      .then((trouves) => {
+        // Les doublons d'un même titre n'apportent rien à une liste de choix.
+        setTitres([...new Set(trouves.slice(0, 40).map((morceau) => morceau.title))]);
+      })
+      .catch(() => undefined);
+  }
 
   useEffect(() => {
     if (!deplie || artistes.length > 0) return;
@@ -575,10 +602,14 @@ function ChoixPortee({
 
   const tout =
     portee.favoris && portee.playlists && portee.morceaux && portee.autre
-    && (portee.artiste ?? "") === "";
+    && (portee.artiste ?? "") === ""
+    && (portee.titre ?? "") === "";
 
   return (
-    <div className="mt-5 rounded-lg border border-line">
+    // `overflow-hidden` : les séparateurs internes traversent toute la
+    // largeur, et sans rognage ils dépassaient des coins arrondis — deux
+    // petits traits qui sortent de la boîte à chaque angle.
+    <div className="mt-5 overflow-hidden rounded-lg border border-line">
       <button
         type="button"
         onClick={() => setDeplie(!deplie)}
@@ -614,6 +645,7 @@ function ChoixPortee({
                 morceaux: true,
                 autre: true,
                 artiste: null,
+                titre: null,
               })
             }
           />
@@ -665,6 +697,35 @@ function ChoixPortee({
                   <option key={nom} value={nom} />
                 ))}
               </datalist>
+
+              {/* # Pourquoi un champ de titre en plus de l'artiste
+
+                  « Un seul morceau, celui-là » est une demande courante : on
+                  rentre avec un titre qu'on veut donner, et pas les
+                  quatre-vingts autres. L'artiste seul ne sait pas la formuler.
+
+                  Les deux se cumulent — un titre porté par deux artistes se
+                  départage en nommant l'artiste — et l'on n'a jamais à choisir
+                  entre préciser trop et pas assez. */}
+              <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                Un titre en particulier
+              </label>
+              <input
+                list="onzer-titres"
+                value={portee.titre ?? ""}
+                onChange={(event) => {
+                  const saisi = event.target.value;
+                  onChange({ ...portee, titre: saisi.trim() === "" ? null : saisi });
+                  chercher(saisi);
+                }}
+                placeholder="Tous"
+                className="mt-1.5 w-full rounded-lg border border-line bg-base px-3 py-2 text-[13px] text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
+              />
+              <datalist id="onzer-titres">
+                {titres.map((nom) => (
+                  <option key={nom} value={nom} />
+                ))}
+              </datalist>
             </div>
           )}
         </div>
@@ -679,7 +740,9 @@ function resume(portee: SyncScope): string {
   if (portee.favoris) parts.push("J'aime");
   if (portee.playlists) parts.push("Playlists");
   if (portee.morceaux) {
-    parts.push(portee.artiste == null ? "Morceaux" : `Morceaux de ${portee.artiste}`);
+    if (portee.titre != null) parts.push(`« ${portee.titre} »`);
+    else if (portee.artiste != null) parts.push(`Morceaux de ${portee.artiste}`);
+    else parts.push("Morceaux");
   }
   if (portee.autre) parts.push("Paroles");
 

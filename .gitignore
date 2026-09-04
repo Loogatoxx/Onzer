@@ -59,3 +59,8 @@ onzer.token
 # ─────────────── Logs ───────────────
 *.log
 npm-debug.log*
+
+# Une clé de signature n' entre jamais dans le dépôt.
+*.jks
+*.keystore
+*.motdepasse.txt

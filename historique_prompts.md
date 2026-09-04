@@ -1279,3 +1279,37 @@ affichent toujours l'explication.
 
 **🎯 Objectif**
 Ne donner que ce qu'on a demandé de donner — et ne dire que ce qui est vrai.
+
+---
+
+## Entrée 037 — Une clé à soi, et une première version publiée
+
+**💬 Prompt**
+« ou est le apk sur github » puis « publie la release de maniere bien faite »
+
+**🤖 Réponse (résumé)**
+L'APK n'était nulle part sur GitHub : le dépôt porte le code Android, pas le binaire — et c'est
+juste, quatre-vingts mégaoctets par version resteraient dans l'historique pour toujours. Les
+*releases*, elles, portent des fichiers hors de l'historique.
+
+Restait un problème avant de publier : l'APK était signé avec la **clé de débogage d'Android**,
+que tout le monde possède. Une application ne se met à jour que signée de la même clé ; publier
+celle-là aurait condamné toutes les mises à jour suivantes à passer par une désinstallation —
+base, favoris et historique perdus. Une vraie clé a donc été créée, RSA 4096, valable trente ans,
+gardée **hors du dépôt** avec son mot de passe.
+
+Et la procédure est écrite plutôt que retenue : `tools/android/signer.sh` aligne puis signe, en
+lisant la clé dans l'environnement. Ce qu'on refait à la main deux fois de suite, on le refait
+mal une troisième.
+
+Le dépôt s'est révélé **public**, contrairement à ce que je croyais ; l'utilisateur a choisi de
+publier au grand jour en connaissance de cause.
+
+**🔧 Modifications**
+- ➕ `tools/android/signer.sh` — alignement, signature, vérification de l'empreinte
+- ✏️ `.gitignore` : `*.jks`, `*.keystore`, `*.motdepasse.txt` n'entrent jamais
+- ➕ Clé de publication (hors dépôt) et APK 0.1.0 signé avec elle
+- ➕ Release `v0.1.0` sur GitHub, APK attaché
+
+**🎯 Objectif**
+Pouvoir installer Onzer depuis un lien, et pouvoir le mettre à jour demain sans tout perdre.

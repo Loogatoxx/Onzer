@@ -198,6 +198,10 @@ impl Canal {
                     .await
                     .map_err(reseau)?;
 
+                // Côté client, c'est ici qu'on apprend qu'un pair existe : la
+                // porte d'en face a répondu. Sans cela, l'appareil qui
+                // *rejoint* n'aurait jamais de liaison à ses propres yeux.
+                noter_pair();
                 reponse.json::<Tableau>().await.map_err(reseau)
             }
         }
@@ -240,6 +244,7 @@ impl Canal {
                     .await
                     .map_err(reseau)?;
 
+                noter_pair();
                 reponse.json::<Tableau>().await.map_err(reseau)
             }
         }
@@ -359,9 +364,13 @@ pub fn tenir(
 
             echecs = 0;
             version = tableau.version;
+            // Le seul point d'où l'on voit la boucle vivre : sans lui, une
+            // boucle morte et une boucle qui n'a rien à faire se ressemblent.
+            tracing::debug!(version, ordre = ?tableau.ordre.as_ref().map(|o| o.numero), "tableau");
 
             match reagir(&tableau, &moi, dernier_ordre) {
                 Reaction::Appliquer(ordre) => {
+                    tracing::info!(numero = ordre.numero, action = ?ordre.action, "ordre reçu");
                     dernier_ordre = ordre.numero;
                     commandant(ordre.action, ordre.valeur).await;
                     // L'ordre change ce que je joue : la prochaine publication
@@ -419,18 +428,19 @@ async fn repli(echecs: u32) -> bool {
     false
 }
 
+/// Le tableau est unique au processus — c'est tout son intérêt en production,
+/// et c'est ce qui fait que deux tests parallèles se marchent dessus. Ceux qui
+/// y touchent passent donc l'un après l'autre, d'où qu'ils viennent : la porte
+/// éprouve le même tableau que la boucle.
+#[cfg(test)]
+pub(crate) fn un_a_la_fois() -> &'static tokio::sync::Mutex<()> {
+    static VERROU: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    VERROU.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Le tableau est unique au processus — c'est tout son intérêt en
-    /// production, et c'est ce qui fait que deux tests parallèles se marchent
-    /// dessus. Ils passent donc l'un après l'autre, et affirment ce qu'ils
-    /// veulent vraiment affirmer plutôt que ce qui survit à la concurrence.
-    fn un_a_la_fois() -> &'static tokio::sync::Mutex<()> {
-        static VERROU: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-        VERROU.get_or_init(|| tokio::sync::Mutex::new(()))
-    }
 
     #[tokio::test]
     async fn le_tableau_local_monte_et_se_lit() {
@@ -490,6 +500,53 @@ mod tests {
             .expect("tâche saine");
 
         assert_eq!(tableau.source.as_deref(), Some("Téléphone"));
+    }
+
+    /// La boucle complète, celle qui tourne pour de vrai : elle publie, elle
+    /// attend, et **elle obéit**. Les tests précédents éprouvaient chacune de
+    /// ces pièces séparément ; aucun ne disait qu'elles se parlent. C'est
+    /// pourtant là que l'appareil a échoué à l'usage — un ordre déposé sur le
+    /// tableau, et personne pour le prendre.
+    #[tokio::test]
+    async fn la_boucle_obeit_a_un_ordre_depose() {
+        let _garde = un_a_la_fois().lock().await;
+        oublier();
+
+        let (rapport, mut recu) = tokio::sync::mpsc::unbounded_channel();
+
+        let transport: Transport = Arc::new(|| {
+            Box::pin(async {
+                Publication {
+                    appareil: "Mac".into(),
+                    titre: Some("A".into()),
+                    tient_le_son: true,
+                    en_lecture: false,
+                    ..Publication::default()
+                }
+            })
+        });
+        let commandant: Commandant = Arc::new(move |action, _valeur| {
+            let rapport = rapport.clone();
+            Box::pin(async move {
+                let _ = rapport.send(action);
+            })
+        });
+        let annonceur: Annonceur = Arc::new(|_| {});
+
+        tenir(Canal::Local, "Mac".into(), transport, commandant, annonceur);
+
+        // Le temps que la boucle publie et se mette à l'écoute : déposer avant
+        // qu'elle n'attende éprouverait un autre chemin que celui qui échoue.
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        ordonner_local("Mac", Action::Suivant, None);
+
+        let action = tokio::time::timeout(Duration::from_secs(3), recu.recv())
+            .await
+            .expect("la boucle doit obéir sans attendre la fin du monde")
+            .expect("un ordre reçu");
+
+        assert_eq!(action, Action::Suivant);
+        couper();
     }
 
     #[tokio::test]

@@ -603,6 +603,102 @@ impl axum::response::IntoResponse for ErreurHttp {
 mod tests {
     use super::*;
 
+    /// Le scénario complet, celui qui a échoué à l'usage : un appareil pose un
+    /// ordre **par le réseau**, et l'appareil qui tient le son l'exécute.
+    ///
+    /// # Pourquoi il ne suffisait pas d'éprouver les pièces
+    ///
+    /// Le tableau savait recevoir un ordre, la boucle savait en prendre un, et
+    /// la porte savait répondre — chacun sous son propre test. Personne ne
+    /// disait que la porte et la boucle partagent bien le même tableau, ni que
+    /// la boucle se réveille d'une longue attente quand l'ordre arrive d'une
+    /// requête HTTP plutôt que du même fil. C'est précisément là que la
+    /// synchronisation a manqué.
+    #[tokio::test]
+    async fn un_ordre_venu_du_reseau_est_execute() {
+        use crate::sync::continu::{Action, Publication};
+        use crate::sync::liaison::{self, Canal};
+        use std::time::Duration;
+
+        let _garde = liaison::un_a_la_fois().lock().await;
+        liaison::oublier();
+
+        // Une session posée à la main : ouvrir la vraie porte demanderait une
+        // base de données, dont ce chemin ne se sert pas.
+        let code = "12345678".to_string();
+        {
+            let mut garde = sessions().lock().expect("verrou sain");
+            *garde = Some(Session {
+                code: code.clone(),
+                essais: AtomicU32::new(0),
+                arret: None,
+            });
+        }
+
+        let routeur =
+            Router::new().route("/sync/v1/continu", get(continu_lire).post(continu_ecrire));
+        let ecoute = tokio::net::TcpListener::bind(SocketAddr::from((
+            Ipv4Addr::LOCALHOST,
+            0,
+        )))
+        .await
+        .expect("port libre");
+        let port = ecoute.local_addr().expect("adresse lisible").port();
+        let serveur = tokio::spawn(async move {
+            let _ = axum::serve(ecoute, routeur).await;
+        });
+
+        // L'hôte : il tient le son, et c'est lui qui doit obéir.
+        let (rapport, mut recu) = tokio::sync::mpsc::unbounded_channel();
+        liaison::tenir(
+            Canal::Local,
+            "Mac".to_string(),
+            Arc::new(|| {
+                Box::pin(async {
+                    Publication {
+                        appareil: "Mac".into(),
+                        titre: Some("A".into()),
+                        tient_le_son: true,
+                        ..Publication::default()
+                    }
+                })
+            }),
+            Arc::new(move |action, _valeur| {
+                let rapport = rapport.clone();
+                Box::pin(async move {
+                    let _ = rapport.send(action);
+                })
+            }),
+            Arc::new(|_| {}),
+        );
+
+        // Le temps que la boucle publie et se mette en longue attente.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // Le pair, tel que le téléphone le fait : une requête, un ordre.
+        let reponse = reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/sync/v1/continu"))
+            .bearer_auth(&code)
+            .json(&serde_json::json!({
+                "publication": null,
+                "ordre": ["Mac", "suivant", null],
+            }))
+            .send()
+            .await
+            .expect("la porte répond");
+        assert_eq!(reponse.status(), StatusCode::OK);
+
+        let action = tokio::time::timeout(Duration::from_secs(3), recu.recv())
+            .await
+            .expect("l'ordre doit être exécuté sans faire attendre")
+            .expect("un ordre reçu");
+        assert_eq!(action, Action::Suivant);
+
+        liaison::couper();
+        serveur.abort();
+        let _ = sessions().lock().map(|mut garde| garde.take());
+    }
+
     #[test]
     fn le_code_fait_huit_chiffres() {
         for _ in 0..100 {

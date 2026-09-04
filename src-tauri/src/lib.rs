@@ -642,13 +642,95 @@ fn spawn_playback_loop(handle: tauri::AppHandle) {
 
 /// Journalisation. Le niveau est pilotable par la variable d'environnement
 /// `RUST_LOG` (ex. `RUST_LOG=onzer_lib=trace`).
+/// Taille au-delà de laquelle le journal repart à zéro, l'ancien étant gardé.
+///
+/// Quatre mégaoctets tiennent plusieurs jours d'usage ordinaire, et deux
+/// fichiers au plus font huit mégaoctets : de quoi remonter à hier sans peser
+/// sur un téléphone.
+const JOURNAL_MAX: u64 = 4 * 1024 * 1024;
+
+/// Met en place les journaux — à l'écran **et sur le disque**.
+///
+/// # Pourquoi un fichier
+///
+/// Jusqu'ici tout partait sur la sortie standard. Une application lancée depuis
+/// le Finder n'en a pas : macOS la relie au néant. Un défaut survenu chez
+/// l'utilisateur — un ordre de synchronisation refusé, un périphérique audio
+/// absent — ne laissait donc **aucune trace**, et la seule manière d'en voir la
+/// cause était de relancer l'application depuis un terminal, ce qui suppose de
+/// savoir déjà reproduire le défaut. Même aveuglement sur le téléphone, dont le
+/// constructeur chiffre les journaux système (ADR-030).
+///
+/// Le fichier ne remplace pas la sortie standard, il s'y ajoute : en
+/// développement on lit toujours le terminal.
 fn init_tracing() {
-    use tracing_subscriber::{fmt, EnvFilter};
+    use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("onzer_lib=debug,warn"));
 
-    fmt().with_env_filter(filter).with_target(true).init();
+    // `Option<Layer>` est elle-même une couche : la brancher ou non ne change
+    // pas le type du souscripteur, et l'absence de fichier n'empêche donc pas
+    // l'application de démarrer.
+    let vers_fichier = ouvrir_journal().map(|fichier| {
+        fmt::layer()
+            // Les codes de couleur d'un terminal n'ont aucun sens dans un
+            // fichier : ils le rendent illisible dans un éditeur.
+            .with_ansi(false)
+            .with_target(true)
+            .with_writer(std::sync::Mutex::new(fichier))
+    });
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt::layer().with_target(true))
+        .with(vers_fichier)
+        .init();
+}
+
+/// Ouvre le journal du jour, en écartant celui de la veille s'il a grossi.
+fn ouvrir_journal() -> Option<std::fs::File> {
+    let dossier = dossier_journaux()?;
+    std::fs::create_dir_all(&dossier).ok()?;
+
+    let chemin = dossier.join("onzer.log");
+    // Le journal précédent n'est pas effacé mais décalé : le défaut qu'on
+    // cherche s'est souvent produit avant le redémarrage qui l'a fait remarquer.
+    if std::fs::metadata(&chemin).is_ok_and(|infos| infos.len() > JOURNAL_MAX) {
+        let _ = std::fs::rename(&chemin, dossier.join("onzer.log.1"));
+    }
+
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&chemin)
+        .ok()
+}
+
+/// Où poser les journaux, selon l'appareil.
+fn dossier_journaux() -> Option<std::path::PathBuf> {
+    // Une variable d'environnement passe avant tout : c'est ce qui permet de
+    // demander un journal ailleurs le temps d'une reproduction.
+    if let Ok(demande) = std::env::var("ONZER_JOURNAL") {
+        if !demande.is_empty() {
+            return Some(std::path::PathBuf::from(demande));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // L'endroit conventionnel : la Console de macOS l'ouvre sans rien
+        // configurer, et l'utilisateur sait où aller le chercher.
+        if let Ok(maison) = std::env::var("HOME") {
+            return Some(std::path::PathBuf::from(maison).join("Library/Logs/Onzer"));
+        }
+    }
+
+    // Ailleurs — Android compris — le dossier temporaire est le seul chemin
+    // inscriptible connu avant que Tauri n'ait construit ses répertoires. Le
+    // système peut le vider ; un journal perdu vaut mieux qu'un démarrage
+    // refusé.
+    Some(std::env::temp_dir().join("Onzer"))
 }
 
 /// Donne au système d'exploitation de quoi peupler l'écran verrouillé.

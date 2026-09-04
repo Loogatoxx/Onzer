@@ -123,11 +123,16 @@ async fn obeir(app: &AppHandle, action: Action, valeur: Option<i64>) {
     use tauri::Manager;
 
     let etat = app.state::<AppState>();
-    let Ok(player) = etat.player() else {
-        return;
+    let player = match etat.player() {
+        Ok(player) => player,
+        Err(erreur) => {
+            tracing::warn!(%erreur, ?action, "ordre distant sans lecteur");
+            return;
+        }
     };
 
     let paths = etat.paths.read().await.clone();
+    tracing::info!(?action, ?valeur, "ordre distant exécuté");
 
     let resultat = match action {
         // `toggle` bascule : appelé sur un lecteur déjà en marche, il
@@ -177,7 +182,11 @@ pub async fn link_command(
 /// La liaison continue est-elle ouverte ?
 #[tauri::command]
 pub async fn link_open() -> Result<bool> {
-    Ok(liaison::ouverte())
+    // Une boucle qui tourne n'est pas une liaison : chez celui qui héberge,
+    // elle démarre avec la porte et attend, seule, qu'on vienne. Annoncer
+    // « liaison ouverte » à ce moment-là ferait chercher sur l'autre appareil
+    // une connexion que personne n'a encore établie.
+    Ok(liaison::ouverte() && liaison::appairee())
 }
 
 /// Coupe la liaison continue sans refermer la porte.

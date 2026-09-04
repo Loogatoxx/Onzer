@@ -1130,3 +1130,41 @@ cumulent : un titre porté par deux artistes se départage en nommant l'artiste,
 **🎯 Objectif**
 Pouvoir ne donner qu'un morceau, et que la boîte qui le demande soit bien dessinée.
 
+
+---
+
+## Entrée 033 — Un journal, parce qu'on ne corrige pas ce qu'on ne voit pas
+
+**💬 Prompt**
+« quand tout sera setup tu testera la syncro continue par toi meme » (suite) — et
+« je suis revenu si il y a un probleme dis »
+
+**🤖 Réponse (résumé)**
+L'ordre déposé sur le tableau n'était jamais exécuté par le Mac, et rien ne disait pourquoi :
+chaque échec du chemin — pas de lecteur audio, ordre refusé — ne laissait qu'un `warn!` sur la
+sortie standard, que macOS relie au néant pour une application lancée depuis le Finder. Le défaut
+était invisible par construction.
+
+Deux tests neufs suivent l'ordre du réseau jusqu'au lecteur : la boucle complète, puis le
+scénario réel — une requête HTTP pose un ordre, la porte l'écrit, la boucle s'en saisit. Les deux
+passent. Le chemin est donc sain de bout en bout **sauf** son dernier pas, celui qui touche le
+lecteur, et que seule une machine réelle peut éprouver.
+
+D'où le journal sur disque : `~/Library/Logs/Onzer/onzer.log` sur Mac, le dossier temporaire
+ailleurs. Il s'ajoute à la sortie standard, il repart à zéro passé quatre mégaoctets en gardant
+le fichier précédent, et il porte enfin ce qui manquait — l'ordre reçu, l'ordre exécuté, la
+raison d'un refus.
+
+**🔧 Modifications**
+- ➕ `init_tracing` écrit aussi dans un fichier ; `ouvrir_journal` et `dossier_journaux`
+- ➕ Test : la boucle obéit à un ordre déposé
+- ➕ Test : un ordre venu du réseau est exécuté (porte HTTP réelle + boucle réelle)
+- ✏️ Traces sur le chemin des ordres : tableau reçu, ordre reçu, ordre exécuté, ordre sans lecteur
+- ✏️ `link_open` demande aussi qu'un pair soit venu — une boucle qui attend seule n'est pas une
+  liaison
+- ✏️ Le client note le pair quand la porte d'en face répond
+- ✏️ Les tests qui ouvrent la porte partagent le verrou du tableau : ils se fermaient la porte
+  les uns aux autres
+
+**🎯 Objectif**
+Voir ce qui se passe chez l'utilisateur, au lieu de le deviner.

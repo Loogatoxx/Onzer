@@ -111,6 +111,9 @@ async fn aime(pool: &SqlitePool, chemin: &str) -> bool {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn deux_bibliotheques_convergent() {
+    // La porte est unique au processus : deux tests qui l'ouvrent en même
+    // temps se ferment mutuellement la leur.
+    let _garde = crate::sync::liaison::un_a_la_fois().lock().await;
     let _file = UN_A_LA_FOIS.lock().await;
     let dossier_serveur = tempfile::tempdir().unwrap();
     let dossier_client = tempfile::tempdir().unwrap();
@@ -165,6 +168,9 @@ async fn deux_bibliotheques_convergent() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn un_code_faux_est_refuse() {
+    // La porte est unique au processus : deux tests qui l'ouvrent en même
+    // temps se ferment mutuellement la leur.
+    let _garde = crate::sync::liaison::un_a_la_fois().lock().await;
     let _file = UN_A_LA_FOIS.lock().await;
     let dossier_serveur = tempfile::tempdir().unwrap();
     let dossier_client = tempfile::tempdir().unwrap();
@@ -193,6 +199,9 @@ async fn un_code_faux_est_refuse() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn la_porte_fermee_ne_repond_plus() {
+    // La porte est unique au processus : deux tests qui l'ouvrent en même
+    // temps se ferment mutuellement la leur.
+    let _garde = crate::sync::liaison::un_a_la_fois().lock().await;
     let _file = UN_A_LA_FOIS.lock().await;
     let dossier_serveur = tempfile::tempdir().unwrap();
     let dossier_client = tempfile::tempdir().unwrap();
@@ -220,6 +229,9 @@ async fn la_porte_fermee_ne_repond_plus() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn les_paroles_traversent() {
+    // La porte est unique au processus : deux tests qui l'ouvrent en même
+    // temps se ferment mutuellement la leur.
+    let _garde = crate::sync::liaison::un_a_la_fois().lock().await;
     let _file = UN_A_LA_FOIS.lock().await;
     let dossier_serveur = tempfile::tempdir().unwrap();
     let dossier_client = tempfile::tempdir().unwrap();
@@ -258,6 +270,9 @@ async fn les_paroles_traversent() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn un_fichier_connu_se_telecharge_et_un_autre_non() {
+    // La porte est unique au processus : deux tests qui l'ouvrent en même
+    // temps se ferment mutuellement la leur.
+    let _garde = crate::sync::liaison::un_a_la_fois().lock().await;
     let _file = UN_A_LA_FOIS.lock().await;
     let dossier_serveur = tempfile::tempdir().unwrap();
 

@@ -52,11 +52,32 @@ function demander(): Promise<File | null> {
     // car il précède parfois le `change` de quelques millisecondes.
     window.addEventListener(
       "focus",
-      () => setTimeout(() => rendre(champ.files?.[0] ?? null), 500),
+      // Une seconde et demie : le retour du focus précède parfois de peu
+      // l'arrivée du fichier, et répondre trop tôt jetterait l'image qu'on
+      // vient de choisir. Trop tôt coûte le résultat ; trop tard ne coûte
+      // qu'une attente qu'on ne regarde pas.
+      () => setTimeout(() => rendre(champ.files?.[0] ?? null), 1500),
       { once: true },
     );
 
+    // # Pourquoi il entre dans le document
+    //
+    // Un `input` détaché ouvre bien le sélecteur sur un navigateur de bureau ;
+    // la WebView d'Android, elle, **ne le voit pas** — `onShowFileChooser`
+    // n'est jamais appelé, et rien ne se passe. Éprouvé sur l'appareil : la
+    // pochette touchée, aucun sélecteur, aucune erreur.
+    //
+    // Il est donc inséré, hors champ de vision, et retiré ensuite.
+    champ.style.position = "fixed";
+    champ.style.left = "-9999px";
+    document.body.appendChild(champ);
     champ.click();
+
+    // Le retirer tout de suite annulerait la demande : on attend que la
+    // réponse soit arrivée, quelle qu'elle soit.
+    const retirer = () => champ.remove();
+    champ.addEventListener("change", retirer);
+    setTimeout(retirer, 120_000);
   });
 }
 

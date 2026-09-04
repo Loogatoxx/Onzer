@@ -146,10 +146,17 @@ export function PageHeader({
             <button
               type="button"
               onClick={onPickCover}
-              className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-base/70 text-ink opacity-0 transition-opacity hover:opacity-100"
+              // # Pourquoi elle ne se cache plus qu'au-dessus de `sm`
+              //
+              // Elle n'apparaissait qu'au survol. Sur un écran tactile, le
+              // survol n'existe pas : le voile restait invisible, et rien ne
+              // disait qu'on pouvait toucher la pochette pour la changer. En
+              // étroit, il se montre donc — discrètement, en bas de l'image,
+              // pour ne pas la couvrir.
+              className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-base/70 py-1.5 text-ink transition-opacity sm:inset-0 sm:py-0 sm:opacity-0 sm:hover:opacity-100"
             >
-              <Icon name="pencil" size={22} />
-              <span className="text-[12px] font-semibold">Changer l'image</span>
+              <Icon name="pencil" size={15} />
+              <span className="text-[12px] font-semibold">Changer l&apos;image</span>
             </button>
           )}
         </div>
@@ -200,7 +207,10 @@ export function PageHeader({
               <button
                 type="button"
                 onClick={() => setNote(description ?? "")}
-                className={`mt-3 block max-w-xl text-left text-[13px] leading-relaxed transition-colors hover:text-ink ${
+                // `mx-auto sm:mx-0` avec `text-center sm:text-left` : le bloc
+                // entier est centré sous le titre en étroit, où tout l'est, et
+                // repart à gauche dès que la pochette passe à côté.
+                className={`mx-auto mt-3 block max-w-xl text-center text-[13px] leading-relaxed transition-colors hover:text-ink sm:mx-0 sm:text-left ${
                   description == null || description === ""
                     ? "text-ink-faint"
                     : "text-ink-muted"

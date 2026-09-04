@@ -29,6 +29,13 @@ pub async fn open_pairing(
             let app = app.clone();
             move |appareil, resultat| crate::sync::prevenir(&app, appareil, resultat)
         }),
+        fermeture: Arc::new({
+            let app = app.clone();
+            move || {
+                use tauri::Emitter;
+                let _ = app.emit(crate::sync::EVENEMENT_PORTE, ());
+            }
+        }),
         lecture: Arc::new({
             let app = app.clone();
             move || {

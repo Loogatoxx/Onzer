@@ -856,6 +856,17 @@ export const ipc = {
   /** Coupe la liaison **et** referme la porte. Le seul geste qui rend la main. */
   endLink: (): Promise<void> => invoke("end_link"),
 
+  /**
+   * La porte vient de se refermer.
+   *
+   * Elle se referme aussi **d'elle-même**, après cinq codes erronés. Sans cet
+   * avertissement l'écran garde son QR affiché, et l'on scanne un code que
+   * plus personne n'écoute — le défaut se voit alors comme un réseau qui ne
+   * marche pas.
+   */
+  onDoorClosed: (handler: () => void): Promise<UnlistenFn> =>
+    listen("sync://porte", () => handler()),
+
   /** L'avancement d'un transfert de fichiers. */
   onSyncTransfer: (handler: (avancement: TransferProgress) => void): Promise<UnlistenFn> =>
     listen<TransferProgress>("sync://transfert", (event) => handler(event.payload)),

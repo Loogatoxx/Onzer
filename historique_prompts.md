@@ -1168,3 +1168,41 @@ raison d'un refus.
 
 **🎯 Objectif**
 Voir ce qui se passe chez l'utilisateur, au lieu de le deviner.
+
+---
+
+## Entrée 034 — La télécommande, éprouvée sur l'appareil
+
+**💬 Prompt**
+« c'est bon j ai lancer une musique » puis « la porte du tel est 52449419 »
+
+**🤖 Réponse (résumé)**
+La liaison continue marche, de bout en bout, sur du vrai matériel. Le Mac a piloté le téléphone
+par le réseau, et le tableau a suivi chaque ordre :
+
+```
+état initial    : Siliconé — Niska | 42605ms | lecture=False
+après lecture   : Siliconé — Niska | 46550ms | lecture=True
+3 s plus tard   : Siliconé — Niska | 49570ms | lecture=True
+après pause     : Siliconé — Niska | 50595ms | lecture=False
+après suivant   : Chasse à l'homme — Niska | 1945ms | lecture=True
+après précédent : Siliconé — Niska | 1895ms | lecture=True
+```
+
+Le journal du Mac a d'abord montré que le premier essai échouait pour une raison bête : aucun
+morceau chargé, et `toggle` sur un lecteur vide réussit sans rien faire.
+
+En insistant avec un code périmé, la porte du Mac s'est refermée d'elle-même — c'est sa règle de
+sûreté, elle a bien joué. Mais l'écran gardait son QR : on scannait un code mort, et l'échec
+ressemblait à un réseau qui ne marche pas. La fermeture s'annonce maintenant à l'interface.
+
+**🔧 Modifications**
+- ➕ `EVENEMENT_PORTE` (`sync://porte`) ; `EtatServeur.fermeture`, gardée dans la session
+- ✏️ `fermer()` prévient l'interface après avoir lâché le verrou
+- ➕ `ipc.onDoorClosed` ; `Recevoir` reprend son bouton et explique la fermeture subie
+- ✏️ Le script de test s'arrête au premier refus au lieu de condamner la porte
+- ➕ ADR-095 — un défaut qu'on ne voit pas est un défaut qu'on ne corrige pas
+
+**🎯 Objectif**
+Prouver la synchronisation continue sur les deux appareils, et ne plus jamais afficher un code
+que personne n'écoute.

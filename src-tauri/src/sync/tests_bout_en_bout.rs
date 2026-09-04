@@ -96,6 +96,8 @@ fn serveur_de_test(
         }),
         // Aucune carte son dans un test : rien ne joue, rien à reprendre.
         lecture: Arc::new(|| Box::pin(async { None })),
+        // Personne à prévenir : ces tests ferment la porte eux-mêmes.
+        fermeture: Arc::new(|| {}),
     });
 
     (etat, avertis)

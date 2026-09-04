@@ -35,6 +35,9 @@ pub const EVENEMENT_APPLIQUEE: &str = "sync://appliquee";
 /// L'avancement d'un transfert de fichiers.
 pub const EVENEMENT_TRANSFERT: &str = "sync://transfert";
 
+/// La porte s'est refermée — d'elle-même, ou parce qu'on l'a demandé.
+pub const EVENEMENT_PORTE: &str = "sync://porte";
+
 /// Ce que l'interface reçoit quand la base a changé sous ses pieds.
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

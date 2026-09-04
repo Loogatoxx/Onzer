@@ -89,7 +89,14 @@ pub struct EtatServeur {
     pub prevenir: Avertisseur,
     /// Ce que cet appareil écoute, demandé à chaque échange.
     pub lecture: SourceLecture,
+    /// Appelé quand la porte se referme, y compris **d'elle-même**. Sans cela,
+    /// l'écran garde son QR affiché après une fermeture de sûreté, et l'on
+    /// scanne un code que plus personne n'écoute.
+    pub fermeture: Annonce,
 }
+
+/// Ce qu'on appelle pour dire que la porte s'est refermée.
+pub type Annonce = Arc<dyn Fn() + Send + Sync>;
 
 /// Port d'écoute souhaité. Voisin de celui de l'API d'import, dans la même
 /// plage haute. C'est celui que le client suppose quand on ne lui en donne pas.
@@ -126,6 +133,9 @@ struct Session {
     code: String,
     essais: AtomicU32,
     arret: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Gardée ici plutôt que dans l'état du serveur : `fermer` ne voit que la
+    /// session, et c'est bien de là que part la fermeture.
+    fermeture: Option<Annonce>,
 }
 
 static SESSION: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
@@ -191,6 +201,7 @@ pub async fn ouvrir_sur(etat: Arc<EtatServeur>, souhaite: u16) -> Result<InfosAp
             code: code.clone(),
             essais: AtomicU32::new(0),
             arret: Some(arret),
+            fermeture: Some(etat.fermeture.clone()),
         });
     }
 
@@ -231,16 +242,25 @@ pub fn fermer() {
         return;
     };
 
+    let mut annoncer = None;
     if let Some(mut session) = garde.take() {
         if let Some(arret) = session.arret.take() {
             let _ = arret.send(());
         }
+        annoncer = session.fermeture.take();
     }
 
     // La liaison continue vit dans la porte : la refermer sans la couper
     // laisserait une boucle interroger un serveur qui n'écoute plus.
     super::liaison::couper();
     super::liaison::oublier();
+
+    // Après avoir lâché le verrou : l'interface, prévenue, peut redemander
+    // l'état de la porte, et le ferait sur un verrou encore tenu.
+    drop(garde);
+    if let Some(annoncer) = annoncer {
+        annoncer();
+    }
 }
 
 /// La porte est-elle ouverte ?
@@ -632,6 +652,7 @@ mod tests {
                 code: code.clone(),
                 essais: AtomicU32::new(0),
                 arret: None,
+                fermeture: None,
             });
         }
 

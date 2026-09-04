@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/Icon";
 import { ScannerQR } from "./ScannerQR";
@@ -72,6 +72,34 @@ function Recevoir() {
   const [recu, setRecu] = useState<SyncNotice | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
+  const [refermee, setRefermee] = useState(false);
+
+  // Ce que le cœur sait de la porte, lisible depuis un abonnement qui, lui, ne
+  // se réabonne pas à chaque changement d'état.
+  const ouverte = useRef(false);
+  useEffect(() => {
+    ouverte.current = infos !== null;
+  }, [infos]);
+
+  // # Pourquoi une porte qui se ferme seule doit se dire
+  //
+  // Cinq codes erronés la referment — c'est la règle de sûreté, et elle est
+  // juste. Mais l'écran gardait son QR : on scannait un code que plus personne
+  // n'écoutait, et l'échec ressemblait à un problème de réseau. Éprouvé sur
+  // l'appareil, en insistant avec un code périmé.
+  useEffect(() => {
+    const abonnement = ipc.onDoorClosed(() => {
+      // Une fermeture demandée est déjà connue de celui qui l'a demandée : ne
+      // reste ici que celle qu'on n'a pas vue venir.
+      if (!ouverte.current) return;
+      ouverte.current = false;
+      setInfos(null);
+      setRefermee(true);
+    });
+    return () => {
+      void abonnement.then((arreter) => arreter());
+    };
+  }, []);
 
   // # Pourquoi la fermeture est un nettoyage et non un bouton
   //
@@ -100,6 +128,7 @@ function Recevoir() {
   async function ouvrir() {
     setOccupe(true);
     setErreur(null);
+    setRefermee(false);
     try {
       setInfos(await ipc.openPairing());
     } catch (cause) {
@@ -110,6 +139,8 @@ function Recevoir() {
   }
 
   function fermer() {
+    ouverte.current = false;
+    setRefermee(false);
     setInfos(null);
     void ipc.closePairing().catch(() => undefined);
   }
@@ -123,14 +154,22 @@ function Recevoir() {
       </p>
 
       {infos === null ? (
-        <button
-          type="button"
-          disabled={occupe}
-          onClick={() => void ouvrir()}
-          className="mt-5 w-full rounded-xl bouton-accent px-4 py-3 text-sm font-medium"
-        >
-          {occupe ? "Ouverture…" : "Ouvrir la porte"}
-        </button>
+        <>
+          {refermee && (
+            <p className="mt-4 rounded-lg bg-elevated px-3 py-2 text-[12px] leading-relaxed text-ink-muted">
+              La porte s&apos;est refermée : trop de codes erronés. Le code
+              précédent ne vaut plus rien — rouvre pour en obtenir un neuf.
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={occupe}
+            onClick={() => void ouvrir()}
+            className="mt-5 w-full rounded-xl bouton-accent px-4 py-3 text-sm font-medium"
+          >
+            {occupe ? "Ouverture…" : "Ouvrir la porte"}
+          </button>
+        </>
       ) : (
         <div className="mt-5">
           <CodeQR matrice={infos.qr} />

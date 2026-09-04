@@ -2768,6 +2768,41 @@ vingt-quatre pixels laissent de la marge pour un écran Retina.
 
 ---
 
+## ADR-095 — Un défaut qu'on ne voit pas est un défaut qu'on ne corrige pas
+
+**Le symptôme.** La liaison continue ne réagissait pas : un ordre déposé sur le tableau, et
+l'appareil qui tient le son n'en faisait rien. Aucune trace nulle part. `log show` rendait le
+vide, et chaque hypothèse coûtait une reconstruction complète pour être écartée.
+
+**La cause de l'aveuglement.** Les journaux partaient sur la sortie standard. Une application
+lancée depuis le Finder n'en a pas : macOS la relie au néant. Tous les échecs de ce chemin —
+lecteur audio absent, ordre refusé — étaient des `warn!` adressés à personne. Sur le téléphone,
+même silence, le constructeur chiffrant les journaux système (voir ADR-030).
+
+**La décision.** Un journal sur disque, en plus de la sortie standard :
+`~/Library/Logs/Onzer/onzer.log` sur Mac, le dossier temporaire ailleurs. Il repart à zéro passé
+quatre mégaoctets en gardant le fichier précédent — le défaut qu'on cherche s'est souvent produit
+avant le redémarrage qui l'a fait remarquer. `ONZER_JOURNAL` déplace le fichier le temps d'une
+reproduction.
+
+**Ce que la mesure a donné.** Le journal a répondu en une seule tentative : ordre reçu, ordre
+exécuté, aucune erreur — mais `"titre": null`. Aucun morceau n'était chargé, et `toggle` sur un
+lecteur vide réussit sans rien faire. Puis, musique lancée, la boucle publiant une fois par
+seconde, les quatre ordres ont été obéis par le téléphone : lecture, pause, suivant, précédent.
+
+**Ce que les tests ne pouvaient pas dire.** Chaque pièce était éprouvée séparément — le tableau
+recevait un ordre, la boucle en prenait un, la porte répondait — sans que rien n'affirme qu'elles
+partagent le même tableau, ni que la boucle se réveille quand l'ordre arrive d'une requête HTTP
+plutôt que du même fil. Deux tests neufs couvrent maintenant ce chemin entier ; le seul pas qui
+reste hors de leur portée est celui qui touche une carte son.
+
+**Corollaire, trouvé en insistant avec un code périmé.** Cinq codes erronés referment la porte —
+la règle est juste — mais l'écran gardait son QR affiché. On scannait un code que plus personne
+n'écoutait, et l'échec ressemblait à un problème de réseau. La fermeture s'annonce désormais à
+l'interface (`sync://porte`), qui reprend son bouton et le dit.
+
+---
+
 ## Dette technique assumée
 
 | Sujet | État | Raison |

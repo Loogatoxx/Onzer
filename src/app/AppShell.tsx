@@ -1304,6 +1304,23 @@ export function AppShell({
       />
 
       <div className={`flex min-h-0 flex-1 ${mobile ? "" : "gap-2 px-2"}`}>
+        {/* # Pourquoi une bande fixe sous l'horloge
+
+            La réserve de l'encoche défile avec la page : une fois descendu,
+            le texte passait **sous l'horloge** et devenait illisible — éprouvé
+            sur l'appareil, « Scanner le QR » à cheval sur 12:17.
+
+            Cette bande a exactement la couleur de la page. Elle n'ajoute donc
+            ni marche ni fondu — le gris reste le même du haut en bas, comme
+            demandé — mais ce qui défile disparaît derrière elle au lieu de
+            croiser l'heure. */}
+        {mobile && (
+          <div
+            aria-hidden
+            className="pointer-events-none fixed inset-x-0 top-0 z-30 h-[env(safe-area-inset-top)] bg-surface"
+          />
+        )}
+
         {!mobile && (
           <Sidebar
             route={route}

@@ -1042,7 +1042,7 @@ function RowMenu({
             />
 
             <div
-              className={`fixed inset-x-0 bottom-0 z-50 max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-line bg-raised pb-[env(safe-area-inset-bottom)] shadow-2xl shadow-black/60 [&_button]:py-3.5 [&_button]:text-[15px] ${
+              className={`fixed inset-x-0 bottom-0 z-50 max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-line bg-raised pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] shadow-2xl shadow-black/60 [&_button]:py-3.5 [&_button]:text-[15px] ${
                 tire > 0 || ferme ? "" : open ? "barre-monte" : "barre-descend"
               }`}
               style={
@@ -1063,8 +1063,15 @@ function RowMenu({
 
                   Tant qu'on tient, aucune transition : la moindre ferait un
                   retard sous le doigt. */}
+              {/* # Pourquoi la poignée reste en haut
+
+                  La feuille dépasse la hauteur de l'écran : on la fait
+                  défiler. La poignée partait alors avec le contenu, et le
+                  geste qu'elle annonce devenait impossible à saisir — éprouvé
+                  sur l'appareil, poignée disparue au premier défilement. Elle
+                  colle donc au bord, avec le titre qu'elle surmonte. */}
               <div
-                className="cursor-grab touch-none pt-2.5 active:cursor-grabbing"
+                className="sticky top-0 z-10 cursor-grab touch-none rounded-t-2xl bg-raised pt-2.5 active:cursor-grabbing"
                 onTouchStart={(event) => {
                   const doigt = event.touches[0];
                   depart.current = doigt === undefined ? null : doigt.clientY;

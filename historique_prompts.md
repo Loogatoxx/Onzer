@@ -1206,3 +1206,39 @@ ressemblait à un réseau qui ne marche pas. La fermeture s'annonce maintenant �
 **🎯 Objectif**
 Prouver la synchronisation continue sur les deux appareils, et ne plus jamais afficher un code
 que personne n'écoute.
+
+---
+
+## Entrée 035 — Ce que l'appareil dit, et ce qu'il ne dit pas
+
+**💬 Prompt**
+« reprend les test »
+
+**🤖 Réponse (résumé)**
+Série complète sur le téléphone, capture à l'appui. Le sélecteur d'image marche : « Changer
+l'image » ouvre le sélecteur d'Android, la photo choisie devient la pochette. La feuille des trois
+points suit le doigt au pixel et se ferme au relâchement ; toucher à côté la ferme sans rien
+déclencher derrière. La description est centrée, les coins du sélecteur de portée ne laissent plus
+rien dépasser, et le champ de titre trouve « Siliconé » dès « sili ».
+
+**Une erreur de diagnostic, corrigée.** J'avais pris pour un défaut de rendu une image apparue
+dans la pochette d'une playlist — j'y voyais une texture recyclée par la WebView, et j'avais écrit
+un correctif là-dessus. C'était simplement **la pochette que l'utilisateur avait déjà posée**, une
+de ses captures d'écran ; le sélecteur de photos me l'a montrée dans ses récentes. Le correctif est
+annulé : il ne réparait rien, et son commentaire aurait menti à la prochaine lecture.
+
+**Deux vrais défauts, eux, trouvés à l'écran.** La réserve de l'encoche défile avec la page : une
+fois descendu, le texte passait sous l'horloge — « Scanner le QR » à cheval sur 12:17. Une bande
+fixe, de la couleur exacte de la page, le fait disparaître derrière l'heure sans ajouter ni marche
+ni fondu. Et la feuille des trois points débordait sous la barre de gestes, sa dernière ligne
+coupée, tandis que la poignée partait au premier défilement — le geste qu'elle annonce devenait
+impossible à saisir.
+
+**🔧 Modifications**
+- ✏️ Bande fixe sous la barre d'état, en `bg-surface`, hors du conteneur qui défile
+- ✏️ La feuille garde une marge basse réelle (`env(safe-area-inset-bottom)` vaut zéro ici)
+- ✏️ La poignée et le titre de la feuille collent en haut pendant le défilement
+- ↩️ Annulation du correctif de pochette écrit sur un mauvais diagnostic
+
+**🎯 Objectif**
+Vérifier sur l'appareil au lieu de supposer — et défaire ce qui reposait sur une supposition.

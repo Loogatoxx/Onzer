@@ -96,7 +96,24 @@ pub struct EtatServeur {
 }
 
 /// Ce qu'on appelle pour dire que la porte s'est refermée.
-pub type Annonce = Arc<dyn Fn() + Send + Sync>;
+pub type Annonce = Arc<dyn Fn(Fermeture) + Send + Sync>;
+
+/// Pourquoi la porte s'est refermée.
+///
+/// # Pourquoi la raison voyage
+///
+/// L'interface annonçait « trop de codes erronés » à chaque fermeture, y
+/// compris celle qu'on venait de demander en touchant « Couper » — un message
+/// faux, et inquiétant pour rien. Une fermeture demandée n'a rien à expliquer :
+/// celui qui l'a demandée le sait déjà.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Fermeture {
+    /// On l'a demandée — bouton « Couper », ou départ de l'écran.
+    Demande,
+    /// Cinq codes refusés : la porte se garde toute seule.
+    Codes,
+}
 
 /// Port d'écoute souhaité. Voisin de celui de l'API d'import, dans la même
 /// plage haute. C'est celui que le client suppose quand on ne lui en donne pas.
@@ -161,7 +178,7 @@ pub async fn ouvrir(etat: Arc<EtatServeur>) -> Result<InfosAppairage> {
 /// l'affaire, puisque le code **et** le QR le transportent. On demande donc le
 /// port habituel, et l'on se rabat sur celui que le système veut bien donner.
 pub async fn ouvrir_sur(etat: Arc<EtatServeur>, souhaite: u16) -> Result<InfosAppairage> {
-    fermer();
+    fermer(Fermeture::Demande);
 
     let code = tirer_un_code();
     let mut adresses = adresses_locales();
@@ -237,7 +254,7 @@ pub async fn ouvrir_sur(etat: Arc<EtatServeur>, souhaite: u16) -> Result<InfosAp
 }
 
 /// Referme la porte. Sans effet si elle ne l'était pas.
-pub fn fermer() {
+pub fn fermer(raison: Fermeture) {
     let Ok(mut garde) = sessions().lock() else {
         return;
     };
@@ -259,7 +276,7 @@ pub fn fermer() {
     // l'état de la porte, et le ferait sur un verrou encore tenu.
     drop(garde);
     if let Some(annoncer) = annoncer {
-        annoncer();
+        annoncer(raison);
     }
 }
 
@@ -480,7 +497,7 @@ fn verifier(entetes: &HeaderMap) -> std::result::Result<(), ErreurHttp> {
     // La fermeture se fait **hors** du verrou : `fermer` le reprend.
     if echec {
         tracing::warn!("trop de codes erronés : la porte se referme");
-        fermer();
+        fermer(Fermeture::Codes);
     }
 
     Err(ErreurHttp::new(StatusCode::UNAUTHORIZED, "code invalide"))

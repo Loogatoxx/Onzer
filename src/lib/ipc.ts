@@ -97,6 +97,15 @@ export interface SyncScope {
 }
 
 /** Miroir de `sync::continu::Action`. */
+/**
+ * Pourquoi la porte s'est refermée.
+ *
+ * `demande` n'a rien à expliquer — c'est celui qui regarde l'écran qui vient de
+ * le demander. Seul `codes` mérite un mot : le code affiché ne vaut plus rien,
+ * et sans cette phrase on scanne un QR mort en croyant à un problème de réseau.
+ */
+export type DoorClosed = "demande" | "codes";
+
 export type LinkAction =
   | "lecture"
   | "pause"
@@ -864,8 +873,8 @@ export const ipc = {
    * plus personne n'écoute — le défaut se voit alors comme un réseau qui ne
    * marche pas.
    */
-  onDoorClosed: (handler: () => void): Promise<UnlistenFn> =>
-    listen("sync://porte", () => handler()),
+  onDoorClosed: (handler: (raison: DoorClosed) => void): Promise<UnlistenFn> =>
+    listen<DoorClosed>("sync://porte", (event) => handler(event.payload)),
 
   /** L'avancement d'un transfert de fichiers. */
   onSyncTransfer: (handler: (avancement: TransferProgress) => void): Promise<UnlistenFn> =>

@@ -97,7 +97,7 @@ fn serveur_de_test(
         // Aucune carte son dans un test : rien ne joue, rien à reprendre.
         lecture: Arc::new(|| Box::pin(async { None })),
         // Personne à prévenir : ces tests ferment la porte eux-mêmes.
-        fermeture: Arc::new(|| {}),
+        fermeture: Arc::new(|_| {}),
     });
 
     (etat, avertis)
@@ -165,7 +165,7 @@ async fn deux_bibliotheques_convergent() {
         .unwrap();
     assert_eq!(second.favoris, 0, "la synchronisation doit être stable");
 
-    appairage::fermer();
+    appairage::fermer(appairage::Fermeture::Demande);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -196,7 +196,7 @@ async fn un_code_faux_est_refuse() {
         "rien ne doit avoir traversé"
     );
 
-    appairage::fermer();
+    appairage::fermer(appairage::Fermeture::Demande);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -215,7 +215,7 @@ async fn la_porte_fermee_ne_repond_plus() {
     let infos = appairage::ouvrir_sur(etat_serveur, 0).await.unwrap();
     assert!(appairage::ouverte());
 
-    appairage::fermer();
+    appairage::fermer(appairage::Fermeture::Demande);
     assert!(!appairage::ouverte());
 
     // Le temps que la chaussette se libère.
@@ -267,7 +267,7 @@ async fn les_paroles_traversent() {
     // Et l'état complet se relit sans erreur après application.
     etat::lire(&client_pool, None).await.unwrap();
 
-    appairage::fermer();
+    appairage::fermer(appairage::Fermeture::Demande);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -314,5 +314,5 @@ async fn un_fichier_connu_se_telecharge_et_un_autre_non() {
     let sans_code = client.get(format!("{url}?chemin=Un%2Fun.mp3")).send().await.unwrap();
     assert_eq!(sans_code.status(), reqwest::StatusCode::UNAUTHORIZED);
 
-    appairage::fermer();
+    appairage::fermer(appairage::Fermeture::Demande);
 }

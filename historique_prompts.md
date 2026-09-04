@@ -1242,3 +1242,40 @@ impossible à saisir.
 
 **🎯 Objectif**
 Vérifier sur l'appareil au lieu de supposer — et défaire ce qui reposait sur une supposition.
+
+---
+
+## Entrée 036 — La portée éprouvée sur l'appareil, et un message qui mentait
+
+**💬 Prompt**
+« vasy prochaine etap »
+
+**🤖 Réponse (résumé)**
+La portée sélective, éprouvée sur le téléphone. Deux morceaux envoyés, tous deux marqués aimés
+dans l'envoi, avec une portée qui ne nomme qu'un titre :
+
+```
+envoyé   : Siliconé (aimé), Mal aimé (aimé)   portée : favoris + titre « Siliconé »
+sur le téléphone : Siliconé  → aimé          Mal aimé → intact
+```
+
+Contrôle négatif : la même demande avec `favoris: false` ne fait rien passer, bien que le titre
+corresponde. Puis l'inverse, avec une date plus récente, pour rendre l'appareil tel qu'il était.
+
+**Le défaut que ce test a trouvé.** Toucher « Couper » affichait « La porte s'est refermée : trop
+de codes erronés » — un message faux, et inquiétant pour rien. La fermeture avait bien été
+annoncée à l'interface (entrée 034), mais sans sa raison : toutes se ressemblaient. La raison
+voyage maintenant avec l'annonce ; une fermeture demandée ne dit plus rien, puisque celui qui l'a
+demandée le sait déjà.
+
+Éprouvé dans les deux sens sur l'appareil : « Couper » ferme sans un mot, cinq codes refusés
+affichent toujours l'explication.
+
+**🔧 Modifications**
+- ➕ `Fermeture { Demande, Codes }` ; `fermer` la reçoit et l'annonce
+- ✏️ `Annonce` porte la raison ; l'événement `sync://porte` la transporte
+- ✏️ `Recevoir` n'explique que la fermeture subie
+- ➕ Type `DoorClosed` côté interface
+
+**🎯 Objectif**
+Ne donner que ce qu'on a demandé de donner — et ne dire que ce qui est vrai.

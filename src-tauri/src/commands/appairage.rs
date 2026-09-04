@@ -31,9 +31,9 @@ pub async fn open_pairing(
         }),
         fermeture: Arc::new({
             let app = app.clone();
-            move || {
+            move |raison| {
                 use tauri::Emitter;
-                let _ = app.emit(crate::sync::EVENEMENT_PORTE, ());
+                let _ = app.emit(crate::sync::EVENEMENT_PORTE, raison);
             }
         }),
         lecture: Arc::new({
@@ -225,7 +225,7 @@ pub async fn close_pairing() -> Result<()> {
         return Ok(());
     }
 
-    appairage::fermer();
+    appairage::fermer(appairage::Fermeture::Demande);
     Ok(())
 }
 
@@ -236,7 +236,7 @@ pub async fn close_pairing() -> Result<()> {
 #[tauri::command]
 pub async fn end_link() -> Result<()> {
     liaison::couper();
-    appairage::fermer();
+    appairage::fermer(appairage::Fermeture::Demande);
     Ok(())
 }
 

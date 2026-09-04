@@ -88,13 +88,14 @@ function Recevoir() {
   // n'écoutait, et l'échec ressemblait à un problème de réseau. Éprouvé sur
   // l'appareil, en insistant avec un code périmé.
   useEffect(() => {
-    const abonnement = ipc.onDoorClosed(() => {
-      // Une fermeture demandée est déjà connue de celui qui l'a demandée : ne
-      // reste ici que celle qu'on n'a pas vue venir.
+    const abonnement = ipc.onDoorClosed((raison) => {
       if (!ouverte.current) return;
       ouverte.current = false;
       setInfos(null);
-      setRefermee(true);
+      // Une fermeture demandée est déjà connue de celui qui l'a demandée — et
+      // lui annoncer « trop de codes erronés » serait faux. Éprouvé sur
+      // l'appareil : le message apparaissait après un simple « Couper ».
+      setRefermee(raison === "codes");
     });
     return () => {
       void abonnement.then((arreter) => arreter());
